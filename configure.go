@@ -7,71 +7,54 @@ import (
     "time"
     "os"
     "errors"
-    "syscall"
     "strconv"
     "strings"
     "regexp"
-    "os/user"
+    "unicode"
 )
 
-type Request struct {
-    Action *string `json:action`
-    Prefix *string `json:prefix`
-    Project *string `json:project`
-    Owners []string `json:owners`
-}
-
-type Permissions struct {
-    Owners []string `json:owners`
-}
-
-func lock(path string, timeout time.Duration) (*os.File, error) {
-    handle, err := os.OpenFile(path, os.O_WRONLY | os.O_CREATE, 0644)
-    if err != nil {
-        return nil, errors.New("failed to create the lock file at '" + path + "'")
+func is_bad_name(name string) error {
+    if len(name) == 0 {
+        return errors.New("name cannot be empty")
     }
-
-    // Loop below is adapted from https://github.com/boltdb/bolt/blob/fd01fc79c553a8e99d512a07e8e0c63d4a3ccfc5/bolt_unix.go#L44.
-    t := time.Now()
-	for {
-		if time.Since(t) > timeout {
-			return nil, errors.New("timed out waiting for the lock to be acquired on '" + path + "'")
-		}
-
-		err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX | syscall.LOCK_NB)
-		if err == nil {
-			return handle, nil
-		} else if err != syscall.EWOULDBLOCK {
-			return nil, fmt.Errorf("failed to obtain lock on '" + path + "; %w", err)
-		}
-
-		time.Sleep(50 * time.Millisecond)
-	}
+    if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+        return errors.New("name cannot contain '/' or '\\'")
+    }
+    if strings.HasPrefix(name, "..") {
+        return errors.New("name cannot start with '..'")
+    }
+    return nil
 }
 
-func unlock(handle *os.File) error {
-	return syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+func increment_series_path(prefix string, dir string) string {
+    if prefix == "" {
+        return filepath.Join(dir, "..series")
+    } else {
+        return filepath.Join(dir, "..series_" + prefix)
+    }
 }
 
-func increment_series(prefix string, series_path string, dir string) (string, error) {
-    num := 1
-    if _, err := os.Stat(series_path); err != nil {
+func increment_series(prefix string, dir string) (string, error) {
+    series_path := increment_series_path(prefix, dir)
+
+    num := 0
+    if _, err := os.Stat(series_path); err == nil {
         content, err := os.ReadFile(series_path)
         if err != nil {
             return "", fmt.Errorf("failed to read '" + series_path + "'; %w", err)
         }
-        num, err := strconv.Atoi(string(content))
+        num, err = strconv.Atoi(string(content))
         if err != nil {
             return "", fmt.Errorf("failed to determine latest number from '" + series_path + "; %w", err)
         }
-        num += 1
     }
 
+    num += 1
     as_str := strconv.Itoa(num)
     candidate_name := prefix + as_str
 
     // Checking that it doesn't already exist.
-    if _, err := os.Stat(filepath.Join(dir, candidate_name)); err != nil {
+    if _, err := os.Stat(filepath.Join(dir, candidate_name)); err == nil {
         dhandle, err := os.Open(dir)
         if err != nil {
             return "", fmt.Errorf("failed to obtain a handle for the output directory; %w", err)
@@ -104,6 +87,7 @@ func increment_series(prefix string, series_path string, dir string) (string, er
         candidate_name = prefix + as_str
     }
 
+    // Updating the series.
     err := os.WriteFile(series_path, []byte(as_str), 0644)
     if err != nil {
         return "", fmt.Errorf("failed to update the series counter for '" + prefix + "'; %w", err)
@@ -112,10 +96,220 @@ func increment_series(prefix string, series_path string, dir string) (string, er
     return candidate_name, nil
 }
 
+type Request struct {
+    Prefix *string `json:prefix`
+    Project *string `json:project`
+    Version *string `json:version`
+    Asset *string `json:asset`
+    Permissions Permissions `json:permissions`
+}
+
+func create_new_project_directory(dir string, username string, details *Request) error {
+    err := os.Mkdir(dir, 0755)
+    if err != nil {
+        return fmt.Errorf("failed to make a new directory'; %w", err)
+    }
+
+    // Adding permissions.
+    var perms Permissions;
+    if len(details.Permissions.Owners) > 0 {
+        copy(perms.Owners, details.Permissions.Owners)
+    } else {
+        perms.Owners = []string{ username }
+    }
+    copy(perms.Uploaders, details.Permissions.Uploaders)
+
+    perm_str, err := json.MarshalIndent(&perms, "", "    ")
+    if err != nil {
+        return fmt.Errorf("failed to convert permissions to JSON; %w", err)
+    }
+
+    err = os.WriteFile(filepath.Join(dir, "..permissions"), perm_str, 0755)
+    if err != nil {
+        return fmt.Errorf("failed to write permissions; %w", err)
+    }
+
+    // Dumping a mock quota and usage file for consistency with gypsum.
+    // Note that the quota isn't actually enforced yet.
+    err = os.WriteFile(filepath.Join(dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0755)
+    if err != nil {
+        return fmt.Errorf("failed to write quota for '" + dir + "'; %w", err)
+    }
+
+    err = os.WriteFile(filepath.Join(dir, "..usage"), []byte("{ \"total\": 0 }"), 0755)
+    if err != nil {
+        return fmt.Errorf("failed to write usage for '" + dir + "'; %w", err)
+    }
+
+    return nil
+}
+
+func process_project(registry string, username string, details *Request) (string, error) {
+    lock_path := filepath.Join(registry, "..LOCK")
+    handle, err := Lock(lock_path, 1000 * time.Second)
+    if err != nil {
+        return "", err
+    }
+    defer Unlock(handle)
+
+    // Creating a new project from a series.
+    if details.Project == nil {
+        if details.Prefix == nil {
+            return "", errors.New("expected a 'prefix' property in the request details")
+        }
+        prefix := *(details.Prefix)
+        re, _ := regexp.Compile("^[A-Z][a-zA-Z-]+$")
+        if re.MatchString(prefix) {
+            return "", errors.New("prefix must start with an upper-case letter and contain only a-z, A-Z or a dash (got '" + prefix + "')")
+        }
+
+        candidate_name, err := increment_series(prefix, registry)
+        if err != nil {
+            return "", err
+        }
+
+        err = create_new_project_directory(filepath.Join(registry, candidate_name), username, details)
+        if err != nil {
+            return "", fmt.Errorf("failed to populate internals for '" + candidate_name + "'; %w", err)
+        }
+
+        return candidate_name, nil
+    }
+
+    // Creating a new project from a pre-supplied name.
+    project := *(details.Project)
+    err = is_bad_name(project)
+    if err != nil {
+        return "", fmt.Errorf("invalid project name; %w", err)
+    }
+
+    project_dir := filepath.Join(registry, project)
+    info, err := os.Stat(project_dir)
+    if errors.Is(err, os.ErrNotExist) {
+        if unicode.IsUpper(rune(project[0])) {
+            return "", errors.New("new user-supplied project names should not start with an uppercase letter")
+        }
+
+        err = create_new_project_directory(filepath.Join(registry, project), username, details)
+        if err != nil {
+            return "", fmt.Errorf("failed to populate internals for '" + project + "'; %w", err)
+        }
+
+        return project, nil
+    }
+
+    // Updating an existing directory.
+    if err != nil || !info.IsDir() {
+        return "", fmt.Errorf("failed to inspect an existing project directory '" + project + "'; %w", err)
+    }
+
+    perm_path := filepath.Join(project_dir, "..permissions")
+    perm_handle, err := os.ReadFile(perm_path)
+    if err != nil {
+        return "", fmt.Errorf("failed to read permissions for '" + project + "'; %w", err)
+    }
+
+    var perms Permissions
+    err = json.Unmarshal(perm_handle, &perms)
+    if err != nil {
+        return "", fmt.Errorf("failed to parse JSON from '" + perm_path + "'; %w", err)
+    }
+
+    // Only checking owners right now; support for uploaders is not yet implemented.
+    okay := false
+    for _, s := range(perms.Owners) {
+        if s == username {
+            okay = true
+        }
+    }
+    if !okay {
+        return "", fmt.Errorf("user '" + username + "' is not listed as an owner for '" + project + "'")
+    }
+
+    return project, nil
+}
+
+func process_asset(project_dir string, details *Request) (string, error) {
+    // No need to lock here, as multiple processes can be requesting the same
+    // asset at once... it's the versions we need to be worrying about.
+    if details.Asset == nil {
+        return "", errors.New("expected an 'asset' property in the request details")
+    }
+
+    err := is_bad_name(*details.Asset)
+    if err != nil {
+        return "", fmt.Errorf("invalid asset name; %w", err)
+    }
+
+    asset := *(details.Asset)
+    asset_dir := filepath.Join(project_dir, asset)
+    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+        err = os.Mkdir(asset_dir, 0755)
+        if err != nil {
+            return "", fmt.Errorf("failed to create a new asset directory inside '" + project_dir + "'; %w", err)
+        }
+    }
+
+    return asset, nil
+}
+
+func process_version(asset_dir string, details *Request) (string, error) {
+    lock_path := filepath.Join(asset_dir, "..LOCK")
+    handle, err := Lock(lock_path, 1000 * time.Second)
+    if err != nil {
+        return "", err
+    }
+    defer Unlock(handle)
+
+    series_path := increment_series_path("", asset_dir)
+
+    // Creating a new version from a series.
+    if details.Version == nil {
+        if _, err := os.Stat(series_path); errors.Is(err, os.ErrNotExist) {
+            if details.Project != nil { // check it's not a newly created project, in which case it wouldn't have a series yet.
+                return "", errors.New("must provide 'version' in '" + asset_dir + "' initialized without a version series")
+            }
+        }
+
+        candidate_name, err := increment_series("", asset_dir)
+        if err != nil {
+            return "", err
+        }
+
+        candidate_path := filepath.Join(asset_dir, candidate_name)
+        err = os.Mkdir(candidate_path, 0755)
+        if err != nil {
+            return "", fmt.Errorf("failed to create a new version directory at '" + candidate_path + "'; %w", err)
+        }
+
+        return candidate_name, nil
+    }
+
+    // Otherwise using the user-supplied version name.
+    err = is_bad_name(*details.Version)
+    if err != nil {
+        return "", fmt.Errorf("invalid version name; %w", err)
+    }
+
+    if _, err := os.Stat(series_path); err == nil {
+        return "", errors.New("cannot use user-supplied 'version' in '" + asset_dir + "' initialized with a version series")
+    }
+    version := *(details.Version)
+
+    candidate_path := filepath.Join(asset_dir, version)
+    if _, err := os.Stat(candidate_path); err == nil {
+        return "", errors.New("version '" + version + "' already exists in '" + asset_dir + "'")
+    }
+
+    return version, nil
+}
+
 type Configuration struct {
     Project string
+    Asset string
     Version string
     User string
+    UploadStart string
 }
 
 func Configure(source string, registry string) (*Configuration, error) {
@@ -131,157 +325,37 @@ func Configure(source string, registry string) (*Configuration, error) {
         return nil, fmt.Errorf("failed to parse JSON from '" + detail_path + "'; %w", err)
     }
 
-    if details.Action == nil {
-        return nil, errors.New("missing 'action' property in '" + detail_path + "'")
-    }
-    action := *(details.Action)
-
-    var username string
-    {
-        sinfo, err := os.Stat(source)
-        if err != nil {
-            return nil, fmt.Errorf("failed to inspect '" + source + "'; %w", err)
-        }
-
-        stat, ok := sinfo.Sys().(*syscall.Stat_t)
-        if !ok {
-            return nil, errors.New("failed to determine author of '" + source + "'")
-        }
-
-        uinfo, err := user.LookupId(strconv.Itoa(int(stat.Uid)))
-        if !ok {
-            return nil, fmt.Errorf("failed to find user name for author of '" + source + "'; %w", err)
-        }
-        username = uinfo.Username
+    username, err := IdentifyUser(source)
+    if err != nil {
+        return nil, fmt.Errorf("failed to identify the user for '" + source + "'; %w", err)
     }
 
-    /***********************************
-     *** Choosing a new project name ***
-     ***********************************/
+    project, err := process_project(registry, username, &details)
+    if err != nil {
+        return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
+    }
 
-    var project string
-    if action == "new" {
-        if details.Prefix == nil {
-            return nil, errors.New("missing 'prefix' property in '" + detail_path + "'")
-        }
-        prefix := *(details.Prefix)
+    project_dir := filepath.Join(registry, project)
+    asset, err := process_asset(project_dir, &details)
+    if err != nil {
+        return nil, fmt.Errorf("failed to process the asset for '" + source + "'; %w", err)
+    }
 
-        re1, _ := regexp.Compile("^[A-Z]+$")
-        re2, _ := regexp.Compile("^test-[A-Z]+$")
-        if !re1.MatchString(prefix) && !re2.MatchString(prefix) {
-            return nil, errors.New("prefix must contain only A-Z (got '" + prefix + "')") 
-        }
-
-        name, err := func() (string, error) {
-            series_path := filepath.Join(registry, "..series_" + prefix)
-            handle, err := lock(series_path + ".LOCK", 10000 * time.Second)
-            if err != nil {
-                return "", err
-            }
-            defer unlock(handle)
-
-            candidate_name, err := increment_series(prefix, series_path, registry)
-            if err != nil {
-                return "", err
-            }
-            candidate_path := filepath.Join(registry, candidate_name)
-            err = os.Mkdir(candidate_path, 0755)
-            if err != nil {
-                return "", fmt.Errorf("failed to create a new project directory at '" + candidate_path + "'; %w", err)
-            }
-
-            // Dumping permissions from the details.
-            var perms Permissions;
-            if len(details.Owners) > 0 {
-                copy(perms.Owners, details.Owners)
-            } else {
-                perms.Owners = append(perms.Owners, username)
-            }
-            perm_str, err := json.MarshalIndent(&perms, "", "    ")
-            if err != nil {
-                return "", fmt.Errorf("failed to convert permissions to JSON for '" + candidate_name + "'; %w", err)
-            }
-            err = os.WriteFile(filepath.Join(candidate_path, "..permissions"), perm_str, 0755)
-            if err != nil {
-                return "", fmt.Errorf("failed to write permissions for '" + candidate_name + "'; %w", err)
-            }
-
-            return candidate_name, nil
-        }()
-
-        if err != nil {
-            return nil, err
-        }
-        project = name
-
-    } else if action == "update" {
-        if details.Project == nil {
-            return nil, errors.New("missing 'project' property in '" + detail_path + "'")
-        }
-        project = *(details.Project)
-
-        project_dir := filepath.Join(registry, project)
-        info, err := os.Stat(project_dir)
-        if err != nil || info.IsDir() {
-            return nil, fmt.Errorf("failed to inspect the requested project directory '" + project + "'; %w", err)
-        }
-
-        perm_path := filepath.Join(project_dir, "..permissions")
-        perm_handle, err := os.ReadFile(perm_path)
-        if err != nil {
-            return nil, fmt.Errorf("failed to read permissions for '" + project + "'; %w", err)
-        }
-
-        var perms Permissions
-        err = json.Unmarshal(perm_handle, &perms)
-        if err != nil {
-            return nil, fmt.Errorf("failed to parse JSON from '" + perm_path + "'; %w", err)
-        }
-
-        okay := false
-        for _, s := range(perms.Owners) {
-            if s == username {
-                okay = true
-            }
-        }
-        if !okay {
-            return nil, fmt.Errorf("user '" + username + "' is not listed as an owner for '" + project + "'")
-        }
-
-    } else {
-        return nil, errors.New("unknown action '" + action + "' in '" + detail_path + "'")
+    asset_dir := filepath.Join(project_dir, asset)
+    version, err := process_version(asset_dir, &details)
+    if err != nil {
+        return nil, fmt.Errorf("failed to process the version for '" + source + "'; %w", err)
     }
 
     /***********************************
      *** Choosing a new version name ***
      ***********************************/
 
-    project_dir := filepath.Join(registry, project)
-
-    version, err := func() (string, error) {
-        version_path := filepath.Join(project_dir, "..latest")
-        handle, err := lock(version_path + ".LOCK", 10000 * time.Second)
-        if err != nil {
-            return "", err
-        }
-        defer unlock(handle)
-
-        candidate_name, err := increment_series("", version_path, project_dir)
-        if err != nil {
-            return "", err
-        }
-        candidate_path := filepath.Join(project_dir, candidate_name)
-        err = os.Mkdir(candidate_path, 0755)
-        if err != nil {
-            return "", fmt.Errorf("failed to create a new version directory at '" + candidate_path + "'; %w", err)
-        }
-
-        return candidate_name, nil
-    }()
-
-    if err != nil {
-        return nil, err
-    }
-
-    return &Configuration{ Project: project, Version: version, User: username }, nil
+    return &Configuration{ 
+        Project: project, 
+        Asset: asset, 
+        Version: version, 
+        User: username,
+        UploadStart: time.Now().Format(time.RFC3339),
+    }, nil
 }
