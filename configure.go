@@ -97,11 +97,11 @@ func increment_series(prefix string, dir string) (string, error) {
 }
 
 type Request struct {
-    Prefix *string `json:prefix`
-    Project *string `json:project`
-    Version *string `json:version`
-    Asset *string `json:asset`
-    Permissions Permissions `json:permissions`
+    Prefix *string `json:"prefix"`
+    Project *string `json:"project"`
+    Version *string `json:"version"`
+    Asset *string `json:"asset"`
+    Permissions Permissions `json:"permissions"`
 }
 
 func create_new_project_directory(dir string, username string, details *Request) error {
@@ -158,9 +158,9 @@ func process_project(registry string, username string, details *Request) (string
             return "", errors.New("expected a 'prefix' property in the request details")
         }
         prefix := *(details.Prefix)
-        re, _ := regexp.Compile("^[A-Z][a-zA-Z-]+$")
-        if re.MatchString(prefix) {
-            return "", errors.New("prefix must start with an upper-case letter and contain only a-z, A-Z or a dash (got '" + prefix + "')")
+        re, _ := regexp.Compile("^[A-Z]+$")
+        if !re.MatchString(prefix) {
+            return "", errors.New("prefix must contain only uppercase letters (got '" + prefix + "')")
         }
 
         candidate_name, err := increment_series(prefix, registry)
@@ -346,10 +346,6 @@ func Configure(source string, registry string) (*Configuration, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to process the version for '" + source + "'; %w", err)
     }
-
-    /***********************************
-     *** Choosing a new version name ***
-     ***********************************/
 
     return &Configuration{ 
         Project: project, 

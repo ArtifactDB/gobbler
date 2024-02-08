@@ -12,16 +12,16 @@ import (
 // Just providing uploaders for consistency with gypsum's format
 // for the time being, but this should never actually be used.
 type Uploader struct {
-    Id *string `json:id`
-    Asset *string `json:asset`
-    Version *string `json:version`
-    Until *string `json:until`
-    Trusted *string `json:trusted`
+    Id *string `json:"id"`
+    Asset *string `json:"asset"`
+    Version *string `json:"version"`
+    Until *string `json:"until"`
+    Trusted *string `json:"trusted"`
 }
 
 type Permissions struct {
-    Owners []string `json:owners`
-    Uploaders []Uploader `json:uploaders`
+    Owners []string `json:"owners"`
+    Uploaders []Uploader `json:"uploaders"`
 }
 
 func IdentifyUser(path string) (string, error) {

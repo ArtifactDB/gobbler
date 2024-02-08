@@ -7,6 +7,8 @@ import (
     "os"
     "strings"
     "fmt"
+    "encoding/json"
+    "os/user"
 )
 
 func TestIsBadName(t *testing.T) {
@@ -104,7 +106,7 @@ func setup_for_configure_test(request string) (string, string, error) {
     return reg, dir, nil
 }
 
-func TestConfigureBasic(t *testing.T) {
+func TestConfigureNewProjectBasic(t *testing.T) {
     registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\", \"version\": \"whee\" }")
     if err != nil {
         t.Fatal(err)
@@ -125,5 +127,166 @@ func TestConfigureBasic(t *testing.T) {
 
     if config.Version != "whee" {
         t.Fatalf("unexpected value for the version name (%s)", config.Version)
+    }
+
+    // Checking the various bits and pieces.
+    {
+        perm_raw, err := os.ReadFile(filepath.Join(registry, config.Project, "..permissions"))
+        if err != nil {
+            t.Fatalf("failed to read the permissions; %v", err)
+        }
+        deets := struct { Owners []string `json:"owners"` }{}
+        err = json.Unmarshal(perm_raw, &deets)
+        if err != nil {
+            t.Fatalf("failed to parse the permissions; %v", err)
+        }
+        self, err := user.Current()
+        if err != nil {
+            t.Fatalf("failed to get the current user; %v", err)
+        }
+        if len(deets.Owners) != 1 || deets.Owners[0] != self.Username {
+            t.Fatalf("expected the current user in the set of permissions")
+        }
+    }
+
+    {
+        usage_raw, err := os.ReadFile(filepath.Join(registry, config.Project, "..usage"))
+        if err != nil {
+            t.Fatalf("failed to read the usage; %v", err)
+        }
+        deets := struct { Total int `json:"total"` }{ Total: 100 }
+        err = json.Unmarshal(usage_raw, &deets)
+        if err != nil {
+            t.Fatalf("failed to parse the usage; %v", err)
+        }
+        if deets.Total != 0 {
+            t.Fatalf("expected the total to be zero")
+        }
+    }
+
+    {
+        quota_raw, err := os.ReadFile(filepath.Join(registry, config.Project, "..quota"))
+        if err != nil {
+            t.Fatalf("failed to read the quota; %v", err)
+        }
+        deets := struct { 
+            Baseline int `json:"baseline"` 
+            GrowthRate int `json:"growth_rate"` 
+            Year int `json:"year"` 
+        }{}
+        err = json.Unmarshal(quota_raw, &deets)
+        if err != nil {
+            t.Fatalf("failed to parse the quota; %v", err)
+        }
+        if !(deets.Baseline > 0 && deets.GrowthRate > 0 && deets.Year > 0) {
+            t.Fatalf("uninitialized fields in the quota")
+        }
+    }
+}
+
+func TestConfigureNewProjectBasicFailures(t *testing.T) {
+    {
+        registry, src, err := setup_for_configure_test("{ \"project\": \"FOO\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+        if err != nil {
+            t.Fatal(err)
+        }
+        _, err = Configure(src, registry)
+        if err == nil || !strings.Contains(err.Error(), "uppercase") {
+            t.Fatal("configuration should fail for upper-cased project names")
+        }
+    }
+
+    {
+        registry, src, err := setup_for_configure_test("{ \"project\": \"..foo\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+        if err != nil {
+            t.Fatal(err)
+        }
+        _, err = Configure(src, registry)
+        if err == nil || !strings.Contains(err.Error(), "invalid project name") {
+            t.Fatal("configuration should fail for invalid project name")
+        }
+    }
+
+    {
+        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"..BAR\", \"version\": \"whee\" }")
+        if err != nil {
+            t.Fatal(err)
+        }
+        _, err = Configure(src, registry)
+        if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
+            t.Fatal("configuration should fail for invalid asset name")
+        }
+    }
+
+    {
+        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\", \"version\": \"..whee\" }")
+        if err != nil {
+            t.Fatal(err)
+        }
+        _, err = Configure(src, registry)
+        if err == nil || !strings.Contains(err.Error(), "invalid version name") {
+            t.Fatal("configuration should fail for invalid version name")
+        }
+    }
+
+    {
+        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\" }")
+        if err != nil {
+            t.Fatal(err)
+        }
+        _, err = Configure(src, registry)
+        if err == nil || !strings.Contains(err.Error(), "without a version series") {
+            t.Fatal("configuration should fail for missing versions")
+        }
+    }
+}
+
+func TestConfigureNewProjectSeries(t *testing.T) {
+    registry, src, err := setup_for_configure_test("{ \"prefix\": \"FOO\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    config, err := Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Project != "FOO1" {
+        t.Fatalf("unexpected value for the project name (%s)", config.Project)
+    }
+
+    // Check check that everything was created.
+    if _, err := os.Stat(filepath.Join(registry, config.Project, "..permissions")); err != nil {
+        t.Fatalf("permissions file was not created")
+    }
+
+    config, err = Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Project != "FOO2" {
+        t.Fatalf("unexpected value for the project name (%s)", config.Project)
+    }
+}
+
+func TestConfigureNewProjectSeriesFailures(t *testing.T) {
+    registry, src, err := setup_for_configure_test("{ \"asset\": \"BAR\", \"version\": \"whee\" }")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    _, err = Configure(src, registry)
+    if err == nil || !strings.Contains(err.Error(), "expected a 'prefix'") {
+        t.Fatalf("configuration should have failed without a prefix")
+    }
+
+    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"prefix\": \"foo\", \"asset\": \"BAR\", \"version\": \"whee\" }"), 0644)
+    if err != nil {
+        t.Fatalf("failed to write a new request; %v", err)
+    }
+
+    _, err = Configure(src, registry)
+    if err == nil || !strings.Contains(err.Error(), "only uppercase") {
+        t.Fatalf("configuration should have failed with non-uppercase prefix")
     }
 }
