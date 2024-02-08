@@ -5,10 +5,11 @@ import (
     "fmt"
     "os"
     "io"
+    "io/fs"
 )
 
 func Transfer(source, destination string) error {
-    return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+    return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + path + "'; %w", err)
         }
@@ -25,6 +26,35 @@ func Transfer(source, destination string) error {
             }
             return nil
         } 
+
+        restat, err := info.Info()
+        if err != nil {
+            return fmt.Errorf("failed to inspect '" + path + "'; %w", err)
+        }
+
+        // Symlinks to files inside the destination directory are preserved. We
+        // convert them to a relative path within the registry so that the
+        // registry itself is fully relocatable.
+        if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
+            target, err := os.Readlink(path)
+            if err != nil {
+                return fmt.Errorf("failed to read the symlink at '" + path + "'; %w", err)
+            }
+
+            inside, err := filepath.Rel(destination, target)
+            if err == nil {
+                chomped := rel
+                for chomped != "." {
+                    chomped = filepath.Dir(chomped)
+                    inside = filepath.Join("..", inside)
+                }
+                err := os.Symlink(inside, final)
+                if err != nil {
+                    return fmt.Errorf("failed to create a relative symlink at '" + final + "' to '" + target + "'; %w", err)
+                }
+                return nil
+            }
+        }
 
         // Slightly ridiculous to just copy a damn file.
         func() {
