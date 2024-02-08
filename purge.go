@@ -8,7 +8,7 @@ import (
     "errors"
 )
 
-func PurgeOldFiles(dir string) error {
+func PurgeOldFiles(dir string, limit time.Duration) error {
     var to_delete []string
     present := time.Now()
     messages := []string{}
@@ -23,7 +23,7 @@ func PurgeOldFiles(dir string) error {
         }
 
         delta := present.Sub(info.ModTime())
-        if (delta.Hours() >= 7 * 24) {
+        if (delta > limit) {
             to_delete = append(to_delete, path)
         }
 

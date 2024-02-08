@@ -141,7 +141,7 @@ func main() {
     go func() {
         for {
             <-ticker.C
-            err := PurgeOldFiles(staging)
+            err := PurgeOldFiles(staging, time.Hour * 24 * 7)
             if err != nil {
                 log.Println(err)
             }
