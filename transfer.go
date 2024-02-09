@@ -294,9 +294,8 @@ func Transfer(source, registry, project, asset, version string) error {
         return err
     }
 
-
-    // Dumping the various bits and pieces.
-    manifest_str, err := json.Marshal(&manifest)
+    // Dumping the JSON metadata.
+    manifest_str, err := json.MarshalIndent(&manifest, "", "    ")
     if err != nil {
         return fmt.Errorf("failed to convert the manifest to JSON; %w", err)
     }
@@ -304,6 +303,18 @@ func Transfer(source, registry, project, asset, version string) error {
     err = os.WriteFile(manifest_path, manifest_str, 0644)
     if err != nil {
         return fmt.Errorf("failed to save the manifest to '" + manifest_path + "'; %w", err)
+    }
+
+    for k, v := range links {
+        link_str, err := json.MarshalIndent(&v, "", "    ")
+        if err != nil {
+            return fmt.Errorf("failed to convert link for '" + k + "' to JSON; %w", err)
+        }
+        link_path := filepath.Join(destination, k)
+        err = os.WriteFile(link_path, link_str, 0644)
+        if err != nil {
+            return fmt.Errorf("failed to save the manifest to '" + link_path + "'; %w", err)
+        }
     }
 
     return err
