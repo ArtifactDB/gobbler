@@ -1,15 +1,198 @@
 package main
 
 import (
+    "crypto/md5"
     "path/filepath"
     "fmt"
     "os"
     "io"
     "io/fs"
+    "encoding/hex"
+    "encoding/json"
+    "errors"
+    "strconv"
 )
 
-func Transfer(source, destination string) error {
-    return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
+func copy_file(src, dest string) error {
+    in, err := os.Open(src)
+    if err != nil {
+        return fmt.Errorf("failed to open input file at '" + src + "'; %w", err)
+    }
+    defer in.Close()
+
+    out, err := os.OpenFile(dest, os.O_CREATE, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to open output file at '" + dest + "'; %w", err)
+    }
+    is_closed := false
+    defer func() {
+        // Don't unconditionally close it, because we need to check
+        // whether the close (and thus sync) was successful.
+        if !is_closed {
+            out.Close()
+        }
+    }()
+
+    _, err = io.Copy(out, in)
+    if err != nil {
+        return fmt.Errorf("failed to copy '" + src + "' to '" + dest + "'; %w", err)
+    }
+
+    err = out.Close()
+    is_closed = true
+    if err != nil {
+        return fmt.Errorf("failed to close output file at '" + dest + "'; %w", err)
+    }
+
+    return nil
+}
+
+func compute_checksum(path string) (string, error) {
+    in, err_ := os.Open(path)
+    if err_ != nil {
+        return "", fmt.Errorf("failed to open '" + path + "'; %w", err_)
+    }
+    defer in.Close()
+
+    h := md5.New()
+    _, err := io.Copy(h, in)
+    if err != nil {
+        return "", fmt.Errorf("failed to hash '" + path + "'; %w", err_)
+    }
+
+    return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func resolve_symlink(
+    registry string,
+    project string,
+    asset string,
+    version string,
+    relative_target string,
+    manifest_cache map[string]map[string]ManifestEntry,
+    summary_cache map[string]bool,
+) (*ManifestEntry, error) {
+
+    fragments := filepath.SplitList(relative_target)
+    if len(fragments) <= 3 {
+        return nil, errors.New("unexpected link to file outside of a project asset version directory ('" + relative_target + "')")
+    }
+
+    if fragments[0] == project && fragments[1] == asset && fragments[2] == version {
+        return nil, errors.New("cannot link to file inside the currently-transferring project asset version directory ('" + relative_target + "')")
+    }
+
+    key := filepath.Join(fragments[0:3]...)
+
+    // Technically we don't have support for probation yet, 
+    // but I'll add it here just in case I forget later.
+    prob, ok := summary_cache[key]
+    if !ok {
+        summary_raw, err := os.ReadFile(filepath.Join(registry, key, "..summary"))
+        if err != nil {
+            return nil, fmt.Errorf("cannot read the summary file for '" + key + "'; %w", err)
+        }
+
+        info := struct { OnProbation bool `json:"on_probation"` }{ OnProbation: false }
+        err = json.Unmarshal(summary_raw, &info)
+        if err != nil {
+            return nil, fmt.Errorf("cannot parse the summary file for '" + key + "'; %w", err)
+        }
+
+        prob = info.OnProbation
+        summary_cache[key] = prob
+    }
+    if prob {
+        return nil, errors.New("cannot link to file inside a probational project version asset directory ('" + key + "')")
+    }
+
+    tpath := filepath.Join(fragments[3:]...)
+    output := ManifestEntry{
+        Link: &LinkMetadata{
+            Project: fragments[0],
+            Asset: fragments[1],
+            Version: fragments[2],
+            Path: tpath,
+        },
+    }
+
+    // Pulling out the size and MD5 checksum of our target path from the manifest.
+    manifest, ok := manifest_cache[key]
+    if !ok {
+        manifest, err := ReadManifest(filepath.Join(registry, key))
+        if err != nil {
+            return nil, fmt.Errorf("cannot read the manifest for '" + key + "'; %w", err)
+        }
+        manifest_cache[key] = manifest
+    }
+
+    found, ok := manifest[tpath]
+    if !ok {
+        return nil, errors.New("could not find link target '" + tpath + "' in the manifest of '" + key + "'")
+    }
+    output.Size = found.Size
+    output.Md5sum = found.Md5sum
+
+    // Check if our target is itself a link to something else.
+    if found.Link != nil {
+        if found.Link.Ancestor != nil {
+            output.Link.Ancestor = found.Link.Ancestor
+        } else {
+            output.Link.Ancestor = found.Link
+        }
+    }
+
+    return &output, nil
+}
+
+func Transfer(source, registry, project, asset, version string) error {
+    destination := filepath.Join(registry, project, asset, version)
+    manifest := map[string]interface{}{}
+    links := map[string]map[string]LinkMetadata{}
+    manifest_cache := map[string]map[string]ManifestEntry{}
+    summary_cache := map[string]bool{}
+
+    // Loading the latest version's metadata into a deduplication index.
+    last_dedup := map[string]LinkMetadata{}
+    {
+        asset_dir := filepath.Join(registry, project, asset)
+        latest_path := filepath.Join(asset_dir, LatestFileName)
+
+        _, err := os.Stat(latest_path)
+        if err == nil {
+            latest, err := ReadLatest(asset_dir)
+            if err != nil {
+                return fmt.Errorf("failed to identify the latest version; %w", err)
+            }
+
+            manifest, err := ReadManifest(filepath.Join(asset_dir, latest.Latest))
+            if err != nil {
+                return fmt.Errorf("failed to read the latest version's manifest; %w", err)
+            }
+
+            for k, v := range manifest {
+                self := LinkMetadata{
+                    Project: project,
+                    Asset: asset,
+                    Version: latest.Latest,
+                    Path: k,
+                }
+                if v.Link != nil {
+                    if v.Link.Ancestor != nil {
+                        self.Ancestor = v.Link.Ancestor
+                    } else {
+                        self.Ancestor = v.Link
+                    }
+                }
+                last_dedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
+            }
+
+        } else if !errors.Is(err, os.ErrNotExist) {
+            return fmt.Errorf("failed to stat '" + latest_path + "; %w", err)
+        }
+    }
+
+    err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + path + "'; %w", err)
         }
@@ -17,7 +200,11 @@ func Transfer(source, destination string) error {
             return nil
         }
 
-        rel, _ := filepath.Rel(source, path)
+        rel, err := filepath.Rel(source, path)
+        if err != nil {
+            return fmt.Errorf("failed to convert '" + path + "' into a relative path; %w", err);
+        }
+
         final := filepath.Join(destination, rel)
         if info.IsDir() {
             err := os.MkdirAll(final, 0755)
@@ -25,16 +212,13 @@ func Transfer(source, destination string) error {
                 return fmt.Errorf("failed to create a destination directory at '" + rel + "'; %w", err)
             }
             return nil
-        } 
-
-        restat, err := info.Info()
-        if err != nil {
-            return fmt.Errorf("failed to inspect '" + path + "'; %w", err)
         }
 
-        // Symlinks to files inside the destination directory are preserved. We
-        // convert them to a relative path within the registry so that the
-        // registry itself is fully relocatable.
+        // Symlinks to files inside the destination directory are preserved.
+        restat, err := info.Info()
+        if err != nil {
+            return fmt.Errorf("failed to stat '" + path + "'; %w", err)
+        }
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
             target, err := os.Readlink(path)
             if err != nil {
@@ -43,65 +227,69 @@ func Transfer(source, destination string) error {
 
             inside, err := filepath.Rel(destination, target)
             if err == nil {
-                chomped := rel
-                for chomped != "." {
-                    chomped = filepath.Dir(chomped)
-                    inside = filepath.Join("..", inside)
-                }
-                err := os.Symlink(inside, final)
+                obj, err := resolve_symlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
                 if err != nil {
-                    return fmt.Errorf("failed to create a relative symlink at '" + final + "' to '" + target + "'; %w", err)
+                    return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
                 }
+                manifest[rel] = *obj
+
+                // Actually creating the link. We convert it to a relative path
+                // within the registry so that the registry is relocatable.
+                nsteps := len(filepath.SplitList(rel)) - 1
+                reltarget := inside
+                for i := 0; i < nsteps; i++ {
+                    reltarget = filepath.Join("..", reltarget)
+                }
+                err = os.Symlink(reltarget, path)
+                if err != nil {
+                    return fmt.Errorf("failed to create a symlink at '" + path + "'; %w", err)
+                }
+
+                subdir, base := filepath.Split(rel)
+                sublinks, ok := links[subdir]
+                if !ok {
+                    sublinks = map[string]LinkMetadata{}
+                    links[subdir] = sublinks
+                }
+                sublinks[base] = *(obj.Link)
                 return nil
             }
         }
 
-        // Slightly ridiculous to just copy a damn file.
-        func() {
-            in, err_ := os.Open(path)
-            if err_ != nil {
-                err = fmt.Errorf("failed to open input file at '" + path + "'; %w", err_)
-                return
-            }
-            defer in.Close()
-
-            out, err_ := os.OpenFile(final, os.O_CREATE, 0644)
-            if err_ != nil {
-                err = fmt.Errorf("failed to open output file at '" + final + "'; %w", err_)
-                return
-            }
-            defer func() {
-                err_ = out.Close()
-                if err_ == nil {
-                    err = fmt.Errorf("failed to close output file at '" + final + "'; %w", err_)
-                }
-            }()
-
-            _, err_ = io.Copy(in, out)
-            if err_ != nil {
-                err = fmt.Errorf("failed to copy '" + rel + "' to the destination; %w", err_)
-                return
-            }
-        }()
+        insum, err := compute_checksum(path)
         if err != nil {
-            return err
+            return fmt.Errorf("failed to hash the source file; %w", err)
         }
 
-        // Double-checking that the source and destination file sizes are equal.
-        pinfo, err := os.Stat(path)
+        man_entry := ManifestEntry{
+            Size: restat.Size(),
+            Md5sum: insum,
+        }
+
+        // Seeing if we can create a link to the last version of the file with the same md5sum.
+        last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
+        if ok {
+            man_entry.Link = &last_entry
+            manifest[rel] = man_entry
+            return nil
+        }
+
+        err = copy_file(path, final)
         if err != nil {
-            return fmt.Errorf("failed to inspect '" + path + "'; %w", err)
+            return fmt.Errorf("failed to copy; %w", err)
         }
 
-        finfo, err := os.Stat(final)
+        finalsum, err := compute_checksum(final)
         if err != nil {
-            return fmt.Errorf("failed to inspect '" + final + "'; %w", err)
+            return fmt.Errorf("failed to hash the destination file; %w", err)
+        }
+        if finalsum != insum {
+            return errors.New("mismatch in checksums between source and destination files for '" + rel + "'")
         }
 
-        if pinfo.Size() != finfo.Size() {
-            return fmt.Errorf("did not fully copy the contents of '" + rel + "' to the destination")
-        }
-
+        manifest[rel] = man_entry
         return nil
     })
+
+    return err
 }
