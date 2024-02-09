@@ -11,6 +11,7 @@ import (
     "encoding/json"
     "errors"
     "strconv"
+    "strings"
 )
 
 func copy_file(src, dest string) error {
@@ -73,19 +74,31 @@ func resolve_symlink(
     summary_cache map[string]bool,
 ) (*ManifestEntry, error) {
 
-    fragments := filepath.SplitList(relative_target)
+    fragments := []string{}
+    working := relative_target
+    for working != "." {
+        fragments = append(fragments, filepath.Base(working))
+        working = filepath.Dir(working)
+    }
     if len(fragments) <= 3 {
         return nil, errors.New("unexpected link to file outside of a project asset version directory ('" + relative_target + "')")
     }
 
-    if fragments[0] == project && fragments[1] == asset && fragments[2] == version {
+    for i := 0; i < len(fragments) / 2; i++ {
+        o := len(fragments) - i - 1
+        fragments[i], fragments[o] = fragments[o], fragments[i]
+    }
+
+    tproject := fragments[0]
+    tasset := fragments[1]
+    tversion := fragments[2]
+    if tproject == project && tasset == asset && tversion == version {
         return nil, errors.New("cannot link to file inside the currently-transferring project asset version directory ('" + relative_target + "')")
     }
 
-    key := filepath.Join(fragments[0:3]...)
+    key := filepath.Join(tproject, tasset, tversion)
 
-    // Technically we don't have support for probation yet, 
-    // but I'll add it here just in case I forget later.
+    // Prohibit links to probational version.
     prob, ok := summary_cache[key]
     if !ok {
         summary_raw, err := os.ReadFile(filepath.Join(registry, key, "..summary"))
@@ -109,9 +122,9 @@ func resolve_symlink(
     tpath := filepath.Join(fragments[3:]...)
     output := ManifestEntry{
         Link: &LinkMetadata{
-            Project: fragments[0],
-            Asset: fragments[1],
-            Version: fragments[2],
+            Project: tproject,
+            Asset: tasset,
+            Version: tversion,
             Path: tpath,
         },
     }
@@ -119,10 +132,11 @@ func resolve_symlink(
     // Pulling out the size and MD5 checksum of our target path from the manifest.
     manifest, ok := manifest_cache[key]
     if !ok {
-        manifest, err := ReadManifest(filepath.Join(registry, key))
+        manifest_, err := ReadManifest(filepath.Join(registry, key))
         if err != nil {
             return nil, fmt.Errorf("cannot read the manifest for '" + key + "'; %w", err)
         }
+        manifest = manifest_
         manifest_cache[key] = manifest
     }
 
@@ -175,6 +189,8 @@ func Transfer(source, registry, project, asset, version string) error {
     summary_cache := map[string]bool{}
 
     // Loading the latest version's metadata into a deduplication index.
+    // There's no need to check for probational versions here as only
+    // non-probational versions ever make it into '..latest'.
     last_dedup := map[string]LinkMetadata{}
     {
         asset_dir := filepath.Join(registry, project, asset)
@@ -218,9 +234,6 @@ func Transfer(source, registry, project, asset, version string) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + path + "'; %w", err)
         }
-        if path == source {
-            return nil
-        }
 
         rel, err := filepath.Rel(source, path)
         if err != nil {
@@ -236,19 +249,21 @@ func Transfer(source, registry, project, asset, version string) error {
             return nil
         }
 
-        // Symlinks to files inside the destination directory are preserved.
         restat, err := info.Info()
         if err != nil {
             return fmt.Errorf("failed to stat '" + path + "'; %w", err)
         }
+        insize := restat.Size()
+
+        // Symlinks to files inside the destination directory are preserved.
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
             target, err := os.Readlink(path)
             if err != nil {
                 return fmt.Errorf("failed to read the symlink at '" + path + "'; %w", err)
             }
 
-            inside, err := filepath.Rel(destination, target)
-            if err == nil {
+            inside, err := filepath.Rel(registry, target)
+            if err == nil && !strings.HasPrefix(inside, "../") {
                 obj, err := resolve_symlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
                 if err != nil {
                     return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
@@ -269,6 +284,13 @@ func Transfer(source, registry, project, asset, version string) error {
                 sublinks[base] = *(obj.Link)
                 return nil
             }
+
+            // Otherwise we need to compute the actual size.
+            stat, err := os.Stat(target)
+            if err != nil {
+                return fmt.Errorf("failed to stat link target '" + path + "'; %w", err)
+            }
+            insize = stat.Size()
         }
 
         insum, err := compute_checksum(path)
@@ -277,7 +299,7 @@ func Transfer(source, registry, project, asset, version string) error {
         }
 
         man_entry := ManifestEntry{
-            Size: restat.Size(),
+            Size: insize,
             Md5sum: insum,
         }
 
@@ -329,10 +351,10 @@ func Transfer(source, registry, project, asset, version string) error {
         if err != nil {
             return fmt.Errorf("failed to convert link for '" + k + "' to JSON; %w", err)
         }
-        link_path := filepath.Join(destination, k)
+        link_path := filepath.Join(destination, k, LinksFileName)
         err = os.WriteFile(link_path, link_str, 0644)
         if err != nil {
-            return fmt.Errorf("failed to save the manifest to '" + link_path + "'; %w", err)
+            return fmt.Errorf("failed to save links to '" + link_path + "'; %w", err)
         }
     }
 

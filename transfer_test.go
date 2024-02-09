@@ -4,85 +4,70 @@ import (
     "testing"
     "os"
     "path/filepath"
-    "io/ioutil"
     "fmt"
     "strings"
     "errors"
 )
 
-func setup_source_and_registry(project, asset, version string) (string, string, error) {
-    reg, err := ioutil.TempDir("", "")
+func setup_source() (string, error) {
+    src, err := os.MkdirTemp("", "")
     if err != nil {
-        return "", "", fmt.Errorf("failed to create the registry; %w", err)
+        return "", fmt.Errorf("failed to create the temporary directory; %w", err)
     }
 
-    dir, err := ioutil.TempDir("", "")
+    err = os.WriteFile(filepath.Join(src, "type"), []byte("electric"), 0644)
     if err != nil {
-        return "", "", fmt.Errorf("failed to create the temporary directory; %w", err)
-    }
-
-    target := filepath.Join(reg, project, asset, version)
-    err = os.MkdirAll(target, 0755)
-    if err != nil {
-        return "", "", fmt.Errorf("failed to create the version directory; %w", err)
-    }
-
-    return reg, dir, nil
-}
-
-func mock_source(src string) error {
-    err := os.WriteFile(filepath.Join(src, "type"), []byte("electric"), 0644)
-    if err != nil {
-        return err
+        return "", err
     }
 
     err = os.Mkdir(filepath.Join(src, "evolution"), 0755)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "evolution", "up"), []byte("raichu"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "evolution", "down"), []byte("pichu"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
 
     err = os.Mkdir(filepath.Join(src, "moves"), 0755)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.Mkdir(filepath.Join(src, "moves", "electric"), 0755)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunder_shock"), []byte("40"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunderbolt"), []byte("90"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunder"), []byte("110"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
+
     err = os.Mkdir(filepath.Join(src, "moves", "normal"), 0755)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "moves", "normal", "quick_attack"), []byte("40"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
     err = os.WriteFile(filepath.Join(src, "moves", "normal", "double_team"), []byte("0"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
 
-    return nil
+    return src, nil
 }
 
 func verify_file_contents(path, contents string) error {
@@ -101,15 +86,14 @@ func TestTransferSimple(t *testing.T) {
     asset := "pikachu"
     version := "red"
 
-    reg, src, err := setup_source_and_registry(project, asset, version)
+    reg, err := os.MkdirTemp("", "")
     if err != nil {
-        t.Fatalf("failed to set up test directories; %v", err)
+        t.Fatalf("failed to create the registry; %v", err)
     }
 
-    // Mocking up a directory structure.
-    err = mock_source(src)
+    src, err := setup_source()
     if err != nil {
-        t.Fatalf("failed to mock up source contents; %v", err)
+        t.Fatalf("failed to set up test directories; %v", err)
     }
 
     // Executing the transfer.
@@ -253,18 +237,18 @@ func TestTransferDeduplication(t *testing.T) {
     asset := "pikachu"
     version := "red"
 
-    reg, src, err := setup_source_and_registry(project, asset, version)
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setup_source()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
-    // Mocking up a directory structure and executing the first transfer.
+    // Executing the first transfer.
     {
-        err = mock_source(src)
-        if err != nil {
-            t.Fatalf("failed to mock up source contents; %v", err)
-        }
-
         err = Transfer(src, reg, project, asset, version)
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
@@ -457,3 +441,265 @@ func TestTransferDeduplication(t *testing.T) {
     }
 }
 
+func TestTransferLinks(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setup_source()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Mocking up a directory structure and executing a series of transfers to create appropriate links. 
+    {
+        project := "pokemon"
+        asset := "pikachu"
+
+        err = Transfer(src, reg, project, asset, "red")
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, "red", SummaryFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"red\" }"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = Transfer(src, reg, project, asset, "blue")
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, "blue", SummaryFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"blue\" }"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = Transfer(src, reg, project, asset, "green")
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, "green", SummaryFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"green\" }"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+    }
+
+    // Making a new source with links to the registry.
+    {
+        src, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create a new source directory; %v", err)
+        }
+
+        err = os.Mkdir(filepath.Join(src, "types"), 0755)
+        if err != nil {
+            t.Fatalf("failed to create an 'types' subdirectory; %v", err)
+        }
+        err = os.Symlink(filepath.Join(reg, "pokemon", "pikachu", "red", "type"), filepath.Join(src, "types", "first"))
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'types/first'; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(src, "types", "second"), []byte("steel"), 0644)
+        if err != nil {
+            t.Fatalf("failed to write file for 'types/second'; %v", err)
+        }
+
+        err = os.MkdirAll(filepath.Join(src, "moves", "electric"), 0755)
+        if err != nil {
+            t.Fatalf("failed to create an 'moves/electric' subdirectory; %v", err)
+        }
+        err = os.Symlink(filepath.Join(reg, "pokemon", "pikachu", "blue", "moves", "electric", "thunderbolt"), filepath.Join(src, "moves", "electric", "THUNDERBOLT"))
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'moves/electric/THUNDERBOLT'; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(reg, "pokemon", "pikachu", "green", "evolution", "down"), filepath.Join(src, "best_friend"))
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'best_friend'; %v", err)
+        }
+
+        project := "more_pokemon"
+        asset := "magneton"
+        err = Transfer(src, reg, project, asset, "kanto")
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        destination := filepath.Join(reg, project, asset, "kanto")
+        man, err := ReadManifest(destination)
+        if err != nil {
+            t.Fatalf("failed to read the manifest; %v", err)
+        }
+
+        err = verify_symlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = verify_symlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verify_ancestral_symlink(man, destination, "moves/electric/THUNDERBOLT", reg, "pokemon", "pikachu", "red", "moves/electric/thunderbolt")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = verify_symlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verify_ancestral_symlink(man, destination, "best_friend", reg, "pokemon", "pikachu", "red", "evolution/down")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = verify_not_symlink(man, destination, "types/second", "steel")
+        if err != nil {
+            t.Fatal(err)
+        }
+    }
+}
+
+func TestTransferLinkFailures(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    // Links to irrelevant files are copied.
+    {
+        src, err := setup_source()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        other, err := os.CreateTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create a random temporary file; %v", err)
+        }
+        if _, err := other.WriteString("gotta catch em all"); err != nil {
+            t.Fatalf("failed to write a random temporary file; %v", err)
+        }
+        other_name := other.Name()
+        if err := other.Close(); err != nil {
+            t.Fatalf("failed to close a random temporary file; %v", err)
+        }
+
+        err = os.Symlink(other_name, filepath.Join(src, "asdasd"))
+        if err != nil {
+            t.Fatalf("failed to create a test link to a random file")
+        }
+
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "SILVER"
+        err = Transfer(src, reg, project, asset, version)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        destination := filepath.Join(reg, project, asset, version)
+        man, err := ReadManifest(destination)
+        if err != nil {
+            t.Fatalf("failed to read the manifest; %v", err)
+        }
+
+        err = verify_not_symlink(man, destination, "asdasd", "gotta catch em all")
+        if err != nil {
+            t.Fatal(err)
+        }
+    }
+
+    // Links to loose files in the registry are forbidden.
+    {
+        src, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        other_path := filepath.Join(reg, "FOOBAR")
+        if err := os.WriteFile(other_path, []byte("gotta catch em all"), 0644); err != nil {
+            t.Fatalf("failed to write a random temporary file; %v", err)
+        }
+
+        err = os.Symlink(other_path, filepath.Join(src, "asdasd"))
+        if err != nil {
+            t.Fatalf("failed to create a test link to a random file")
+        }
+
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "GOLD"
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "outside of a project asset version directory") {
+            t.Fatal(err)
+        }
+    }
+
+    // Links to the currently transferring project are forbidden.
+    {
+        src, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "GOLD"
+        err = os.Symlink(filepath.Join(reg, project, asset, version, "missing"), filepath.Join(src, "asdasd"))
+        if err != nil {
+            t.Fatalf("failed to create a test link to a random file")
+        }
+
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "currently-transferring") {
+            t.Fatal(err)
+        }
+    }
+
+    // Links to probational versions are forbidden.
+    {
+        src, err := setup_source()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "GYARADOS"
+        version := "yellow"
+        err = Transfer(src, reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, SummaryFileName), []byte(`{ "on_probation": true }`), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(reg, project, asset, version, "type"), filepath.Join(src, "asdasd"))
+        if err != nil {
+            t.Fatalf("failed to create a test link to a registry file")
+        }
+
+        version = "crystal"
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "probational") {
+            t.Fatal(err)
+        }
+    }
+}

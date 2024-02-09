@@ -18,7 +18,7 @@ type LinkMetadata struct {
 type ManifestEntry struct {
     Size int64 `json:"size"`
     Md5sum string `json:"md5sum"`
-    Link *LinkMetadata `json:"link"`
+    Link *LinkMetadata `json:"link,omitempty"`
 }
 
 const ManifestFileName = "..manifest"
