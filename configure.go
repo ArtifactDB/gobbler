@@ -144,75 +144,75 @@ func create_new_project_directory(dir string, username string, details *Request)
     return nil
 }
 
-func process_project(registry string, username string, details *Request) (string, error) {
+func process_project(registry string, username string, details *Request) (string, bool, error) {
     lock_path := filepath.Join(registry, "..LOCK")
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
-        return "", err
+        return "", false, err
     }
     defer Unlock(handle)
 
     // Creating a new project from a series.
     if details.Project == nil {
         if details.Prefix == nil {
-            return "", errors.New("expected a 'prefix' property in the request details")
+            return "", false, errors.New("expected a 'prefix' property in the request details")
         }
         prefix := *(details.Prefix)
         re, _ := regexp.Compile("^[A-Z]+$")
         if !re.MatchString(prefix) {
-            return "", errors.New("prefix must contain only uppercase letters (got '" + prefix + "')")
+            return "", false, errors.New("prefix must contain only uppercase letters (got '" + prefix + "')")
         }
 
         candidate_name, err := increment_series(prefix, registry)
         if err != nil {
-            return "", err
+            return "", false, err
         }
 
         err = create_new_project_directory(filepath.Join(registry, candidate_name), username, details)
         if err != nil {
-            return "", fmt.Errorf("failed to populate internals for '" + candidate_name + "'; %w", err)
+            return "", false, fmt.Errorf("failed to populate internals for '" + candidate_name + "'; %w", err)
         }
 
-        return candidate_name, nil
+        return candidate_name, true, nil
     }
 
     // Creating a new project from a pre-supplied name.
     project := *(details.Project)
     err = is_bad_name(project)
     if err != nil {
-        return "", fmt.Errorf("invalid project name; %w", err)
+        return "", false, fmt.Errorf("invalid project name; %w", err)
     }
 
     project_dir := filepath.Join(registry, project)
     info, err := os.Stat(project_dir)
     if errors.Is(err, os.ErrNotExist) {
         if unicode.IsUpper(rune(project[0])) {
-            return "", errors.New("new user-supplied project names should not start with an uppercase letter")
+            return "", false, errors.New("new user-supplied project names should not start with an uppercase letter")
         }
 
         err = create_new_project_directory(filepath.Join(registry, project), username, details)
         if err != nil {
-            return "", fmt.Errorf("failed to populate internals for '" + project + "'; %w", err)
+            return "", false, fmt.Errorf("failed to populate internals for '" + project + "'; %w", err)
         }
 
-        return project, nil
+        return project, true, nil
     }
 
     // Updating an existing directory.
     if err != nil || !info.IsDir() {
-        return "", fmt.Errorf("failed to inspect an existing project directory '" + project + "'; %w", err)
+        return "", false, fmt.Errorf("failed to inspect an existing project directory '" + project + "'; %w", err)
     }
 
     perm_path := filepath.Join(project_dir, "..permissions")
     perm_handle, err := os.ReadFile(perm_path)
     if err != nil {
-        return "", fmt.Errorf("failed to read permissions for '" + project + "'; %w", err)
+        return "", false, fmt.Errorf("failed to read permissions for '" + project + "'; %w", err)
     }
 
     var perms Permissions
     err = json.Unmarshal(perm_handle, &perms)
     if err != nil {
-        return "", fmt.Errorf("failed to parse JSON from '" + perm_path + "'; %w", err)
+        return "", false, fmt.Errorf("failed to parse JSON from '" + perm_path + "'; %w", err)
     }
 
     // Only checking owners right now; support for uploaders is not yet implemented.
@@ -223,10 +223,10 @@ func process_project(registry string, username string, details *Request) (string
         }
     }
     if !okay {
-        return "", fmt.Errorf("user '" + username + "' is not listed as an owner for '" + project + "'")
+        return "", false, fmt.Errorf("user '" + username + "' is not listed as an owner for '" + project + "'")
     }
 
-    return project, nil
+    return project, false, nil
 }
 
 func process_asset(project_dir string, details *Request) (string, error) {
@@ -253,7 +253,7 @@ func process_asset(project_dir string, details *Request) (string, error) {
     return asset, nil
 }
 
-func process_version(asset_dir string, details *Request) (string, error) {
+func process_version(asset_dir string, is_new_project bool, details *Request) (string, error) {
     lock_path := filepath.Join(asset_dir, "..LOCK")
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
@@ -266,7 +266,7 @@ func process_version(asset_dir string, details *Request) (string, error) {
     // Creating a new version from a series.
     if details.Version == nil {
         if _, err := os.Stat(series_path); errors.Is(err, os.ErrNotExist) {
-            if details.Project != nil { // check it's not a newly created project, in which case it wouldn't have a series yet.
+            if !is_new_project { // check it's not a newly created project, in which case it wouldn't have a series yet.
                 return "", errors.New("must provide 'version' in '" + asset_dir + "' initialized without a version series")
             }
         }
@@ -301,6 +301,11 @@ func process_version(asset_dir string, details *Request) (string, error) {
         return "", errors.New("version '" + version + "' already exists in '" + asset_dir + "'")
     }
 
+    err = os.Mkdir(candidate_path, 0755)
+    if err != nil {
+        return "", fmt.Errorf("failed to create a new version directory at '" + candidate_path + "'; %w", err)
+    }
+
     return version, nil
 }
 
@@ -330,7 +335,7 @@ func Configure(source string, registry string) (*Configuration, error) {
         return nil, fmt.Errorf("failed to identify the user for '" + source + "'; %w", err)
     }
 
-    project, err := process_project(registry, username, &details)
+    project, is_new, err := process_project(registry, username, &details)
     if err != nil {
         return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
     }
@@ -342,15 +347,15 @@ func Configure(source string, registry string) (*Configuration, error) {
     }
 
     asset_dir := filepath.Join(project_dir, asset)
-    version, err := process_version(asset_dir, &details)
+    version, err := process_version(asset_dir, is_new, &details)
     if err != nil {
         return nil, fmt.Errorf("failed to process the version for '" + source + "'; %w", err)
     }
 
-    return &Configuration{ 
-        Project: project, 
-        Asset: asset, 
-        Version: version, 
+    return &Configuration{
+        Project: project,
+        Asset: asset,
+        Version: version,
         User: username,
         UploadStart: time.Now().Format(time.RFC3339),
     }, nil

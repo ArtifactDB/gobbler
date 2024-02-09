@@ -228,17 +228,6 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
             t.Fatal("configuration should fail for invalid version name")
         }
     }
-
-    {
-        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\" }")
-        if err != nil {
-            t.Fatal(err)
-        }
-        _, err = Configure(src, registry)
-        if err == nil || !strings.Contains(err.Error(), "without a version series") {
-            t.Fatal("configuration should fail for missing versions")
-        }
-    }
 }
 
 func TestConfigureNewProjectSeries(t *testing.T) {
@@ -255,9 +244,15 @@ func TestConfigureNewProjectSeries(t *testing.T) {
         t.Fatalf("unexpected value for the project name (%s)", config.Project)
     }
 
-    // Check check that everything was created.
+    // Check that everything was created.
     if _, err := os.Stat(filepath.Join(registry, config.Project, "..permissions")); err != nil {
         t.Fatalf("permissions file was not created")
+    }
+    if _, err := os.Stat(filepath.Join(registry, config.Project, "..usage")); err != nil {
+        t.Fatalf("usage file was not created")
+    }
+    if _, err := os.Stat(filepath.Join(registry, config.Project, "..quota")); err != nil {
+        t.Fatalf("quota file was not created")
     }
 
     config, err = Configure(src, registry)
@@ -288,5 +283,92 @@ func TestConfigureNewProjectSeriesFailures(t *testing.T) {
     _, err = Configure(src, registry)
     if err == nil || !strings.Contains(err.Error(), "only uppercase") {
         t.Fatalf("configuration should have failed with non-uppercase prefix")
+    }
+}
+
+func TestConfigureUpdateAsset(t *testing.T) {
+    registry, src, err := setup_for_configure_test("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    _, err = Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if _, err := os.Stat(filepath.Join(registry, "aaron", "BAR", "whee")); err != nil {
+        t.Fatalf("expected creation of the target version directory")
+    }
+
+    // Trying with an existing version.
+    _, err = Configure(src, registry)
+    if err == nil || !strings.Contains(err.Error(), "already exists") {
+        t.Fatal("configuration should fail for an existing version")
+    }
+
+    // Updating with a new version.
+    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"stuff\" }"), 0644)
+    if err != nil {
+        t.Fatalf("failed to write a new request; %v", err)
+    }
+
+    _, err = Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if _, err := os.Stat(filepath.Join(registry, "aaron", "BAR", "stuff")); err != nil {
+        t.Fatalf("expected creation of the target version directory")
+    }
+
+    // Trying without any version.
+    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\" }"), 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    _, err = Configure(src, registry)
+    if err == nil || !strings.Contains(err.Error(), "initialized without a version series") {
+        t.Fatal("configuration should fail for missing version in a non-series asset")
+    }
+}
+
+func TestConfigureUpdateAssetSeries(t *testing.T) {
+    registry, src, err := setup_for_configure_test("{ \"project\": \"aaron\", \"asset\": \"BAR\" }")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    config, err := Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Version != "1" {
+        t.Fatalf("expected version series to start at 1");
+    }
+    if _, err := os.Stat(filepath.Join(registry, "aaron", "BAR", "1")); err != nil {
+        t.Fatalf("expected creation of the first version directory")
+    }
+
+    // Trying again.
+    config, err = Configure(src, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Version != "2" {
+        t.Fatalf("expected version series to continue to 2");
+    }
+    if _, err := os.Stat(filepath.Join(registry, "aaron", "BAR", "2")); err != nil {
+        t.Fatalf("expected creation of the second version directory")
+    }
+
+    // Trying with a version.
+    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"3\" }"), 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    _, err = Configure(src, registry)
+    if err == nil || !strings.Contains(err.Error(), "initialized with a version series") {
+        t.Fatal("configuration should fail for specified version in an asset with seriesc")
     }
 }
