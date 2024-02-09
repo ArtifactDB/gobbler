@@ -314,7 +314,6 @@ type Configuration struct {
     Asset string
     Version string
     User string
-    UploadStart string
 }
 
 func Configure(source string, registry string) (*Configuration, error) {
@@ -357,6 +356,5 @@ func Configure(source string, registry string) (*Configuration, error) {
         Asset: asset,
         Version: version,
         User: username,
-        UploadStart: time.Now().Format(time.RFC3339),
     }, nil
 }
