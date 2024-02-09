@@ -20,7 +20,7 @@ func copy_file(src, dest string) error {
     }
     defer in.Close()
 
-    out, err := os.OpenFile(dest, os.O_CREATE, 0644)
+    out, err := os.OpenFile(dest, os.O_CREATE | os.O_WRONLY, 0644)
     if err != nil {
         return fmt.Errorf("failed to open output file at '" + dest + "'; %w", err)
     }
@@ -276,12 +276,12 @@ func Transfer(source, registry, project, asset, version string) error {
 
         err = copy_file(path, final)
         if err != nil {
-            return fmt.Errorf("failed to copy; %w", err)
+            return fmt.Errorf("failed to copy file at '" + rel + "'; %w", err)
         }
 
         finalsum, err := compute_checksum(final)
         if err != nil {
-            return fmt.Errorf("failed to hash the destination file; %w", err)
+            return fmt.Errorf("failed to hash the destination file for '" + rel + "'; %w", err)
         }
         if finalsum != insum {
             return errors.New("mismatch in checksums between source and destination files for '" + rel + "'")
@@ -290,6 +290,21 @@ func Transfer(source, registry, project, asset, version string) error {
         manifest[rel] = man_entry
         return nil
     })
+    if err != nil {
+        return err
+    }
+
+
+    // Dumping the various bits and pieces.
+    manifest_str, err := json.Marshal(&manifest)
+    if err != nil {
+        return fmt.Errorf("failed to convert the manifest to JSON; %w", err)
+    }
+    manifest_path := filepath.Join(destination, ManifestFileName)
+    err = os.WriteFile(manifest_path, manifest_str, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to save the manifest to '" + manifest_path + "'; %w", err)
+    }
 
     return err
 }
