@@ -34,7 +34,7 @@ func Upload(source, registry string) (*Configuration, error) {
     defer Unlock(handle)
 
     asset_dir := filepath.Join(project_dir, config.Asset)
-    if true {
+    if !config.OnProbation {
         latest := LatestMetadata {
             Latest: config.Version,
         }
