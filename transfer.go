@@ -84,6 +84,12 @@ func resolve_symlink(
         return nil, errors.New("unexpected link to file outside of a project asset version directory ('" + relative_target + "')")
     }
 
+    for _, base := range fragments {
+        if strings.HasPrefix(base, "..") {
+            return nil, fmt.Errorf("link components cannot refer to internal '..' files (%q)", relative_target)
+        }
+    }
+
     for i := 0; i < len(fragments) / 2; i++ {
         o := len(fragments) - i - 1
         fragments[i], fragments[o] = fragments[o], fragments[i]
@@ -233,6 +239,15 @@ func Transfer(source, registry, project, asset, version string) error {
     err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + path + "'; %w", err)
+        }
+
+        base := filepath.Base(path)
+        if strings.HasPrefix(base, ".") {
+            if info.IsDir() {
+                return filepath.SkipDir
+            } else {
+                return nil
+            }
         }
 
         rel, err := filepath.Rel(source, path)

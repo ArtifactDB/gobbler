@@ -132,6 +132,53 @@ func TestTransferSimple(t *testing.T) {
     }
 }
 
+func TestTransferSkipHidden(t *testing.T) {
+    project := "pokemon"
+    asset := "pikachu"
+    version := "red"
+
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setup_source()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Injecting some hidden files.
+    err = os.WriteFile(filepath.Join(src, ".DS_store"), []byte("some_mac_crap"), 0644)
+    if err != nil {
+        t.Fatalf("failed to write hidden file; %v", err)
+    }
+
+    err = os.Mkdir(filepath.Join(src, ".cache"), 0755)
+    if err != nil {
+        t.Fatalf("failed to make a hidden directory; %v", err)
+    }
+
+    err = os.WriteFile(filepath.Join(src, ".cache", "credentials"), []byte("password"), 0644)
+    if err != nil {
+        t.Fatalf("failed to write file inside a hidden directory; %v", err)
+    }
+
+    // Executing the transfer.
+    err = Transfer(src, reg, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    destination := filepath.Join(reg, project, asset, version)
+    if _, err := os.Stat(filepath.Join(destination, ".DS_store")); !errors.Is(err, os.ErrNotExist) {
+        t.Fatal("hidden files should not be transferred")
+    }
+
+    if _, err := os.Stat(filepath.Join(destination, ".cache", "credentials")); !errors.Is(err, os.ErrNotExist) {
+        t.Fatal("hidden files should not be transferred")
+    }
+}
+
 func extract_symlink_target(path string) (string, error) {
     finfo, err := os.Lstat(path)
     if err != nil {
@@ -699,6 +746,37 @@ func TestTransferLinkFailures(t *testing.T) {
         version = "crystal"
         err = Transfer(src, reg, project, asset, version)
         if err == nil || !strings.Contains(err.Error(), "probational") {
+            t.Fatal(err)
+        }
+    }
+
+    // Links to internal files are forbidden.
+    {
+        src, err := setup_source()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "MACHOMP"
+        version := "red"
+        err = Transfer(src, reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, SummaryFileName), []byte(`{}`), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(reg, project, asset, version, SummaryFileName), filepath.Join(src, "asdasd"))
+        if err != nil {
+            t.Fatalf("failed to create a test link to a registry file")
+        }
+
+        version = "blue"
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "internal '..' files") {
             t.Fatal(err)
         }
     }
