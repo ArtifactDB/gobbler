@@ -270,6 +270,14 @@ func Transfer(source, registry, project, asset, version string) error {
                 return fmt.Errorf("failed to read the symlink at '" + path + "'; %w", err)
             }
 
+            tstat, err := os.Stat(target)
+            if err != nil {
+                return fmt.Errorf("failed to stat link target %q; %w", target, err)
+            }
+            if tstat.IsDir() {
+                return fmt.Errorf("symbolic links to directories are not supported (%q); %w", target, err)
+            }
+
             inside, err := filepath.Rel(registry, target)
             if err == nil && !strings.HasPrefix(inside, "../") {
                 obj, err := resolve_symlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
@@ -294,11 +302,7 @@ func Transfer(source, registry, project, asset, version string) error {
             }
 
             // Otherwise we need to compute the actual size.
-            stat, err := os.Stat(target)
-            if err != nil {
-                return fmt.Errorf("failed to stat link target '" + path + "'; %w", err)
-            }
-            insize = stat.Size()
+            insize = tstat.Size()
         }
 
         insum, err := compute_checksum(path)

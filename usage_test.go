@@ -4,6 +4,7 @@ import (
     "testing"
     "os"
     "path/filepath"
+    "strings"
 )
 
 func TestReadUsage(t *testing.T) {
@@ -111,5 +112,18 @@ func TestComputeUsage(t *testing.T) {
     if total != int64(expected_size + len(msg)) {
         t.Fatalf("sum of file sizes is different from expected (%d, got %d) when including soft links", expected_size, total)
     }
-}
 
+    // Prohibit links to directories.
+    err = os.Symlink(
+        filepath.Join(src, "moves", "grass"),
+        filepath.Join(src, "moves", "poison"),
+    )
+    if err != nil {
+        t.Fatalf("failed to create mock file; %v", err)
+    }
+
+    _, err = ComputeUsage(src, false)
+    if err == nil || !strings.Contains(err.Error(), "symlinks to directories") {
+        t.Fatalf("expected a failure in the presence of symlink to a directory")
+    }
+}

@@ -53,9 +53,6 @@ func ComputeUsage(dir string, skip_symlinks bool) (int64, error) {
         }
 
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            if skip_symlinks {
-                return nil
-            } 
             more_info, err := os.Stat(path)
             if err != nil {
                 return fmt.Errorf("failed to stat target of link %q; %w", path, err)
@@ -63,6 +60,9 @@ func ComputeUsage(dir string, skip_symlinks bool) (int64, error) {
             if more_info.IsDir() {
                 return fmt.Errorf("symlinks to directories are not supported (%q); %w", path, err)
             }
+            if skip_symlinks {
+                return nil
+            } 
             total += more_info.Size()
         } else {
             if !info.IsDir() {

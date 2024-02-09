@@ -708,7 +708,14 @@ func TestTransferLinkFailures(t *testing.T) {
         project := "POKEMON"
         asset := "PIKAPIKA"
         version := "GOLD"
-        err = os.Symlink(filepath.Join(reg, project, asset, version, "missing"), filepath.Join(src, "asdasd"))
+
+        err = os.WriteFile(filepath.Join(src, "aaa"), []byte("123123123123"), 0644)
+        if err != nil {
+            t.Fatalf("failed to mock up a random file")
+        }
+
+        // Deliberately 'zzz' to sort after 'aaa' so that it gets walked later, otherwise the link target doesn't exist yet!
+        err = os.Symlink(filepath.Join(reg, project, asset, version, "aaa"), filepath.Join(src, "zzz")) 
         if err != nil {
             t.Fatalf("failed to create a test link to a random file")
         }
@@ -778,6 +785,31 @@ func TestTransferLinkFailures(t *testing.T) {
         err = Transfer(src, reg, project, asset, version)
         if err == nil || !strings.Contains(err.Error(), "internal '..' files") {
             t.Fatal(err)
+        }
+    }
+
+    // Links to loose files in the registry are forbidden.
+    {
+        src, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        mock, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory as a link target; %v", err)
+        }
+
+        if err := os.Symlink(mock, filepath.Join(src, "WHEE")); err != nil {
+            t.Fatalf("failed to make a symlink to the mock directory; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "VILEPLUME"
+        version := "green"
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "symbolic links to directories") {
+            t.Fatal("expected a failure when a symbolic link to a directory is present")
         }
     }
 }
