@@ -86,20 +86,19 @@ func main() {
                                 return
                             }
 
-                            destdir := filepath.Join(registry, config.Project, config.Version)
-                            err = Transfer(subdir, destdir)
+                            err = Transfer(subdir, registry, config.Project, config.Asset, config.Version)
                             if err != nil {
                                 log.Println("failed to transfer files to the destination for '" + basename + "'; ", err)
                                 fail_err = err
                                 return
                             }
 
-                            err = DumpVersionMetadata(filepath.Join(destdir, "..metadata"), config.User)
-                            if err != nil {
-                                log.Println("failed to dump version metadata for '" + basename + "'; ", err)
-                                fail_err = err
-                                return
-                            }
+//                            err = DumpVersionMetadata(filepath.Join(destdir, "..metadata"), config.User)
+//                            if err != nil {
+//                                log.Println("failed to dump version metadata for '" + basename + "'; ", err)
+//                                fail_err = err
+//                                return
+//                            }
 
                             err = DumpSuccessLog(logpath, config.Project, config.Version)
                             if err != nil {
