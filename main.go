@@ -70,35 +70,15 @@ func main() {
                         go func(subdir, basename string) {
                             logpath := filepath.Join(logdir, basename)
 
-                            var fail_err error
-                            fail_err = nil
-                            defer func() {
-                                err := DumpFailureLog(logpath, fail_err)
+                            config, err := Upload(subdir, registry)
+                            if err != nil {
+                                log.Println(err.Error())
+                                err = DumpFailureLog(logpath, err)
                                 if err != nil {
                                     log.Println("failed to dump failure log for '" + basename + "'; ", err)
                                 }
-                            }()
-
-                            config, err := Configure(subdir, registry)
-                            if err != nil {
-                                log.Println("failed to choose destination for '" + basename + "'; ", err)
-                                fail_err = err
                                 return
                             }
-
-                            err = Transfer(subdir, registry, config.Project, config.Asset, config.Version)
-                            if err != nil {
-                                log.Println("failed to transfer files to the destination for '" + basename + "'; ", err)
-                                fail_err = err
-                                return
-                            }
-
-//                            err = DumpVersionMetadata(filepath.Join(destdir, "..metadata"), config.User)
-//                            if err != nil {
-//                                log.Println("failed to dump version metadata for '" + basename + "'; ", err)
-//                                fail_err = err
-//                                return
-//                            }
 
                             err = DumpSuccessLog(logpath, config.Project, config.Version)
                             if err != nil {
@@ -109,6 +89,7 @@ func main() {
                             err = os.RemoveAll(subdir)
                             if err != nil {
                                 log.Println("failed to delete '" + basename + "'; ", err)
+                                return
                             }
                         }(subdir, basename)
                     }

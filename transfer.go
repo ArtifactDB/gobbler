@@ -107,18 +107,11 @@ func resolve_symlink(
     // Prohibit links to probational version.
     prob, ok := summary_cache[key]
     if !ok {
-        summary_raw, err := os.ReadFile(filepath.Join(registry, key, "..summary"))
+        summary, err := ReadSummary(filepath.Join(registry, key))
         if err != nil {
-            return nil, fmt.Errorf("cannot read the summary file for '" + key + "'; %w", err)
+            return nil, fmt.Errorf("cannot read the version summary for '" + key + "'; %w", err)
         }
-
-        info := struct { OnProbation bool `json:"on_probation"` }{ OnProbation: false }
-        err = json.Unmarshal(summary_raw, &info)
-        if err != nil {
-            return nil, fmt.Errorf("cannot parse the summary file for '" + key + "'; %w", err)
-        }
-
-        prob = info.OnProbation
+        prob = summary.IsProbational()
         summary_cache[key] = prob
     }
     if prob {
