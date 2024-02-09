@@ -145,6 +145,28 @@ func resolve_symlink(
     return &output, nil
 }
 
+func create_relative_symlink(relative_target, relative_link, full_link string) error {
+    // Actually creating the link. We convert it to a relative path
+    // within the registry so that the registry is relocatable.
+    working := relative_link
+    for {
+        working = filepath.Dir(working) 
+        if working == "." {
+            break
+        }
+        relative_target = filepath.Join("..", relative_target)
+    }
+
+    // Adding three more for the project, asset, version subdirectories.
+    relative_target = filepath.Join("..", "..", "..", relative_target) 
+
+    err := os.Symlink(relative_target, full_link)
+    if err != nil {
+        return fmt.Errorf("failed to create a symlink at '" + full_link + "'; %w", err)
+    }
+    return nil
+}
+
 func Transfer(source, registry, project, asset, version string) error {
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]interface{}{}
@@ -233,16 +255,9 @@ func Transfer(source, registry, project, asset, version string) error {
                 }
                 manifest[rel] = *obj
 
-                // Actually creating the link. We convert it to a relative path
-                // within the registry so that the registry is relocatable.
-                nsteps := len(filepath.SplitList(rel)) - 1
-                reltarget := inside
-                for i := 0; i < nsteps; i++ {
-                    reltarget = filepath.Join("..", reltarget)
-                }
-                err = os.Symlink(reltarget, path)
+                err = create_relative_symlink(inside, rel, final)
                 if err != nil {
-                    return fmt.Errorf("failed to create a symlink at '" + path + "'; %w", err)
+                    return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
                 }
 
                 subdir, base := filepath.Split(rel)
@@ -271,6 +286,10 @@ func Transfer(source, registry, project, asset, version string) error {
         if ok {
             man_entry.Link = &last_entry
             manifest[rel] = man_entry
+            err = create_relative_symlink(filepath.Join(last_entry.Project, last_entry.Asset, last_entry.Version, last_entry.Path), rel, final)
+            if err != nil {
+                return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
+            }
             return nil
         }
 
