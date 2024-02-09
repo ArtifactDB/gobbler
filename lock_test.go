@@ -14,7 +14,7 @@ func TestLock(t *testing.T) {
         t.Fatalf("failed to create a temporary directory; %v", err)
     }
 
-    lockpath := filepath.Join(dir, "LOCK")
+    lockpath := filepath.Join(dir, LockFileName)
 
     {
         handle, err := Lock(lockpath, 10 * time.Second)

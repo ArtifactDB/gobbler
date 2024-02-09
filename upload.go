@@ -26,7 +26,7 @@ func Upload(source, registry string) (*Configuration, error) {
     // ..usage, but it's just a bit safer that way, and besides: who is going
     // to upload to the same proejct at the same time?
     project_dir := filepath.Join(registry, config.Project)
-    lock_path := filepath.Join(project_dir, "..LOCK")
+    lock_path := filepath.Join(project_dir, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)

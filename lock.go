@@ -8,6 +8,8 @@ import (
     "fmt"
 )
 
+const LockFileName = "..LOCK"
+
 func Lock(path string, timeout time.Duration) (*os.File, error) {
     handle, err := os.OpenFile(path, os.O_WRONLY | os.O_CREATE, 0644)
     if err != nil {

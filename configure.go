@@ -145,7 +145,7 @@ func create_new_project_directory(dir string, username string, details *Request)
 }
 
 func process_project(registry string, username string, details *Request) (string, bool, error) {
-    lock_path := filepath.Join(registry, "..LOCK")
+    lock_path := filepath.Join(registry, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
         return "", false, fmt.Errorf("failed to acquire the global registry lock; %w", err)
@@ -254,7 +254,7 @@ func process_asset(project_dir string, details *Request) (string, error) {
 }
 
 func process_version(asset_dir string, is_new_project bool, details *Request) (string, error) {
-    lock_path := filepath.Join(asset_dir, "..LOCK")
+    lock_path := filepath.Join(asset_dir, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
         return "", fmt.Errorf("failed to acquire the lock on the asset directory %q; %w", asset_dir, err)
