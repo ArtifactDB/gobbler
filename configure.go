@@ -148,7 +148,7 @@ func process_project(registry string, username string, details *Request) (string
     lock_path := filepath.Join(registry, "..LOCK")
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
-        return "", false, err
+        return "", false, fmt.Errorf("failed to acquire the global registry lock; %w", err)
     }
     defer Unlock(handle)
 
@@ -257,7 +257,7 @@ func process_version(asset_dir string, is_new_project bool, details *Request) (s
     lock_path := filepath.Join(asset_dir, "..LOCK")
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
-        return "", err
+        return "", fmt.Errorf("failed to acquire the lock on the asset directory %q; %w", asset_dir, err)
     }
     defer Unlock(handle)
 
