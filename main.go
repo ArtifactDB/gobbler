@@ -64,11 +64,11 @@ func main() {
                         if strings.HasPrefix(reqtype, "upload-") {
                             go func(reqpath, basename string) {
                                 logpath := filepath.Join(logdir, basename)
-                                var logerr error
+                                var reported_err error
                                 defer func() {
-                                    if logerr != nil {
-                                        log.Println(logerr.Error())
-                                        err = DumpFailureLog(logpath, logerr)
+                                    if reported_err != nil {
+                                        log.Println(reported_err.Error())
+                                        err = DumpFailureLog(logpath, reported_err)
                                         if err != nil {
                                             log.Println("failed to dump failure log for '" + basename + "'; ", err)
                                         }
@@ -77,16 +77,18 @@ func main() {
 
                                 req, err := ReadUploadRequest(reqpath)
                                 if err != nil {
-                                    logerr = err
+                                    reported_err = err
                                     return
                                 }
 
                                 config, err := Upload(req, registry)
                                 if err != nil {
-                                    logerr = err
+                                    reported_err = err
                                     return
                                 }
 
+                                // No need to update reported_err for these guys, as they
+                                // don't relate to the validity of the user content.
                                 err = DumpSuccessLog(logpath, config.Project, config.Version)
                                 if err != nil {
                                     log.Println("failed to dump success log for '" + basename + "'; ", err)
@@ -95,10 +97,16 @@ func main() {
 
                                 err = os.RemoveAll(*(req.Source))
                                 if err != nil {
-                                    log.Println("failed to delete '" + basename + "'; ", err)
+                                    log.Println("failed to delete %s; %v", *(req.Source), err)
                                     return
                                 }
                             }(event.Name, basename)
+                        }
+
+                        err := os.Remove(event.Name)
+                        if err != nil {
+                            log.Println("failed to delete %q; %v", event.Name, err)
+                            return
                         }
                     }
                 }
