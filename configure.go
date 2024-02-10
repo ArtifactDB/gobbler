@@ -310,7 +310,6 @@ type Configuration struct {
     Asset string
     Version string
     User string
-    OnProbation bool
 }
 
 func Configure(request *UploadRequest, registry string) (*Configuration, error) {
@@ -347,6 +346,5 @@ func Configure(request *UploadRequest, registry string) (*Configuration, error) 
         Asset: asset,
         Version: version,
         User: username,
-        OnProbation: false,
     }, nil
 }

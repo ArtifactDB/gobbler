@@ -9,7 +9,7 @@ import (
     "errors"
 )
 
-func setup_source() (string, error) {
+func setup_source_for_transfer_test() (string, error) {
     src, err := os.MkdirTemp("", "")
     if err != nil {
         return "", fmt.Errorf("failed to create the temporary directory; %w", err)
@@ -91,7 +91,7 @@ func TestTransferSimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source()
+    src, err := setup_source_for_transfer_test()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -142,7 +142,7 @@ func TestTransferSkipHidden(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source()
+    src, err := setup_source_for_transfer_test()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -289,7 +289,7 @@ func TestTransferDeduplication(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source()
+    src, err := setup_source_for_transfer_test()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -494,7 +494,7 @@ func TestTransferLinks(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source()
+    src, err := setup_source_for_transfer_test()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -630,7 +630,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to irrelevant files are copied.
     {
-        src, err := setup_source()
+        src, err := setup_source_for_transfer_test()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -728,7 +728,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to probational versions are forbidden.
     {
-        src, err := setup_source()
+        src, err := setup_source_for_transfer_test()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -759,7 +759,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to internal files are forbidden.
     {
-        src, err := setup_source()
+        src, err := setup_source_for_transfer_test()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }

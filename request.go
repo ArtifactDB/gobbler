@@ -14,6 +14,7 @@ type UploadRequest struct {
     Asset *string `json:"asset"`
     Version *string `json:"version"`
     Permissions *Permissions `json:"permissions"`
+    OnProbation *bool `json:"on_probation"`
 }
 
 func ReadUploadRequest(path string) (*UploadRequest, error) {

@@ -8,7 +8,12 @@ import (
     "path/filepath"
 )
 
-func Upload(request *UploadRequest, registry string) (*Configuration, error) {
+func Upload(reqpath, registry string) (*Configuration, error) {
+    request, err := ReadUploadRequest(reqpath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse request at %q; %w", reqpath, err)
+    }
+
     upload_start := time.Now()
     source := *(request.Source)
 
@@ -35,7 +40,8 @@ func Upload(request *UploadRequest, registry string) (*Configuration, error) {
     defer Unlock(handle)
 
     asset_dir := filepath.Join(project_dir, config.Asset)
-    if !config.OnProbation {
+    on_probation := request.OnProbation != nil && *(request.OnProbation)
+    if !on_probation {
         latest := LatestMetadata {
             Latest: config.Version,
         }
@@ -58,6 +64,9 @@ func Upload(request *UploadRequest, registry string) (*Configuration, error) {
             UploadUserId: config.User,
             UploadStart: upload_start.Format(time.RFC3339),
             UploadFinish: time.Now().Format(time.RFC3339),
+        }
+        if on_probation {
+            summary.OnProbation = &on_probation
         }
 
         summary_path := filepath.Join(version_dir, SummaryFileName)
@@ -84,7 +93,7 @@ func Upload(request *UploadRequest, registry string) (*Configuration, error) {
         }
 
         usage.Total += extra
-        usage_path := filepath.Join(version_dir, UsageFileName)
+        usage_path := filepath.Join(project_dir, UsageFileName)
         usage_str, err := json.MarshalIndent(&usage, "", "    ")
         if err != nil {
             return nil, fmt.Errorf("failed to stringify usage for %q; %w", usage_path, err)
