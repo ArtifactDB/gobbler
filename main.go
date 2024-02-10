@@ -8,6 +8,7 @@ import (
     "time"
     "os"
     "errors"
+    "strings"
 )
 
 func main() {
@@ -53,51 +54,60 @@ func main() {
                     }
 
                     if info.IsDir() {
-                        log.Println("added directory to the watch list")
-                        watcher.Add(event.Name)
                         return
                     }
 
-                    if filepath.Base(event.Name) == "_DONE" {
-                        subdir := filepath.Dir(event.Name)
+                    basename := filepath.Base(event.Name)
+                    if strings.HasPrefix(basename, "request-") {
+                        reqtype := strings.TrimPrefix(basename, "request-")
 
-                        // Protect against jokers who just put a DONE in the top-level directory.
-                        basename := filepath.Base(subdir)
-                        if basename == staging { 
-                            return
+                        if strings.HasPrefix(reqtype, "upload-") {
+                            go func(reqpath, basename string) {
+                                logpath := filepath.Join(logdir, basename)
+                                var reported_err error
+                                defer func() {
+                                    if reported_err != nil {
+                                        log.Println(reported_err.Error())
+                                        err = DumpFailureLog(logpath, reported_err)
+                                        if err != nil {
+                                            log.Println("failed to dump failure log for '" + basename + "'; ", err)
+                                        }
+                                    }
+                                }()
+
+                                req, err := ReadUploadRequest(reqpath)
+                                if err != nil {
+                                    reported_err = err
+                                    return
+                                }
+
+                                config, err := Upload(req, registry)
+                                if err != nil {
+                                    reported_err = err
+                                    return
+                                }
+
+                                // No need to update reported_err for these guys, as they
+                                // don't relate to the validity of the user content.
+                                err = DumpSuccessLog(logpath, config.Project, config.Version)
+                                if err != nil {
+                                    log.Println("failed to dump success log for '" + basename + "'; ", err)
+                                    return
+                                }
+
+                                err = os.RemoveAll(*(req.Source))
+                                if err != nil {
+                                    log.Printf("failed to delete %s; %v", *(req.Source), err)
+                                    return
+                                }
+                            }(event.Name, basename)
                         }
 
-                        go func(subdir, basename string) {
-                            logpath := filepath.Join(logdir, basename)
-
-                            config, err := Upload(subdir, registry)
-                            if err != nil {
-                                log.Println(err.Error())
-                                err = DumpFailureLog(logpath, err)
-                                if err != nil {
-                                    log.Println("failed to dump failure log for '" + basename + "'; ", err)
-                                }
-                                return
-                            }
-
-                            err = DumpSuccessLog(logpath, config.Project, config.Version)
-                            if err != nil {
-                                log.Println("failed to dump success log for '" + basename + "'; ", err)
-                                return
-                            }
-
-                            err = os.RemoveAll(subdir)
-                            if err != nil {
-                                log.Println("failed to delete '" + basename + "'; ", err)
-                                return
-                            }
-                        }(subdir, basename)
-                    }
-
-                } else if event.Has(fsnotify.Remove) {
-                    err := watcher.Remove(event.Name)
-                    if err == nil {
-                        log.Println("removed directory from the watch list")
+                        err := os.Remove(event.Name)
+                        if err != nil {
+                            log.Printf("failed to delete %q; %v", event.Name, err)
+                            return
+                        }
                     }
                 }
 
