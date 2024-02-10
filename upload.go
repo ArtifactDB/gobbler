@@ -8,10 +8,11 @@ import (
     "path/filepath"
 )
 
-func Upload(source, registry string) (*Configuration, error) {
+func Upload(request *UploadRequest, registry string) (*Configuration, error) {
     upload_start := time.Now()
+    source := *(request.Source)
 
-    config, err := Configure(source, registry)
+    config, err := Configure(request, registry)
     if err != nil {
         return nil, fmt.Errorf("failed to configure upload for %q; %w", source, err)
     }

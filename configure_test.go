@@ -87,7 +87,7 @@ func TestIncrementSeries(t *testing.T) {
     }
 }
 
-func setup_for_configure_test(request string) (string, string, error) {
+func setup_for_configure_test() (string, string, error) {
     reg, err := ioutil.TempDir("", "")
     if err != nil {
         return "", "", fmt.Errorf("failed to create the registry; %w", err)
@@ -98,34 +98,34 @@ func setup_for_configure_test(request string) (string, string, error) {
         return "", "", fmt.Errorf("failed to create the temporary directory; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(dir, "_DETAILS"), []byte(request), 0644)
-    if err != nil {
-        return "", "", fmt.Errorf("failed to write transfer request details; %w", err)
-    }
-
     return reg, dir, nil
 }
 
 func TestConfigureNewProjectBasic(t *testing.T) {
-    registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+    registry, src, err := setup_for_configure_test()
     if err != nil {
         t.Fatal(err)
     }
 
-    config, err := Configure(src, registry)
+    project_name := "foo"
+    asset_name := "BAR"
+    version_name := "whee"
+    req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+
+    config, err := Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
 
-    if config.Project != "foo" {
+    if config.Project != project_name {
         t.Fatalf("unexpected value for the project name (%s)", config.Project)
     }
 
-    if config.Asset != "BAR" {
+    if config.Asset != asset_name {
         t.Fatalf("unexpected value for the asset name (%s)", config.Asset)
     }
 
-    if config.Version != "whee" {
+    if config.Version != version_name {
         t.Fatalf("unexpected value for the version name (%s)", config.Version)
     }
 
@@ -185,45 +185,62 @@ func TestConfigureNewProjectBasic(t *testing.T) {
 }
 
 func TestConfigureNewProjectBasicFailures(t *testing.T) {
+    project_name := "foo"
+    asset_name := "BAR"
+    version_name := "whee"
+
     {
-        registry, src, err := setup_for_configure_test("{ \"project\": \"FOO\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+        registry, src, err := setup_for_configure_test()
         if err != nil {
             t.Fatal(err)
         }
-        _, err = Configure(src, registry)
+
+        project_name := "FOO"
+        req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+
+        _, err = Configure(&req, registry)
         if err == nil || !strings.Contains(err.Error(), "uppercase") {
             t.Fatal("configuration should fail for upper-cased project names")
         }
     }
 
     {
-        registry, src, err := setup_for_configure_test("{ \"project\": \"..foo\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+        registry, src, err := setup_for_configure_test()
         if err != nil {
             t.Fatal(err)
         }
-        _, err = Configure(src, registry)
+
+        project_name := "..foo"
+        req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+        _, err = Configure(&req, registry)
         if err == nil || !strings.Contains(err.Error(), "invalid project name") {
             t.Fatal("configuration should fail for invalid project name")
         }
     }
 
     {
-        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"..BAR\", \"version\": \"whee\" }")
+        registry, src, err := setup_for_configure_test()
         if err != nil {
             t.Fatal(err)
         }
-        _, err = Configure(src, registry)
+
+        asset_name := "..BAR"
+        req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+        _, err = Configure(&req, registry)
         if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
             t.Fatal("configuration should fail for invalid asset name")
         }
     }
 
     {
-        registry, src, err := setup_for_configure_test("{ \"project\": \"foo\", \"asset\": \"BAR\", \"version\": \"..whee\" }")
+        registry, src, err := setup_for_configure_test()
         if err != nil {
             t.Fatal(err)
         }
-        _, err = Configure(src, registry)
+
+        version_name := "..whee"
+        req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+        _, err = Configure(&req, registry)
         if err == nil || !strings.Contains(err.Error(), "invalid version name") {
             t.Fatal("configuration should fail for invalid version name")
         }
@@ -231,12 +248,17 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
 }
 
 func TestConfigureNewProjectSeries(t *testing.T) {
-    registry, src, err := setup_for_configure_test("{ \"prefix\": \"FOO\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+    registry, src, err := setup_for_configure_test()
     if err != nil {
         t.Fatal(err)
     }
 
-    config, err := Configure(src, registry)
+    prefix := "FOO"
+    asset_name := "BAR"
+    version_name := "whee"
+    req := UploadRequest { Self: "blah", Source: &src, Prefix: &prefix, Asset: &asset_name, Version: &version_name }
+
+    config, err := Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -255,7 +277,7 @@ func TestConfigureNewProjectSeries(t *testing.T) {
         t.Fatalf("quota file was not created")
     }
 
-    config, err = Configure(src, registry)
+    config, err = Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -265,34 +287,46 @@ func TestConfigureNewProjectSeries(t *testing.T) {
 }
 
 func TestConfigureNewProjectSeriesFailures(t *testing.T) {
-    registry, src, err := setup_for_configure_test("{ \"asset\": \"BAR\", \"version\": \"whee\" }")
+    registry, src, err := setup_for_configure_test()
     if err != nil {
         t.Fatal(err)
     }
 
-    _, err = Configure(src, registry)
+    req := UploadRequest { Self: "blah" }
+    _, err = Configure(&req, registry)
+    if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
+        t.Fatalf("configuration should have failed without a source")
+    }
+
+    asset_name := "BAR"
+    version_name := "whee"
+    req = UploadRequest { Self: "blah", Source: &src, Asset: &asset_name, Version: &version_name }
+    _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "expected a 'prefix'") {
         t.Fatalf("configuration should have failed without a prefix")
     }
 
-    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"prefix\": \"foo\", \"asset\": \"BAR\", \"version\": \"whee\" }"), 0644)
-    if err != nil {
-        t.Fatalf("failed to write a new request; %v", err)
-    }
-
-    _, err = Configure(src, registry)
+    prefix := "foo"
+    req = UploadRequest { Self: "blah", Source: &src, Prefix: &prefix, Asset: &asset_name, Version: &version_name }
+    _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "only uppercase") {
         t.Fatalf("configuration should have failed with non-uppercase prefix")
     }
 }
 
 func TestConfigureUpdateAsset(t *testing.T) {
-    registry, src, err := setup_for_configure_test("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"whee\" }")
+    registry, src, err := setup_for_configure_test()
     if err != nil {
         t.Fatal(err)
     }
 
-    _, err = Configure(src, registry)
+    // First creating the first version.
+    project_name := "aaron"
+    asset_name := "BAR"
+    version_name := "whee"
+    req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+
+    _, err = Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -301,18 +335,15 @@ func TestConfigureUpdateAsset(t *testing.T) {
     }
 
     // Trying with an existing version.
-    _, err = Configure(src, registry)
+    _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "already exists") {
         t.Fatal("configuration should fail for an existing version")
     }
 
     // Updating with a new version.
-    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"stuff\" }"), 0644)
-    if err != nil {
-        t.Fatalf("failed to write a new request; %v", err)
-    }
-
-    _, err = Configure(src, registry)
+    version_name = "stuff"
+    req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+    _, err = Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -321,24 +352,25 @@ func TestConfigureUpdateAsset(t *testing.T) {
     }
 
     // Trying without any version.
-    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\" }"), 0644)
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    _, err = Configure(src, registry)
+    req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name }
+    _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "initialized without a version series") {
         t.Fatal("configuration should fail for missing version in a non-series asset")
     }
 }
 
 func TestConfigureUpdateAssetSeries(t *testing.T) {
-    registry, src, err := setup_for_configure_test("{ \"project\": \"aaron\", \"asset\": \"BAR\" }")
+    registry, src, err := setup_for_configure_test()
     if err != nil {
         t.Fatal(err)
     }
 
-    config, err := Configure(src, registry)
+    // First creating the first version.
+    project_name := "aaron"
+    asset_name := "BAR"
+    req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name }
+
+    config, err := Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -350,7 +382,7 @@ func TestConfigureUpdateAssetSeries(t *testing.T) {
     }
 
     // Trying again.
-    config, err = Configure(src, registry)
+    config, err = Configure(&req, registry)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -362,12 +394,9 @@ func TestConfigureUpdateAssetSeries(t *testing.T) {
     }
 
     // Trying with a version.
-    err = os.WriteFile(filepath.Join(src, "_DETAILS"), []byte("{ \"project\": \"aaron\", \"asset\": \"BAR\", \"version\": \"3\" }"), 0644)
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    _, err = Configure(src, registry)
+    version_name := "foo"
+    req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
+    _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "initialized with a version series") {
         t.Fatal("configuration should fail for specified version in an asset with seriesc")
     }

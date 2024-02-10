@@ -8,6 +8,7 @@ import (
     "time"
     "os"
     "errors"
+    "strings"
 )
 
 func main() {
@@ -53,51 +54,52 @@ func main() {
                     }
 
                     if info.IsDir() {
-                        log.Println("added directory to the watch list")
-                        watcher.Add(event.Name)
                         return
                     }
 
-                    if filepath.Base(event.Name) == "_DONE" {
-                        subdir := filepath.Dir(event.Name)
+                    basename := filepath.Base(event.Name)
+                    if strings.HasPrefix(basename, "request-") {
+                        reqtype := strings.TrimPrefix(basename, "request-")
 
-                        // Protect against jokers who just put a DONE in the top-level directory.
-                        basename := filepath.Base(subdir)
-                        if basename == staging { 
-                            return
-                        }
+                        if strings.HasPrefix(reqtype, "upload-") {
+                            go func(reqpath, basename string) {
+                                logpath := filepath.Join(logdir, basename)
+                                var logerr error
+                                defer func() {
+                                    if logerr != nil {
+                                        log.Println(logerr.Error())
+                                        err = DumpFailureLog(logpath, logerr)
+                                        if err != nil {
+                                            log.Println("failed to dump failure log for '" + basename + "'; ", err)
+                                        }
+                                    }
+                                }()
 
-                        go func(subdir, basename string) {
-                            logpath := filepath.Join(logdir, basename)
-
-                            config, err := Upload(subdir, registry)
-                            if err != nil {
-                                log.Println(err.Error())
-                                err = DumpFailureLog(logpath, err)
+                                req, err := ReadUploadRequest(reqpath)
                                 if err != nil {
-                                    log.Println("failed to dump failure log for '" + basename + "'; ", err)
+                                    logerr = err
+                                    return
                                 }
-                                return
-                            }
 
-                            err = DumpSuccessLog(logpath, config.Project, config.Version)
-                            if err != nil {
-                                log.Println("failed to dump success log for '" + basename + "'; ", err)
-                                return
-                            }
+                                config, err := Upload(req, registry)
+                                if err != nil {
+                                    logerr = err
+                                    return
+                                }
 
-                            err = os.RemoveAll(subdir)
-                            if err != nil {
-                                log.Println("failed to delete '" + basename + "'; ", err)
-                                return
-                            }
-                        }(subdir, basename)
-                    }
+                                err = DumpSuccessLog(logpath, config.Project, config.Version)
+                                if err != nil {
+                                    log.Println("failed to dump success log for '" + basename + "'; ", err)
+                                    return
+                                }
 
-                } else if event.Has(fsnotify.Remove) {
-                    err := watcher.Remove(event.Name)
-                    if err == nil {
-                        log.Println("removed directory from the watch list")
+                                err = os.RemoveAll(*(req.Source))
+                                if err != nil {
+                                    log.Println("failed to delete '" + basename + "'; ", err)
+                                    return
+                                }
+                            }(event.Name, basename)
+                        }
                     }
                 }
 

@@ -96,15 +96,7 @@ func increment_series(prefix string, dir string) (string, error) {
     return candidate_name, nil
 }
 
-type Request struct {
-    Prefix *string `json:"prefix"`
-    Project *string `json:"project"`
-    Version *string `json:"version"`
-    Asset *string `json:"asset"`
-    Permissions Permissions `json:"permissions"`
-}
-
-func create_new_project_directory(dir string, username string, details *Request) error {
+func create_new_project_directory(dir string, username string, details *UploadRequest) error {
     err := os.Mkdir(dir, 0755)
     if err != nil {
         return fmt.Errorf("failed to make a new directory'; %w", err)
@@ -112,12 +104,14 @@ func create_new_project_directory(dir string, username string, details *Request)
 
     // Adding permissions.
     var perms Permissions;
-    if len(details.Permissions.Owners) > 0 {
+    if details.Permissions != nil && len(details.Permissions.Owners) > 0 {
         copy(perms.Owners, details.Permissions.Owners)
     } else {
         perms.Owners = []string{ username }
     }
-    copy(perms.Uploaders, details.Permissions.Uploaders)
+    if details.Permissions != nil {
+        copy(perms.Uploaders, details.Permissions.Uploaders)
+    }
 
     perm_str, err := json.MarshalIndent(&perms, "", "    ")
     if err != nil {
@@ -144,7 +138,7 @@ func create_new_project_directory(dir string, username string, details *Request)
     return nil
 }
 
-func process_project(registry string, username string, details *Request) (string, bool, error) {
+func process_project(registry string, username string, details *UploadRequest) (string, bool, error) {
     lock_path := filepath.Join(registry, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
@@ -229,7 +223,7 @@ func process_project(registry string, username string, details *Request) (string
     return project, false, nil
 }
 
-func process_asset(project_dir string, details *Request) (string, error) {
+func process_asset(project_dir string, details *UploadRequest) (string, error) {
     // No need to lock here, as multiple processes can be requesting the same
     // asset at once... it's the versions we need to be worrying about.
     if details.Asset == nil {
@@ -253,7 +247,7 @@ func process_asset(project_dir string, details *Request) (string, error) {
     return asset, nil
 }
 
-func process_version(asset_dir string, is_new_project bool, details *Request) (string, error) {
+func process_version(asset_dir string, is_new_project bool, details *UploadRequest) (string, error) {
     lock_path := filepath.Join(asset_dir, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
     if err != nil {
@@ -317,37 +311,31 @@ type Configuration struct {
     OnProbation bool
 }
 
-func Configure(source string, registry string) (*Configuration, error) {
-    detail_path := filepath.Join(source, "_DETAILS")
-    details_handle, err := os.ReadFile(detail_path)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read '" + detail_path + "'; %w", err)
+func Configure(request *UploadRequest, registry string) (*Configuration, error) {
+    details_path := request.Self
+    if request.Source == nil {
+        return nil, fmt.Errorf("expected a 'source' property in the upload request at %q", details_path)
     }
-
-    var details Request
-    err = json.Unmarshal(details_handle, &details)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse JSON from '" + detail_path + "'; %w", err)
-    }
+    source := *(request.Source)
 
     username, err := IdentifyUser(source)
     if err != nil {
         return nil, fmt.Errorf("failed to identify the user for '" + source + "'; %w", err)
     }
 
-    project, is_new, err := process_project(registry, username, &details)
+    project, is_new, err := process_project(registry, username, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
     }
 
     project_dir := filepath.Join(registry, project)
-    asset, err := process_asset(project_dir, &details)
+    asset, err := process_asset(project_dir, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the asset for '" + source + "'; %w", err)
     }
 
     asset_dir := filepath.Join(project_dir, asset)
-    version, err := process_version(asset_dir, is_new, &details)
+    version, err := process_version(asset_dir, is_new, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the version for '" + source + "'; %w", err)
     }
