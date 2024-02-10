@@ -11,8 +11,8 @@ type UploadRequest struct {
     Source *string `json:"source"`
     Prefix *string `json:"prefix"`
     Project *string `json:"project"`
-    Version *string `json:"version"`
     Asset *string `json:"asset"`
+    Version *string `json:"version"`
     Permissions *Permissions `json:"permissions"`
 }
 

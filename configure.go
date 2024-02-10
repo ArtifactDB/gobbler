@@ -104,13 +104,15 @@ func create_new_project_directory(dir string, username string, details *UploadRe
 
     // Adding permissions.
     var perms Permissions;
-    if details.Permissions != nil && len(details.Permissions.Owners) > 0 {
+    if details.Permissions != nil && details.Permissions.Owners != nil {
         copy(perms.Owners, details.Permissions.Owners)
     } else {
         perms.Owners = []string{ username }
     }
-    if details.Permissions != nil {
+    if details.Permissions != nil && details.Permissions.Uploaders != nil {
         copy(perms.Uploaders, details.Permissions.Uploaders)
+    } else {
+        perms.Uploaders = []Uploader{}
     }
 
     perm_str, err := json.MarshalIndent(&perms, "", "    ")

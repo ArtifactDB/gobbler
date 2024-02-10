@@ -97,7 +97,7 @@ func main() {
 
                                 err = os.RemoveAll(*(req.Source))
                                 if err != nil {
-                                    log.Println("failed to delete %s; %v", *(req.Source), err)
+                                    log.Printf("failed to delete %s; %v", *(req.Source), err)
                                     return
                                 }
                             }(event.Name, basename)
@@ -105,7 +105,7 @@ func main() {
 
                         err := os.Remove(event.Name)
                         if err != nil {
-                            log.Println("failed to delete %q; %v", event.Name, err)
+                            log.Printf("failed to delete %q; %v", event.Name, err)
                             return
                         }
                     }
