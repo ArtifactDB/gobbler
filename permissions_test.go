@@ -7,6 +7,7 @@ import (
     "io/ioutil"
     "path/filepath"
     "time"
+    "fmt"
     "strings"
 )
 
@@ -179,5 +180,130 @@ func TestValidateUploaders(t *testing.T) {
     err = ValidateUploaders(uploaders)
     if err != nil {
         t.Fatal("validation of uploaders failed for valid 'until'")
+    }
+}
+
+func TestSetPermissions(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    self, err := IdentifyUser(reg)
+    if err != nil {
+        t.Fatalf("failed to identify self; %v", err)
+    }
+
+    project := "cynthia"
+    project_dir := filepath.Join(reg, project)
+    err = os.Mkdir(project_dir, 0755)
+    if err != nil {
+        t.Fatalf("failed to create a project directory; %v", err)
+    }
+
+    err = os.WriteFile(
+        filepath.Join(project_dir, PermissionsFileName),
+        []byte(fmt.Sprintf(`
+{
+    "owners": [ "brock", "ash", "oak", "%s" ],
+    "uploaders": [ { "id": "lance" } ]
+}
+        `, self)),
+        0644,
+    )
+    if err != nil {
+        t.Fatalf("failed to create some mock permissions; %v", err)
+    }
+
+    {
+        reqpath, err := dump_request(
+            "permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "owners": [ "%s", "gary" ] } }`, project, self),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = SetPermissions(reqpath, reg)
+        if err != nil {
+            t.Fatalf("failed to set permissions; %v", err)
+        }
+
+        perms, err := ReadPermissions(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read the new permissions; %v", err)
+        }
+
+        if perms.Owners == nil || len(perms.Owners) != 2 || perms.Owners[0] != self || perms.Owners[1] != "gary" {
+            t.Fatal("owners were not modified as expected")
+        }
+        if perms.Uploaders == nil || len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != "lance" {
+            t.Fatal("uploaders were not preserved as expected")
+        }
+    }
+
+    {
+        reqpath, err := dump_request(
+            "permissions",
+            fmt.Sprintf(`
+{ 
+    "project": "%s", 
+    "permissions": { 
+        "uploaders": [ 
+            { "id": "lorelei", "until": "2022-02-02T20:20:20Z" },
+            { "id": "karen" }
+        ]
+    }
+}`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = SetPermissions(reqpath, reg)
+        if err != nil {
+            t.Fatalf("failed to set permissions; %v", err)
+        }
+
+        perms, err := ReadPermissions(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read the new permissions; %v", err)
+        }
+
+        if perms.Owners == nil || len(perms.Owners) != 2 {
+            t.Fatal("owners were not preservfed as expected")
+        }
+        if perms.Uploaders == nil || len(perms.Uploaders) != 2 || *(perms.Uploaders[0].Id) != "lorelei" || perms.Uploaders[0].Until == nil || *(perms.Uploaders[1].Id) != "karen" {
+            t.Fatal("uploaders were not preserved as expected")
+        }
+    }
+
+    {
+        err = os.WriteFile(
+            filepath.Join(project_dir, PermissionsFileName),
+            []byte(`
+{
+    "owners": [ "brock" ],
+    "uploaders": [ { "id": "lance" } ]
+}
+            `),
+            0644,
+        )
+        if err != nil {
+            t.Fatalf("failed to create some mock permissions")
+        }
+
+        reqpath, err := dump_request(
+            "permissions",
+            fmt.Sprintf(`{ "project": "%s" }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = SetPermissions(reqpath, reg)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatalf("unexpected authorization for a non-owner")
+        }
     }
 }
