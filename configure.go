@@ -105,12 +105,16 @@ func create_new_project_directory(dir string, username string, details *UploadRe
     // Adding permissions.
     var perms Permissions;
     if details.Permissions != nil && details.Permissions.Owners != nil {
-        copy(perms.Owners, details.Permissions.Owners)
+        perms.Owners = details.Permissions.Owners
     } else {
         perms.Owners = []string{ username }
     }
     if details.Permissions != nil && details.Permissions.Uploaders != nil {
-        copy(perms.Uploaders, details.Permissions.Uploaders)
+        err := ValidateUploaders(details.Permissions.Uploaders)
+        if err != nil {
+            return fmt.Errorf("invalid 'permissions.uploaders' in the request details; %w", err)
+        }
+        perms.Uploaders = details.Permissions.Uploaders
     } else {
         perms.Uploaders = []Uploader{}
     }
@@ -120,7 +124,7 @@ func create_new_project_directory(dir string, username string, details *UploadRe
         return fmt.Errorf("failed to convert permissions to JSON; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(dir, "..permissions"), perm_str, 0755)
+    err = os.WriteFile(filepath.Join(dir, PermissionsFileName), perm_str, 0755)
     if err != nil {
         return fmt.Errorf("failed to write permissions; %w", err)
     }
@@ -197,29 +201,6 @@ func process_project(registry string, username string, details *UploadRequest) (
     // Updating an existing directory.
     if err != nil || !info.IsDir() {
         return "", false, fmt.Errorf("failed to inspect an existing project directory '" + project + "'; %w", err)
-    }
-
-    perm_path := filepath.Join(project_dir, "..permissions")
-    perm_handle, err := os.ReadFile(perm_path)
-    if err != nil {
-        return "", false, fmt.Errorf("failed to read permissions for '" + project + "'; %w", err)
-    }
-
-    var perms Permissions
-    err = json.Unmarshal(perm_handle, &perms)
-    if err != nil {
-        return "", false, fmt.Errorf("failed to parse JSON from '" + perm_path + "'; %w", err)
-    }
-
-    // Only checking owners right now; support for uploaders is not yet implemented.
-    okay := false
-    for _, s := range(perms.Owners) {
-        if s == username {
-            okay = true
-        }
-    }
-    if !okay {
-        return "", false, fmt.Errorf("user '" + username + "' is not listed as an owner for '" + project + "'")
     }
 
     return project, false, nil
@@ -310,6 +291,7 @@ type Configuration struct {
     Asset string
     Version string
     User string
+    OnProbation bool
 }
 
 func Configure(request *UploadRequest, registry string) (*Configuration, error) {
@@ -318,6 +300,7 @@ func Configure(request *UploadRequest, registry string) (*Configuration, error) 
         return nil, fmt.Errorf("expected a 'source' property in the upload request at %q", details_path)
     }
     source := *(request.Source)
+    on_probation := request.OnProbation != nil && *(request.OnProbation)
 
     username, err := IdentifyUser(source)
     if err != nil {
@@ -330,6 +313,20 @@ func Configure(request *UploadRequest, registry string) (*Configuration, error) 
     }
 
     project_dir := filepath.Join(registry, project)
+    if !is_new {
+        perms, err := ReadPermissions(project_dir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
+        }
+        ok, trusted := IsAuthorizedToUpload(perms, username, request.Asset, request.Version)
+        if !ok {
+            return nil, fmt.Errorf("user '" + username + "' is not authorized to upload to '" + project + "'")
+        }
+        if !trusted {
+            on_probation = true
+        }
+    }
+
     asset, err := process_asset(project_dir, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the asset for '" + source + "'; %w", err)
@@ -346,5 +343,6 @@ func Configure(request *UploadRequest, registry string) (*Configuration, error) 
         Asset: asset,
         Version: version,
         User: username,
+        OnProbation: on_probation,
     }, nil
 }

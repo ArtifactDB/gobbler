@@ -53,14 +53,14 @@ func TestDumpFailureLog(t *testing.T) {
     }
 }
 
-func TestDumpSuccessLog(t *testing.T) {
+func TestDumpUploadSuccessLog(t *testing.T) {
     f, err := os.MkdirTemp("", "test-")
     if err != nil {
         t.Fatalf("failed to create tempdir; %v", err)
     }
 
     path := filepath.Join(f, "success")
-    err = DumpSuccessLog(path, "foo", "bar")
+    err = DumpUploadSuccessLog(path, "foo", "bar")
     if err != nil {
         t.Fatalf("failed to save the success log; %v", err)
     }

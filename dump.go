@@ -13,11 +13,15 @@ func DumpFailureLog(path string, failure error) error {
     return os.WriteFile(path, deets, 0644)
 }
 
-func DumpSuccessLog(path, project, version string) error {
+func DumpUploadSuccessLog(path, project, version string) error {
     payload := map[string]string{}
     payload["status"] = "SUCCESS"
     payload["project"] = project
     payload["version"] = version
     deets, _ := json.MarshalIndent(&payload, "", "    ")
     return os.WriteFile(path, deets, 0644)
+}
+
+func TouchSuccessLog(path string) error {
+    return os.WriteFile(path, []byte(""), 0644)
 }
