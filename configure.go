@@ -294,7 +294,7 @@ type Configuration struct {
     OnProbation bool
 }
 
-func Configure(request *UploadRequest, registry string) (*Configuration, error) {
+func Configure(request *UploadRequest, registry string, administrators [] string) (*Configuration, error) {
     details_path := request.Self
     if request.Source == nil {
         return nil, fmt.Errorf("expected a 'source' property in the upload request at %q", details_path)
@@ -318,7 +318,7 @@ func Configure(request *UploadRequest, registry string) (*Configuration, error) 
         if err != nil {
             return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
         }
-        ok, trusted := IsAuthorizedToUpload(perms, username, request.Asset, request.Version)
+        ok, trusted := IsAuthorizedToUpload(username, administrators, perms, request.Asset, request.Version)
         if !ok {
             return nil, fmt.Errorf("user '" + username + "' is not authorized to upload to '" + project + "'")
         }

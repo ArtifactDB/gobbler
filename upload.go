@@ -8,7 +8,7 @@ import (
     "path/filepath"
 )
 
-func Upload(reqpath, registry string) (*Configuration, error) {
+func Upload(reqpath, registry string, administrators []string) (*Configuration, error) {
     request, err := ReadUploadRequest(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to parse request at %q; %w", reqpath, err)
@@ -17,7 +17,7 @@ func Upload(reqpath, registry string) (*Configuration, error) {
     upload_start := time.Now()
     source := *(request.Source)
 
-    config, err := Configure(request, registry)
+    config, err := Configure(request, registry, administrators)
     if err != nil {
         return nil, fmt.Errorf("failed to configure upload for %q; %w", source, err)
     }

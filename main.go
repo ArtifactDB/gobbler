@@ -14,13 +14,20 @@ import (
 func main() {
     spath := flag.String("staging", "", "Path to the staging directory to be watched")
     rpath := flag.String("registry", "", "Path to the registry")
+    mstr := flag.String("admin", "", "Comma-separated list of administrators.")
     flag.Parse()
+
     if *spath == "" || *rpath == "" {
         flag.Usage()
         os.Exit(1)
     }
     staging := *spath
     registry := *rpath
+
+    administrators := []string{}
+    if *mstr != "" {
+        administrators = strings.Split(*mstr, ",")
+    }
 
     logdir := filepath.Join(staging, "..logs")
     if _, err := os.Stat(logdir); errors.Is(err, os.ErrNotExist) {
@@ -74,7 +81,7 @@ func main() {
                             logpath := filepath.Join(logdir, basename)
 
                             if strings.HasPrefix(reqtype, "upload-") {
-                                config, err0 := Upload(reqpath, registry)
+                                config, err0 := Upload(reqpath, registry, administrators)
                                 if err0 != nil {
                                     err := DumpUploadSuccessLog(logpath, config.Project, config.Version)
                                     if err != nil {
@@ -85,7 +92,7 @@ func main() {
                                 }
 
                             } else if strings.HasPrefix(reqtype, "permissions-") {
-                                err0 := SetPermissions(reqpath, registry)
+                                err0 := SetPermissions(reqpath, registry, administrators)
                                 if err0 != nil {
                                     err := TouchSuccessLog(logpath)
                                     if err != nil {

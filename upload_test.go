@@ -72,7 +72,7 @@ func TestUploadSimple(t *testing.T) {
     // Executing the first transfer.
     old_usage := int64(0)
     {
-        config, err := Upload(reqname, reg)
+        config, err := Upload(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -171,7 +171,7 @@ func TestUploadSimple(t *testing.T) {
             t.Fatalf("failed to update the 'evolution' file; %v", err)
         }
 
-        config, err := Upload(reqname, reg)
+        config, err := Upload(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -253,7 +253,7 @@ func TestUploadProbation(t *testing.T) {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    config, err := Upload(reqname, reg)
+    config, err := Upload(reqname, reg, nil)
     if err != nil {
         t.Fatalf("failed to perform the upload; %v", err)
     }

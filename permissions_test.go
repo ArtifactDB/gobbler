@@ -57,26 +57,51 @@ func TestReadPermissions(t *testing.T) {
     }
 }
 
-func TestIsAuthorized(t *testing.T) {
+func TestIsAuthorizedToAdmin(t *testing.T) {
+    if IsAuthorizedToAdmin("may", []string{"erika"}) {
+        t.Fatalf("unexpected authorization for non-admin")
+    }
+    if IsAuthorizedToAdmin("may", nil) {
+        t.Fatalf("unexpected authorization for non-admin")
+    }
+    if !IsAuthorizedToAdmin("erika", []string{"erika"}) {
+        t.Fatalf("unexpected lack of authorization for admin")
+    }
+}
+
+func TestIsAuthorizedToMaintain(t *testing.T) {
+    owners := []string{ "erika", "sabrina", "misty" }
+
+    if IsAuthorizedToMaintain("may", nil, owners) {
+        t.Fatalf("unexpected authorization for non-owner")
+    }
+    if IsAuthorizedToMaintain("may", nil, nil) {
+        t.Fatalf("unexpected authorization for non-owner")
+    }
+    if !IsAuthorizedToMaintain("erika", nil, owners) {
+        t.Fatalf("unexpected lack of authorization for owner")
+    }
+    if !IsAuthorizedToMaintain("may", []string{"may"}, owners) {
+        t.Fatalf("unexpected lack of authorization for admin")
+    }
+}
+
+func TestIsAuthorizedToUpload(t *testing.T) {
     perms := Permissions {
         Owners: []string{ "erika", "sabrina", "misty" },
         Uploaders: []Uploader{},
     }
 
-    if IsAuthorizedToMaintain(&perms, "may") {
-        t.Fatalf("unexpected authorization for non-owner")
-    }
-
-    if !IsAuthorizedToMaintain(&perms, "erika") {
-        t.Fatalf("unexpected lack of authorization for owner")
-    }
-
-    ok, trusted := IsAuthorizedToUpload(&perms, "may", nil, nil)
+    ok, trusted := IsAuthorizedToUpload("may", nil, &perms, nil, nil)
     if ok {
         t.Fatalf("unexpected authorization for non-uploader")
     }
+    ok, trusted = IsAuthorizedToUpload("may", []string{ "may" }, &perms, nil, nil)
+    if !ok || !trusted {
+        t.Fatalf("unexpected lack of authorization for an admin")
+    }
 
-    ok, trusted = IsAuthorizedToUpload(&perms, "sabrina", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("sabrina", nil, &perms, nil, nil)
     if !ok || !trusted {
         t.Fatalf("unexpected lack of upload authorization for owner")
     }
@@ -84,23 +109,23 @@ func TestIsAuthorized(t *testing.T) {
     id1 := "may"
     id2 := "serena"
     perms.Uploaders = []Uploader{ Uploader{ Id: &id1 }, Uploader{ Id: &id2 } }
-    ok, trusted = IsAuthorizedToUpload(&perms, "may", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("may", nil, &perms, nil, nil)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader")
     }
 
     asset_name := "saffron"
     perms.Uploaders[1].Asset = &asset_name
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, nil)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with no asset")
     }
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", &asset_name, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, &asset_name, nil)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader with correct asset")
     }
     dummy_string := "pallet"
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", &dummy_string, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, &dummy_string, nil)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with wrong asset")
     }
@@ -108,15 +133,15 @@ func TestIsAuthorized(t *testing.T) {
     version_name := "kanto"
     perms.Uploaders[1].Asset = nil
     perms.Uploaders[1].Version = &version_name
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, nil)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with no version")
     }
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, &version_name)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, &version_name)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader with correct version")
     }
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, &dummy_string)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, &dummy_string)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with wrong version")
     }
@@ -124,31 +149,31 @@ func TestIsAuthorized(t *testing.T) {
     perms.Uploaders[1].Version = nil
     bad_time := "AYYAYA"
     perms.Uploaders[1].Until = &bad_time
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, nil)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with a bad time")
     }
     new_time := time.Now().Add(time.Hour).Format(time.RFC3339)
     perms.Uploaders[1].Until = &new_time
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, nil)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader with future time")
     }
     old_time := time.Now().Add(-time.Hour).Format(time.RFC3339)
     perms.Uploaders[1].Until = &old_time
-    ok, trusted = IsAuthorizedToUpload(&perms, "serena", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("serena", nil, &perms, nil, nil)
     if ok {
         t.Fatalf("unexpected authorization for an uploader with expired time")
     }
 
     is_trusted := false
     perms.Uploaders[0].Trusted = &is_trusted
-    ok, trusted = IsAuthorizedToUpload(&perms, "may", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("may", nil, &perms, nil, nil)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader")
     }
     is_trusted = true
-    ok, trusted = IsAuthorizedToUpload(&perms, "may", nil, nil)
+    ok, trusted = IsAuthorizedToUpload("may", nil, &perms, nil, nil)
     if !ok || !trusted {
         t.Fatalf("unexpected lack of non-probational authorization for an uploader")
     }
@@ -224,7 +249,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg)
+        err = SetPermissions(reqpath, reg, nil)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -260,7 +285,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg)
+        err = SetPermissions(reqpath, reg, nil)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -301,7 +326,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg)
+        err = SetPermissions(reqpath, reg, nil)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("unexpected authorization for a non-owner")
         }

@@ -112,7 +112,7 @@ func TestConfigureNewProjectBasic(t *testing.T) {
     version_name := "whee"
     req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
 
-    config, err := Configure(&req, registry)
+    config, err := Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -199,7 +199,7 @@ func TestConfigureNewProjectPermissions(t *testing.T) {
     }
 
     {
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed complete configuration; %v", err)
         }
@@ -223,7 +223,7 @@ func TestConfigureNewProjectPermissions(t *testing.T) {
     req.Permissions.Uploaders = append(req.Permissions.Uploaders, Uploader{ Id: &new_id })
 
     {
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed complete configuration; %v", err)
         }
@@ -244,7 +244,7 @@ func TestConfigureNewProjectPermissions(t *testing.T) {
     project_name = "stuff"
     req.Permissions.Owners = nil
     req.Permissions.Uploaders[0].Id = nil
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -253,7 +253,7 @@ func TestConfigureNewProjectPermissions(t *testing.T) {
     req.Permissions.Owners = nil
     req.Permissions.Uploaders[0].Id = &new_id
     req.Permissions.Uploaders[0].Until = &new_id
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -287,13 +287,13 @@ func TestConfigureNewProjectOnProbation(t *testing.T) {
     // Checking that uploaders are not trusted by default.
     {
         // Setting up an initial project.
-        _, err := Configure(&req, registry)
+        _, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed first pass configuration; %v", err)
         }
 
         // Performing a new version request.
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed second pass configuration; %v", err)
         }
@@ -307,12 +307,12 @@ func TestConfigureNewProjectOnProbation(t *testing.T) {
     has_trust := true
     req.Permissions.Uploaders[0].Trusted = &has_trust;
     {
-        _, err := Configure(&req, registry)
+        _, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed first pass configuration; %v", err)
         }
 
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed second pass configuration; %v", err)
         }
@@ -326,12 +326,12 @@ func TestConfigureNewProjectOnProbation(t *testing.T) {
     is_probation := true
     req.OnProbation = &is_probation
     {
-        _, err := Configure(&req, registry)
+        _, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed first pass configuration; %v", err)
         }
 
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed second pass configuration; %v", err)
         }
@@ -345,12 +345,12 @@ func TestConfigureNewProjectOnProbation(t *testing.T) {
     req.Permissions.Owners = append(req.Permissions.Owners, self_name)
     req.OnProbation = nil
     {
-        _, err := Configure(&req, registry)
+        _, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed first pass configuration; %v", err)
         }
 
-        config, err := Configure(&req, registry)
+        config, err := Configure(&req, registry, nil)
         if err != nil {
             t.Fatalf("failed second pass configuration; %v", err)
         }
@@ -374,7 +374,7 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
         project_name := "FOO"
         req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
 
-        _, err = Configure(&req, registry)
+        _, err = Configure(&req, registry, nil)
         if err == nil || !strings.Contains(err.Error(), "uppercase") {
             t.Fatal("configuration should fail for upper-cased project names")
         }
@@ -388,7 +388,7 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
 
         project_name := "..foo"
         req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
-        _, err = Configure(&req, registry)
+        _, err = Configure(&req, registry, nil)
         if err == nil || !strings.Contains(err.Error(), "invalid project name") {
             t.Fatal("configuration should fail for invalid project name")
         }
@@ -402,7 +402,7 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
 
         asset_name := "..BAR"
         req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
-        _, err = Configure(&req, registry)
+        _, err = Configure(&req, registry, nil)
         if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
             t.Fatal("configuration should fail for invalid asset name")
         }
@@ -416,7 +416,7 @@ func TestConfigureNewProjectBasicFailures(t *testing.T) {
 
         version_name := "..whee"
         req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
-        _, err = Configure(&req, registry)
+        _, err = Configure(&req, registry, nil)
         if err == nil || !strings.Contains(err.Error(), "invalid version name") {
             t.Fatal("configuration should fail for invalid version name")
         }
@@ -434,7 +434,7 @@ func TestConfigureNewProjectSeries(t *testing.T) {
     version_name := "whee"
     req := UploadRequest { Self: "blah", Source: &src, Prefix: &prefix, Asset: &asset_name, Version: &version_name }
 
-    config, err := Configure(&req, registry)
+    config, err := Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -453,7 +453,7 @@ func TestConfigureNewProjectSeries(t *testing.T) {
         t.Fatalf("quota file was not created")
     }
 
-    config, err = Configure(&req, registry)
+    config, err = Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -469,7 +469,7 @@ func TestConfigureNewProjectSeriesFailures(t *testing.T) {
     }
 
     req := UploadRequest { Self: "blah" }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
         t.Fatalf("configuration should have failed without a source")
     }
@@ -477,14 +477,14 @@ func TestConfigureNewProjectSeriesFailures(t *testing.T) {
     asset_name := "BAR"
     version_name := "whee"
     req = UploadRequest { Self: "blah", Source: &src, Asset: &asset_name, Version: &version_name }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "expected a 'prefix'") {
         t.Fatalf("configuration should have failed without a prefix")
     }
 
     prefix := "foo"
     req = UploadRequest { Self: "blah", Source: &src, Prefix: &prefix, Asset: &asset_name, Version: &version_name }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "only uppercase") {
         t.Fatalf("configuration should have failed with non-uppercase prefix")
     }
@@ -502,7 +502,7 @@ func TestConfigureUpdateAsset(t *testing.T) {
     version_name := "whee"
     req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
 
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -511,7 +511,7 @@ func TestConfigureUpdateAsset(t *testing.T) {
     }
 
     // Trying with an existing version.
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "already exists") {
         t.Fatal("configuration should fail for an existing version")
     }
@@ -519,7 +519,7 @@ func TestConfigureUpdateAsset(t *testing.T) {
     // Updating with a new version.
     version_name = "stuff"
     req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -529,7 +529,7 @@ func TestConfigureUpdateAsset(t *testing.T) {
 
     // Trying without any version.
     req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "initialized without a version series") {
         t.Fatal("configuration should fail for missing version in a non-series asset")
     }
@@ -556,7 +556,7 @@ func TestConfigureUpdateAssetPermissions(t *testing.T) {
         },
     }
 
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -566,7 +566,7 @@ func TestConfigureUpdateAssetPermissions(t *testing.T) {
 
     // Now attempting to create a new version.
     version_name = "stuff"
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to reject upload from non-authorized user")
     }
@@ -583,7 +583,7 @@ func TestConfigureUpdateAssetSeries(t *testing.T) {
     asset_name := "BAR"
     req := UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name }
 
-    config, err := Configure(&req, registry)
+    config, err := Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -595,7 +595,7 @@ func TestConfigureUpdateAssetSeries(t *testing.T) {
     }
 
     // Trying again.
-    config, err = Configure(&req, registry)
+    config, err = Configure(&req, registry, nil)
     if err != nil {
         t.Fatalf("failed complete configuration; %v", err)
     }
@@ -609,7 +609,7 @@ func TestConfigureUpdateAssetSeries(t *testing.T) {
     // Trying with a version.
     version_name := "foo"
     req = UploadRequest { Self: "blah", Source: &src, Project: &project_name, Asset: &asset_name, Version: &version_name }
-    _, err = Configure(&req, registry)
+    _, err = Configure(&req, registry, nil)
     if err == nil || !strings.Contains(err.Error(), "initialized with a version series") {
         t.Fatal("configuration should fail for specified version in an asset with seriesc")
     }

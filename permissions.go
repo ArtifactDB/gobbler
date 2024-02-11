@@ -60,9 +60,9 @@ func ReadPermissions(path string) (*Permissions, error) {
     return &output, nil
 }
 
-func IsAuthorizedToMaintain(permissions *Permissions, username string) bool {
-    if permissions.Owners != nil {
-        for _, s := range permissions.Owners {
+func IsAuthorizedToAdmin(username string, administrators []string) bool {
+    if administrators != nil {
+        for _, s := range administrators {
             if s == username {
                 return true
             }
@@ -71,9 +71,22 @@ func IsAuthorizedToMaintain(permissions *Permissions, username string) bool {
     return false
 }
 
+func IsAuthorizedToMaintain(username string, administrators []string, owners []string) bool {
+    if IsAuthorizedToAdmin(username, administrators) {
+        return true
+    }
+    if owners != nil {
+        for _, s := range owners {
+            if s == username {
+                return true
+            }
+        }
+    }
+    return false
+}
 
-func IsAuthorizedToUpload(permissions *Permissions, username string, asset, version *string) (bool, bool) {
-    if IsAuthorizedToMaintain(permissions, username) {
+func IsAuthorizedToUpload(username string, administrators []string, permissions *Permissions, asset, version *string) (bool, bool) {
+    if IsAuthorizedToMaintain(username, administrators, permissions.Owners) {
         return true, true
     }
 
@@ -127,7 +140,7 @@ func ValidateUploaders(uploaders []Uploader) error {
     return nil
 }
 
-func SetPermissions(path, registry string) error {
+func SetPermissions(path, registry string, administrators []string) error {
     incoming := struct {
         Project *string `json:"project"`
         Permissions Permissions `json:"permissions"`
@@ -167,7 +180,7 @@ func SetPermissions(path, registry string) error {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
 
-    if !IsAuthorizedToMaintain(existing, source_user) {
+    if !IsAuthorizedToMaintain(source_user, administrators, existing.Owners) {
         return fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project)
     }
 
