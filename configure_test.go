@@ -131,14 +131,9 @@ func TestConfigureNewProjectBasic(t *testing.T) {
 
     // Checking the various bits and pieces.
     {
-        perm_raw, err := os.ReadFile(filepath.Join(registry, config.Project, "..permissions"))
+        deets, err := ReadPermissions(filepath.Join(registry, config.Project))
         if err != nil {
             t.Fatalf("failed to read the permissions; %v", err)
-        }
-        deets := struct { Owners []string `json:"owners"` }{}
-        err = json.Unmarshal(perm_raw, &deets)
-        if err != nil {
-            t.Fatalf("failed to parse the permissions; %v", err)
         }
         self, err := user.Current()
         if err != nil {
@@ -180,6 +175,187 @@ func TestConfigureNewProjectBasic(t *testing.T) {
         }
         if !(deets.Baseline > 0 && deets.GrowthRate > 0 && deets.Year > 0) {
             t.Fatalf("uninitialized fields in the quota")
+        }
+    }
+}
+
+func TestConfigureNewProjectPermissions(t *testing.T) {
+    registry, src, err := setup_for_configure_test()
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Check that existing owners in the permissions are respected.
+    project_name := "foo"
+    asset_name := "BAR"
+    req := UploadRequest {
+        Self: "blah",
+        Source: &src,
+        Project: &project_name,
+        Asset: &asset_name,
+        Permissions: &Permissions {
+            Owners: []string{ "YAY", "NAY"},
+        },
+    }
+
+    {
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed complete configuration; %v", err)
+        }
+
+        perms, err := ReadPermissions(filepath.Join(registry, config.Project))
+        if err != nil {
+            t.Fatalf("failed to read the permissions; %v", err)
+        }
+        if len(perms.Owners) != 2 || perms.Owners[0] != "YAY" || perms.Owners[1] != "NAY" {
+            t.Fatal("failed to set the owners correctly in the project permissions")
+        }
+        if len(perms.Uploaders) != 0 {
+            t.Fatal("failed to set the uploaders correctly in the project permissions")
+        }
+    }
+
+    // Check that uploaders in the permissions are respected.
+    project_name = "bar" // changing the name to avoid the permissions of the existing project. 
+    req.Permissions.Owners = nil
+    new_id := "foo"
+    req.Permissions.Uploaders = append(req.Permissions.Uploaders, Uploader{ Id: &new_id })
+
+    {
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed complete configuration; %v", err)
+        }
+
+        perms, err := ReadPermissions(filepath.Join(registry, config.Project))
+        if err != nil {
+            t.Fatalf("failed to read the permissions; %v", err)
+        }
+        if len(perms.Owners) != 1 { // switches to the uploading user.
+            t.Fatal("failed to set the owners correctly in the project permissions")
+        }
+        if len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != new_id {
+            t.Fatal("failed to set the uploaders correctly in the project permissions")
+        }
+    }
+
+    // Check that uploaders in the permissions are validated.
+    project_name = "stuff"
+    req.Permissions.Owners = nil
+    req.Permissions.Uploaders[0].Id = nil
+    _, err = Configure(&req, registry)
+    if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+
+    project_name = "whee"
+    req.Permissions.Owners = nil
+    req.Permissions.Uploaders[0].Id = &new_id
+    req.Permissions.Uploaders[0].Until = &new_id
+    _, err = Configure(&req, registry)
+    if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+}
+
+func TestConfigureNewProjectOnProbation(t *testing.T) {
+    registry, src, err := setup_for_configure_test()
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatalf("could not identify the current user; %v", err)
+    }
+    self_name := self.Username
+
+    project_name := "foo"
+    asset_name := "BAR"
+    req := UploadRequest {
+        Self: "blah",
+        Source: &src,
+        Project: &project_name,
+        Asset: &asset_name,
+        Permissions: &Permissions {
+            Owners: []string{},
+            Uploaders: []Uploader{ Uploader{ Id: &self_name } },
+        },
+    }
+
+    // Checking that uploaders are not trusted by default.
+    {
+        // Setting up an initial project.
+        _, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed first pass configuration; %v", err)
+        }
+
+        // Performing a new version request.
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed second pass configuration; %v", err)
+        }
+        if !config.OnProbation {
+            t.Fatal("second pass configuration should be on probation for an untrusted user")
+        }
+    }
+
+    // Checking that trusted uploaders do not get probation.
+    project_name = "whee" // changing the project name to get a new project.
+    has_trust := true
+    req.Permissions.Uploaders[0].Trusted = &has_trust;
+    {
+        _, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed first pass configuration; %v", err)
+        }
+
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed second pass configuration; %v", err)
+        }
+        if config.OnProbation {
+            t.Fatal("second pass configuration should not be on probation for a trusted user")
+        }
+    }
+
+    // ... unless they specifically ask for it.
+    project_name = "stuff"
+    is_probation := true
+    req.OnProbation = &is_probation
+    {
+        _, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed first pass configuration; %v", err)
+        }
+
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed second pass configuration; %v", err)
+        }
+        if !config.OnProbation {
+            t.Fatal("second pass configuration should be on probation if requested")
+        }
+    }
+
+    // Owners are also free from probation.
+    project_name = "bar"
+    req.Permissions.Owners = append(req.Permissions.Owners, self_name)
+    req.OnProbation = nil
+    {
+        _, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed first pass configuration; %v", err)
+        }
+
+        config, err := Configure(&req, registry)
+        if err != nil {
+            t.Fatalf("failed second pass configuration; %v", err)
+        }
+        if config.OnProbation {
+            t.Fatal("second pass configuration should not be on probation for owners")
         }
     }
 }
@@ -356,6 +532,43 @@ func TestConfigureUpdateAsset(t *testing.T) {
     _, err = Configure(&req, registry)
     if err == nil || !strings.Contains(err.Error(), "initialized without a version series") {
         t.Fatal("configuration should fail for missing version in a non-series asset")
+    }
+}
+
+func TestConfigureUpdateAssetPermissions(t *testing.T) {
+    registry, src, err := setup_for_configure_test()
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // First creating the first version.
+    project_name := "aaron"
+    asset_name := "BAR"
+    version_name := "whee"
+    req := UploadRequest {
+        Self: "blah",
+        Source: &src,
+        Project: &project_name,
+        Asset: &asset_name,
+        Version: &version_name,
+        Permissions: &Permissions{
+            Owners: []string{},
+        },
+    }
+
+    _, err = Configure(&req, registry)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if _, err := os.Stat(filepath.Join(registry, "aaron", "BAR", "whee")); err != nil {
+        t.Fatalf("expected creation of the target version directory")
+    }
+
+    // Now attempting to create a new version.
+    version_name = "stuff"
+    _, err = Configure(&req, registry)
+    if err == nil || !strings.Contains(err.Error(), "not authorized") {
+        t.Fatalf("failed to reject upload from non-authorized user")
     }
 }
 

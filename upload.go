@@ -40,8 +40,7 @@ func Upload(reqpath, registry string) (*Configuration, error) {
     defer Unlock(handle)
 
     asset_dir := filepath.Join(project_dir, config.Asset)
-    on_probation := request.OnProbation != nil && *(request.OnProbation)
-    if !on_probation {
+    if !config.OnProbation {
         latest := LatestMetadata {
             Latest: config.Version,
         }
@@ -65,8 +64,8 @@ func Upload(reqpath, registry string) (*Configuration, error) {
             UploadStart: upload_start.Format(time.RFC3339),
             UploadFinish: time.Now().Format(time.RFC3339),
         }
-        if on_probation {
-            summary.OnProbation = &on_probation
+        if config.OnProbation {
+            summary.OnProbation = &(config.OnProbation)
         }
 
         summary_path := filepath.Join(version_dir, SummaryFileName)

@@ -69,24 +69,41 @@ func main() {
                     if strings.HasPrefix(basename, "request-") {
                         reqtype := strings.TrimPrefix(basename, "request-")
 
-                        if strings.HasPrefix(reqtype, "upload-") {
-                            go func(reqpath, basename string) {
-                                logpath := filepath.Join(logdir, basename)
-                                config, err := Upload(reqpath, registry)
-                                if err != nil {
-                                    log.Println(err.Error())
-                                    err = DumpFailureLog(logpath, err)
-                                    if err != nil {
-                                        log.Println("failed to dump failure log for '" + basename + "'; ", err)
-                                    }
-                                } else {
-                                    err = DumpSuccessLog(logpath, config.Project, config.Version)
+                        go func(reqpath, basename string) {
+                            var reportable_err error
+                            logpath := filepath.Join(logdir, basename)
+
+                            if strings.HasPrefix(reqtype, "upload-") {
+                                config, err0 := Upload(reqpath, registry)
+                                if err0 != nil {
+                                    err := DumpUploadSuccessLog(logpath, config.Project, config.Version)
                                     if err != nil {
                                         log.Println("failed to dump success log for '" + basename + "'; ", err)
                                     }
+                                } else {
+                                    reportable_err = err0
                                 }
-                            }(event.Name, basename)
-                        }
+
+                            } else if strings.HasPrefix(reqtype, "permissions-") {
+                                err0 := SetPermissions(reqpath, registry)
+                                if err0 != nil {
+                                    err := TouchSuccessLog(logpath)
+                                    if err != nil {
+                                        log.Println("failed to touch success log for '" + basename + "'; ", err)
+                                    }
+                                } else {
+                                    reportable_err = err0
+                                }
+                            }
+
+                            if reportable_err != nil {
+                                log.Println(reportable_err.Error())
+                                err = DumpFailureLog(logpath, reportable_err)
+                                if err != nil {
+                                    log.Println("failed to dump failure log for '" + basename + "'; ", err)
+                                }
+                            }
+                        }(event.Name, basename)
                     }
                 }
 
