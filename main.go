@@ -46,6 +46,14 @@ func main() {
                 }
                 log.Println("triggered filesystem event:", event)
 
+                // It is expected that request bodies should be initially
+                // written to some other file (e.g., `.tmpXXXX`) inside the
+                // staging directory, and then moved to the actual file name
+                // (`request-<action>-YYY`). The rename should be atomic and
+                // thus we avoid problems with the code below triggering before
+                // the requester has completed the write of the body. Under
+                // this logic, we only have to watch the Create events as
+                // no Writes are being performed on a renamed file.
                 if event.Has(fsnotify.Create) {
                     info, err := os.Stat(event.Name)
                     if err != nil {
