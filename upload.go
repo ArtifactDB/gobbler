@@ -147,7 +147,7 @@ func configureProject(registry string, username string, project, prefix *string)
     return project_str, false, nil
 }
 
-func populateNewProjectDirectory(dir string, username string, permissions *permissionsMetadata) error {
+func populateNewProjectDirectory(dir string, username string, permissions *unsafePermissionsMetadata) error {
     // Adding permissions.
     perms := permissionsMetadata{}
     if permissions != nil && permissions.Owners != nil {
@@ -156,11 +156,11 @@ func populateNewProjectDirectory(dir string, username string, permissions *permi
         perms.Owners = []string{ username }
     }
     if permissions != nil && permissions.Uploaders != nil {
-        err := validateUploaders(permissions.Uploaders)
+        san, err := sanitizeUploaders(permissions.Uploaders)
         if err != nil {
             return fmt.Errorf("invalid 'permissions.uploaders' in the request details; %w", err)
         }
-        perms.Uploaders = permissions.Uploaders
+        perms.Uploaders = san
     } else {
         perms.Uploaders = []uploaderEntry{}
     }
@@ -268,7 +268,7 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Version *string `json:"version"`
-        Permissions *permissionsMetadata `json:"permissions"`
+        Permissions *unsafePermissionsMetadata `json:"permissions"`
         OnProbation *bool `json:"on_probation"`
     }{}
 

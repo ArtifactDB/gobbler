@@ -371,7 +371,7 @@ func TestUploadHandlerNewPermissions(t *testing.T) {
         if len(perms.Owners) != 1 { // switches to the uploading user.
             t.Fatal("failed to set the owners correctly in the project permissions")
         }
-        if len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != new_id {
+        if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != new_id {
             t.Fatal("failed to set the uploaders correctly in the project permissions")
         }
     }

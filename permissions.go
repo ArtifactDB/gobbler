@@ -13,7 +13,7 @@ import (
 )
 
 type uploaderEntry struct {
-    Id *string `json:"id"`
+    Id string `json:"id"`
     Asset *string `json:"asset,omitempty"`
     Version *string `json:"version,omitempty"`
     Until *string `json:"until,omitempty"`
@@ -92,7 +92,7 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
 
     if permissions.Uploaders != nil {
         for _, u := range permissions.Uploaders {
-            if u.Id == nil || *(u.Id) != username {
+            if u.Id != username {
                 continue
             }
 
@@ -123,27 +123,48 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
     return false, false
 }
 
-func validateUploaders(uploaders []uploaderEntry) error {
-    for _, u := range uploaders {
+func sanitizeUploaders(uploaders []unsafeUploaderEntry) ([]uploaderEntry, error) {
+    output := make([]uploaderEntry, len(uploaders))
+
+    for i, u := range uploaders {
         if u.Id == nil {
-            return errors.New("all entries of 'uploaders' should have an 'id' property")
+            return nil, errors.New("all entries of 'uploaders' should have an 'id' property")
         }
 
         if u.Until != nil {
             _, err := time.Parse(time.RFC3339, *(u.Until))
             if err != nil {
-                return errors.New("any string in 'uploaders.until' should follow the Internet Date/Time format")
+                return nil, errors.New("any string in 'uploaders.until' should follow the Internet Date/Time format")
             }
         }
+
+        output[i].Id = *(u.Id)
+        output[i].Asset = u.Asset
+        output[i].Version = u.Version
+        output[i].Until = u.Until
+        output[i]. Trusted = u.Trusted
     }
 
-    return nil
+    return output, nil
+}
+
+type unsafeUploaderEntry struct {
+    Id *string `json:"id"`
+    Asset *string `json:"asset"`
+    Version *string `json:"version"`
+    Until *string `json:"until"`
+    Trusted *bool `json:"trusted"`
+}
+
+type unsafePermissionsMetadata struct {
+    Owners []string `json:"owners"`
+    Uploaders []unsafeUploaderEntry `json:"uploaders"`
 }
 
 func setPermissionsHandler(reqpath, registry string, administrators []string) error {
     incoming := struct {
         Project *string `json:"project"`
-        Permissions permissionsMetadata `json:"permissions"`
+        Permissions *unsafePermissionsMetadata `json:"permissions"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -192,11 +213,11 @@ func setPermissionsHandler(reqpath, registry string, administrators []string) er
         existing.Owners = incoming.Permissions.Owners
     }
     if incoming.Permissions.Uploaders != nil {
-        err := validateUploaders(incoming.Permissions.Uploaders)
+        san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
         if err != nil {
             return fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err)
         }
-        existing.Uploaders = incoming.Permissions.Uploaders
+        existing.Uploaders = san
     }
 
     perm_path := filepath.Join(project_dir, permissionsFileName)

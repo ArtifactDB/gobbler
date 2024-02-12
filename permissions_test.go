@@ -52,7 +52,7 @@ func TestReadPermissions(t *testing.T) {
         t.Fatalf("unexpected 'owners' value")
     }
 
-    if out.Uploaders == nil || len(out.Uploaders) != 1 || out.Uploaders[0].Id == nil || *(out.Uploaders[0].Id) != "excel" {
+    if out.Uploaders == nil || len(out.Uploaders) != 1 || out.Uploaders[0].Id != "excel" {
         t.Fatalf("unexpected 'uploaders' value")
     }
 }
@@ -106,9 +106,7 @@ func TestIsAuthorizedToUpload(t *testing.T) {
         t.Fatalf("unexpected lack of upload authorization for owner")
     }
 
-    id1 := "may"
-    id2 := "serena"
-    perms.Uploaders = []uploaderEntry{ uploaderEntry{ Id: &id1 }, uploaderEntry{ Id: &id2 } }
+    perms.Uploaders = []uploaderEntry{ uploaderEntry{ Id: "may" }, uploaderEntry{ Id: "serena" } }
     ok, trusted = isAuthorizedToUpload("may", nil, &perms, nil, nil)
     if !ok || trusted {
         t.Fatalf("unexpected lack of authorization for an uploader")
@@ -179,31 +177,31 @@ func TestIsAuthorizedToUpload(t *testing.T) {
     }
 }
 
-func TestValidateUploaders(t *testing.T) {
+func TestSanitizeUploaders(t *testing.T) {
     id1 := "may"
-    uploaders := []uploaderEntry{ uploaderEntry{ Id: &id1 }, uploaderEntry{ Id: nil } }
-    err := validateUploaders(uploaders)
+    uploaders := []unsafeUploaderEntry{ unsafeUploaderEntry{ Id: &id1 }, unsafeUploaderEntry{ Id: nil } }
+    _, err := sanitizeUploaders(uploaders)
     if err == nil || !strings.Contains(err.Error(), "should have an 'id'") {
         t.Fatal("validation of uploaders did not fail on 'id' check")
     }
 
     id2 := "serena"
     uploaders[1].Id = &id2
-    err = validateUploaders(uploaders)
-    if err != nil {
+    san, err := sanitizeUploaders(uploaders)
+    if err != nil || len(san) != 2 || san[0].Id != id1 || san[1].Id != id2 {
         t.Fatalf("validation of uploaders failed for correct uploaders; %v", err)
     }
 
     mock := "YAAY"
     uploaders[1].Until = &mock
-    err = validateUploaders(uploaders)
+    _, err = sanitizeUploaders(uploaders)
     if err == nil || !strings.Contains(err.Error(), "Internet Date/Time") {
         t.Fatal("validation of uploaders did not fail for invalid 'until'")
     }
 
     mock = time.Now().Format(time.RFC3339)
-    err = validateUploaders(uploaders)
-    if err != nil {
+    san, err = sanitizeUploaders(uploaders)
+    if err != nil || len(san) != 2 || san[1].Until == nil || *(san[1].Until) != mock {
         t.Fatal("validation of uploaders failed for valid 'until'")
     }
 }
@@ -262,7 +260,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         if perms.Owners == nil || len(perms.Owners) != 2 || perms.Owners[0] != self || perms.Owners[1] != "gary" {
             t.Fatal("owners were not modified as expected")
         }
-        if perms.Uploaders == nil || len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != "lance" {
+        if perms.Uploaders == nil || len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != "lance" {
             t.Fatal("uploaders were not preserved as expected")
         }
     }
@@ -298,7 +296,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         if perms.Owners == nil || len(perms.Owners) != 2 {
             t.Fatal("owners were not preservfed as expected")
         }
-        if perms.Uploaders == nil || len(perms.Uploaders) != 2 || *(perms.Uploaders[0].Id) != "lorelei" || perms.Uploaders[0].Until == nil || *(perms.Uploaders[1].Id) != "karen" {
+        if perms.Uploaders == nil || len(perms.Uploaders) != 2 || perms.Uploaders[0].Id != "lorelei" || perms.Uploaders[0].Until == nil || perms.Uploaders[1].Id != "karen" {
             t.Fatal("uploaders were not preserved as expected")
         }
     }
