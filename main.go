@@ -30,17 +30,18 @@ func main() {
     }
 
     // Setting up special subdirectories.
-    respdir := filepath.Join(staging, "responses")
-    if _, err := os.Stat(respdir); errors.Is(err, os.ErrNotExist) {
-        err := os.Mkdir(respdir, 0755)
+    response_name := "responses"
+    response_dir := filepath.Join(staging, response_name)
+    if _, err := os.Stat(response_dir); errors.Is(err, os.ErrNotExist) {
+        err := os.Mkdir(response_dir, 0755)
         if err != nil {
             log.Fatal("failed to create a responses subdirectory; ", err)
         }
     }
 
-    logdir := filepath.Join(registry, logDirName)
-    if _, err := os.Stat(logdir); errors.Is(err, os.ErrNotExist) {
-        err := os.Mkdir(logdir, 0755)
+    log_dir := filepath.Join(registry, logDirName)
+    if _, err := os.Stat(log_dir); errors.Is(err, os.ErrNotExist) {
+        err := os.Mkdir(log_dir, 0755)
         if err != nil {
             log.Fatal("failed to create a log subdirectory; ", err)
         }
@@ -119,7 +120,7 @@ func main() {
                                 }
                             }
 
-                            logpath := filepath.Join(respdir, basename)
+                            logpath := filepath.Join(response_dir, basename)
                             err = dumpJson(logpath, payload)
                             if err != nil {
                                 log.Println("failed to dump response for '" + basename + "'; ", err)
@@ -142,13 +143,26 @@ func main() {
         log.Fatal(err)
     }
 
-    // Adding a per-day job that purges old files.
+    // Adding a per-day job that purges various old files.
 	ticker := time.NewTicker(time.Hour * 24)
 	defer ticker.Stop()
+    protected := map[string]bool{}
+    protected[response_name] = true
+
     go func() {
         for {
             <-ticker.C
-            err := purgeOldFiles(staging, time.Hour * 24 * 7)
+            err := purgeOldFiles(staging, time.Hour * 24 * 7, protected)
+            if err != nil {
+                log.Println(err)
+            }
+
+            err = purgeOldFiles(response_dir, time.Hour * 24 * 7, nil)
+            if err != nil {
+                log.Println(err)
+            }
+
+            err = purgeOldFiles(log_dir, time.Hour * 24 * 7, nil)
             if err != nil {
                 log.Println(err)
             }
