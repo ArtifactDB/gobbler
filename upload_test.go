@@ -209,6 +209,205 @@ func TestUploadHandlerSimple(t *testing.T) {
     }
 }
 
+func TestUploadHandlerSimpleFailures(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    {
+        project := "test"
+        asset := "gastly"
+        version := "lavender"
+
+        req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
+            t.Fatalf("configuration should have failed without a source")
+        }
+    }
+
+    {
+        project := "FOO"
+        asset := "gastly"
+        version := "lavender"
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "uppercase") {
+            t.Fatal("configuration should fail for upper-cased project names")
+        }
+    }
+
+    {
+        project := "..foo"
+        asset := "gastly"
+        version := "lavender"
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid project name") {
+            t.Fatal("configuration should fail for invalid project name")
+        }
+    }
+
+    {
+        project := "foobar"
+        asset := "..gastly"
+        version := "lavender"
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
+            t.Fatal("configuration should fail for invalid asset name")
+        }
+    }
+
+    {
+        project := "foobar"
+        asset := "gastly"
+        version := "..lavender"
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid version name") {
+            t.Fatal("configuration should fail for invalid version name")
+        }
+    }
+}
+
+func TestUploadHandlerNewPermissions(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    asset := "gastly"
+    version := "lavender"
+
+    // Checking that owners are respected.
+    {
+        project := "indigo_league"
+        perm_string := `{ "owners": [ "YAY", "NAY" ] }`
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        config, err := uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        perms, err := readPermissions(filepath.Join(reg, config.Project))
+        if err != nil {
+            t.Fatalf("failed to read the permissions; %v", err)
+        }
+        if len(perms.Owners) != 2 || perms.Owners[0] != "YAY" || perms.Owners[1] != "NAY" {
+            t.Fatal("failed to set the owners correctly in the project permissions")
+        }
+        if len(perms.Uploaders) != 0 {
+            t.Fatal("failed to set the uploaders correctly in the project permissions")
+        }
+    }
+
+    {
+        project := "johto_journeys"
+        new_id := "foo"
+        perm_string := fmt.Sprintf(`{ "uploaders": [ { "id": "%s" } ] }`, new_id)
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        config, err := uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        perms, err := readPermissions(filepath.Join(reg, config.Project))
+        if err != nil {
+            t.Fatalf("failed to read the permissions; %v", err)
+        }
+        if len(perms.Owners) != 1 { // switches to the uploading user.
+            t.Fatal("failed to set the owners correctly in the project permissions")
+        }
+        if len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != new_id {
+            t.Fatal("failed to set the uploaders correctly in the project permissions")
+        }
+    }
+
+    // Check that uploaders in the permissions are validated.
+    {
+        project := "battle_frontier"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "uploaders": [{}] } }`, src, project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+            t.Fatalf("expected upload to fail from invalid 'uploaders'")
+        }
+    }
+
+    {
+        project := "sinnoh_league"
+        perm_string := `{ "uploaders": [ { "id": "argle", "until": "bargle" } ] }`
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+            t.Fatalf("expected upload to fail from invalid 'uploaders'")
+        }
+    }
+}
+
 func TestUploadHandlerSimpleUpdate(t *testing.T) {
     project := "original_series"
     asset := "gastly"
@@ -319,7 +518,7 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
     }
 }
 
-func TestUploadHandlerPermissions(t *testing.T) {
+func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -330,94 +529,236 @@ func TestUploadHandlerPermissions(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
+    // Ceating the first version.
+    project := "aaron"
+    asset := "BAR"
+    version := "whee"
+
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    _, err = uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if _, err := os.Stat(filepath.Join(reg, project, asset, version)); err != nil {
+        t.Fatalf("expected creation of the target version directory")
+    }
+
+    // Trying with an existing version.
+    _, err = uploadHandler(reqname, reg, nil)
+    if err == nil || !strings.Contains(err.Error(), "already exists") {
+        t.Fatal("configuration should fail for an existing version")
+    }
+
+    // Trying without any version.
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, src, project, asset)
+    reqname, err = dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    _, err = uploadHandler(reqname, reg, nil)
+    if err == nil || !strings.Contains(err.Error(), "initialized without a version series") {
+        t.Fatal("configuration should fail for missing version in a non-series asset")
+    }
+}
+
+func TestUploadHandlerUpdatePermissions(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // First creating the first version.
+    project := "aaron"
+    asset := "BAR"
+    version := "whee"
+
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "owners": [] } }`, src, project, asset, version)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    _, err = uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if _, err := os.Stat(filepath.Join(reg, project, asset, version)); err != nil {
+        t.Fatalf("expected creation of the target version directory")
+    }
+
+    // Now attempting to create a new version.
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "stuff" }`, src, project, asset)
+    reqname, err = dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    _, err = uploadHandler(reqname, reg, nil)
+    if err == nil || !strings.Contains(err.Error(), "not authorized") {
+        t.Fatalf("failed to reject upload from non-authorized user")
+    }
+}
+
+func TestUploadHandlerProjectSeries(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    prefix := "FOO"
     asset := "gastly"
-    version := "lavender"
+    version := "v1"
 
-    // Checking that owners are respected.
-    {
-        project := "indigo_league"
-        perm_string := `{ "owners": [ "YAY", "NAY" ] }`
+    req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, src, prefix, asset, version)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
-        reqname, err := dumpRequest("upload", req_string)
-        if err != nil {
-            t.Fatalf("failed to create upload request; %v", err)
-        }
+    config, err := uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Project != "FOO1" {
+        t.Fatalf("unexpected value for the project name (%s)", config.Project)
+    }
 
-        config, err := uploadHandler(reqname, reg, nil)
-        if err != nil {
-            t.Fatalf("failed to perform the upload; %v", err)
-        }
+    // Check that everything was created.
+    if _, err := os.Stat(filepath.Join(reg, config.Project, "..permissions")); err != nil {
+        t.Fatalf("permissions file was not created")
+    }
+    if _, err := os.Stat(filepath.Join(reg, config.Project, "..usage")); err != nil {
+        t.Fatalf("usage file was not created")
+    }
+    if _, err := os.Stat(filepath.Join(reg, config.Project, "..quota")); err != nil {
+        t.Fatalf("quota file was not created")
+    }
 
-        perms, err := readPermissions(filepath.Join(reg, config.Project))
-        if err != nil {
-            t.Fatalf("failed to read the permissions; %v", err)
-        }
-        if len(perms.Owners) != 2 || perms.Owners[0] != "YAY" || perms.Owners[1] != "NAY" {
-            t.Fatal("failed to set the owners correctly in the project permissions")
-        }
-        if len(perms.Uploaders) != 0 {
-            t.Fatal("failed to set the uploaders correctly in the project permissions")
-        }
+    // Trying again.
+    config, err = uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Project != "FOO2" {
+        t.Fatalf("unexpected value for the project name (%s)", config.Project)
+    }
+}
+
+func TestUploadHandlerProjectSeriesFailures(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
     }
 
     {
-        project := "johto_journeys"
-        new_id := "foo"
-        perm_string := fmt.Sprintf(`{ "uploaders": [ { "id": "%s" } ] }`, new_id)
+        asset := "gastly"
+        version := "v1"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
-        reqname, err := dumpRequest("upload", req_string)
-        if err != nil {
-            t.Fatalf("failed to create upload request; %v", err)
-        }
-
-        config, err := uploadHandler(reqname, reg, nil)
-        if err != nil {
-            t.Fatalf("failed to perform the upload; %v", err)
-        }
-
-        perms, err := readPermissions(filepath.Join(reg, config.Project))
-        if err != nil {
-            t.Fatalf("failed to read the permissions; %v", err)
-        }
-        if len(perms.Owners) != 1 { // switches to the uploading user.
-            t.Fatal("failed to set the owners correctly in the project permissions")
-        }
-        if len(perms.Uploaders) != 1 || *(perms.Uploaders[0].Id) != new_id {
-            t.Fatal("failed to set the uploaders correctly in the project permissions")
-        }
-    }
-
-    // Check that uploaders in the permissions are validated.
-    {
-        project := "battle_frontier"
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "uploaders": [{}] } }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "asset": "%s", "version": "%s" }`, src, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
         _, err = uploadHandler(reqname, reg, nil)
-        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
-            t.Fatalf("expected upload to fail from invalid 'uploaders'")
+        if err == nil || !strings.Contains(err.Error(), "expected a 'prefix'") {
+            t.Fatalf("configuration should have failed without a prefix")
         }
     }
 
     {
-        project := "sinnoh_league"
-        perm_string := `{ "uploaders": [ { "id": "argle", "until": "bargle" } ] }`
+        prefix := "foo"
+        asset := "gastly"
+        version := "v1"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, src, prefix, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
         _, err = uploadHandler(reqname, reg, nil)
-        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
-            t.Fatalf("expected upload to fail from invalid 'uploaders'")
+        if err == nil || !strings.Contains(err.Error(), "uppercase") {
+            t.Fatalf("configuration should have failed with non-uppercase prefix")
         }
+    }
+}
+
+func TestUploadHandlerVersionSeries(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // First creating the first version.
+    project := "aaron"
+    asset := "BAR"
+
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, src, project, asset)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    config, err := uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Version != "1" {
+        t.Fatalf("expected version series to start at 1");
+    }
+    if _, err := os.Stat(filepath.Join(reg, project, asset, config.Version)); err != nil {
+        t.Fatalf("expected creation of the first version directory")
+    }
+
+    // Trying again.
+    config, err = uploadHandler(reqname, reg, nil)
+    if err != nil {
+        t.Fatalf("failed complete configuration; %v", err)
+    }
+    if config.Version != "2" {
+        t.Fatalf("expected version series to continue to 2");
+    }
+    if _, err := os.Stat(filepath.Join(reg, project, asset, config.Version)); err != nil {
+        t.Fatalf("expected creation of the second version directory")
+    }
+
+    // Trying with a version.
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "FOO" }`, src, project, asset)
+    reqname, err = dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    _, err = uploadHandler(reqname, reg, nil)
+    if err == nil || !strings.Contains(err.Error(), "initialized with a version series") {
+        t.Fatal("configuration should fail for specified version in an asset with seriesc")
     }
 }
 
@@ -614,5 +955,3 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         }
     }
 }
-
-
