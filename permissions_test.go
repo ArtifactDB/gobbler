@@ -208,7 +208,7 @@ func TestValidateUploaders(t *testing.T) {
     }
 }
 
-func TestSetPermissions(t *testing.T) {
+func TestsetPermissionsHandlerHandler(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -249,7 +249,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, reg, nil)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -285,7 +285,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, reg, nil)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -326,7 +326,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = SetPermissions(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, reg, nil)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("unexpected authorization for a non-owner")
         }

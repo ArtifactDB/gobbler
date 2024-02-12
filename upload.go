@@ -6,7 +6,7 @@ import (
     "path/filepath"
 )
 
-func Upload(reqpath, registry string, administrators []string) (*Configuration, error) {
+func uploadHandler(reqpath, registry string, administrators []string) (*Configuration, error) {
     request, err := ReadUploadRequest(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to parse request at %q; %w", reqpath, err)

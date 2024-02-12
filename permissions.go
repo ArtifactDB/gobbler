@@ -140,34 +140,34 @@ func ValidateUploaders(uploaders []Uploader) error {
     return nil
 }
 
-func SetPermissions(path, registry string, administrators []string) error {
+func setPermissionsHandler(reqpath, registry string, administrators []string) error {
     incoming := struct {
         Project *string `json:"project"`
         Permissions Permissions `json:"permissions"`
     }{}
     {
-        handle, err := os.ReadFile(path)
+        handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", path, err)
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", path, err)
+            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
         if incoming.Project == nil {
-            return fmt.Errorf("expected 'project' string in request %q", path)
+            return fmt.Errorf("expected 'project' string in request %q", reqpath)
         }
         err = isBadName(*(incoming.Project))
         if err != nil {
-            return fmt.Errorf("invalid name for 'project' property in %q; %w", path, err)
+            return fmt.Errorf("invalid name for 'project' property in %q; %w", reqpath, err)
         }
     }
 
-    source_user, err := IdentifyUser(path)
+    source_user, err := IdentifyUser(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", path, err)
+        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     project := *(incoming.Project)

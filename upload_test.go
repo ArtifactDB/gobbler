@@ -29,7 +29,7 @@ func setup_source_for_upload_test() (string, error) {
     return src, nil
 }
 
-func TestUploadSimple(t *testing.T) {
+func TestuploadHandlerSimple(t *testing.T) {
     project := "original_series"
     asset := "gastly"
 
@@ -52,7 +52,7 @@ func TestUploadSimple(t *testing.T) {
     // Executing the first transfer.
     old_usage := int64(0)
     {
-        config, err := Upload(reqname, reg, nil)
+        config, err := uploadHandler(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -151,7 +151,7 @@ func TestUploadSimple(t *testing.T) {
             t.Fatalf("failed to update the 'evolution' file; %v", err)
         }
 
-        config, err := Upload(reqname, reg, nil)
+        config, err := uploadHandler(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -213,7 +213,7 @@ func TestUploadSimple(t *testing.T) {
     }
 }
 
-func TestUploadProbation(t *testing.T) {
+func TestuploadHandlerProbation(t *testing.T) {
     prefix := "POKEDEX"
     asset := "Gastly"
 
@@ -233,7 +233,7 @@ func TestUploadProbation(t *testing.T) {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    config, err := Upload(reqname, reg, nil)
+    config, err := uploadHandler(reqname, reg, nil)
     if err != nil {
         t.Fatalf("failed to perform the upload; %v", err)
     }
