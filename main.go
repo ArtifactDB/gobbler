@@ -29,7 +29,16 @@ func main() {
         administrators = strings.Split(*mstr, ",")
     }
 
-    logdir := filepath.Join(staging, "..logs")
+    // Setting up special subdirectories.
+    respdir := filepath.Join(staging, "responses")
+    if _, err := os.Stat(respdir); errors.Is(err, os.ErrNotExist) {
+        err := os.Mkdir(respdir, 0755)
+        if err != nil {
+            log.Fatal("failed to create a responses subdirectory; ", err)
+        }
+    }
+
+    logdir := filepath.Join(registry, logDirName)
     if _, err := os.Stat(logdir); errors.Is(err, os.ErrNotExist) {
         err := os.Mkdir(logdir, 0755)
         if err != nil {
@@ -110,7 +119,7 @@ func main() {
                                 }
                             }
 
-                            logpath := filepath.Join(logdir, basename)
+                            logpath := filepath.Join(respdir, basename)
                             err = dumpJson(logpath, payload)
                             if err != nil {
                                 log.Println("failed to dump response for '" + basename + "'; ", err)

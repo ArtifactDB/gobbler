@@ -88,7 +88,7 @@ func TestUploadHandlerSimple(t *testing.T) {
     asset := "gastly"
     version := "lavender"
 
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -207,10 +207,26 @@ func TestUploadHandlerSimple(t *testing.T) {
     if !(deets.Baseline > 0 && deets.GrowthRate > 0 && deets.Year > 0) {
         t.Fatalf("uninitialized fields in the quota")
     }
+
+    // Checking that the logs have something in them.
+    logs, err := readAllLogs(reg)
+    if err != nil {
+        t.Fatalf("failed to read the logs; %v", err)
+    }
+    if len(logs) != 1 {
+        t.Fatalf("expected exactly one entry in the log directory")
+    }
+    if logs[0].Type != "add-version" || 
+        logs[0].Project == nil || *(logs[0].Project) != project || 
+        logs[0].Asset == nil || *(logs[0].Asset) != asset || 
+        logs[0].Version == nil || *(logs[0].Version) != version || 
+        logs[0].Latest == nil || !*(logs[0].Latest) {
+        t.Fatalf("unexpected contents for first log in %q", reg)
+    }
 }
 
 func TestUploadHandlerSimpleFailures(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -307,7 +323,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
 }
 
 func TestUploadHandlerNewPermissions(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -413,7 +429,7 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
     asset := "gastly"
     version := "lavender"
 
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -519,7 +535,7 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
 }
 
 func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -568,7 +584,7 @@ func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
 }
 
 func TestUploadHandlerUpdatePermissions(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -611,7 +627,7 @@ func TestUploadHandlerUpdatePermissions(t *testing.T) {
 }
 
 func TestUploadHandlerProjectSeries(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -661,7 +677,7 @@ func TestUploadHandlerProjectSeries(t *testing.T) {
 }
 
 func TestUploadHandlerProjectSeriesFailures(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -706,7 +722,7 @@ func TestUploadHandlerProjectSeriesFailures(t *testing.T) {
 }
 
 func TestUploadHandlerVersionSeries(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -766,7 +782,7 @@ func TestUploadHandlerNewOnProbation(t *testing.T) {
     prefix := "POKEDEX"
     asset := "Gastly"
 
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -807,10 +823,19 @@ func TestUploadHandlerNewOnProbation(t *testing.T) {
     if err == nil || !errors.Is(err, os.ErrNotExist) {
         t.Fatal("no ..latest file should be created on probation")
     }
+
+    // No logs should be created either.
+    logs, err := os.ReadDir(filepath.Join(reg, logDirName))
+    if err != nil {
+        t.Fatalf("failed to read the log directory")
+    }
+    if len(logs) != 0 {
+        t.Fatalf("no logs should be created on probation")
+    }
 }
 
 func TestUploadHandlerUpdateOnProbation(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }

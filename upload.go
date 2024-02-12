@@ -370,11 +370,12 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
     }
 
     version_dir := filepath.Join(asset_dir, version)
+    upload_finish := time.Now()
     {
         summary := summaryMetadata {
             UploadUserId: req_user,
             UploadStart: upload_start.Format(time.RFC3339),
-            UploadFinish: time.Now().Format(time.RFC3339),
+            UploadFinish: upload_finish.Format(time.RFC3339),
         }
         if on_probation {
             summary.OnProbation = &on_probation
@@ -403,6 +404,21 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
         err = dumpJson(usage_path, &usage)
         if err != nil {
             return nil, fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
+        }
+    }
+
+    // Adding a log.
+    if !on_probation {
+        log_info := map[string]interface{} {
+            "type": "add-version",
+            "project": project,
+            "asset": asset,
+            "version": version,
+            "latest": true,
+        }
+        err := dumpLog(registry, log_info)
+        if err != nil {
+            return nil, fmt.Errorf("failed to save log file; %w", err)
         }
     }
 

@@ -6,6 +6,10 @@ import (
     "fmt"
     "errors"
     "strings"
+    "time"
+    "math/rand"
+    "strconv"
+    "path/filepath"
 )
 
 func dumpJson(path string, output interface{}) error {
@@ -41,4 +45,11 @@ func isMissingOrBadName(name *string) error {
     } else {
         return isBadName(*name)
     }
+}
+
+const logDirName = "..logs"
+
+func dumpLog(registry string, output interface{}) error {
+    path := time.Now().Format(time.RFC3339) + "_" + strconv.Itoa(100000 + rand.Intn(900000))
+    return dumpJson(filepath.Join(registry, logDirName, path), output)
 }

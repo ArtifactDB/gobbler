@@ -82,13 +82,8 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
             return fmt.Errorf("failed to update the version summary at %q; %w", summary_path, err)
         }
 
-        current_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
-        if err != nil {
-            return fmt.Errorf("failed to parse the upload finish time at %q; %w", summary_path, err)
-        }
-
         latest, err := readLatest(asset_dir)
-        overwrite := false
+        overwrite_latest := false
         if err == nil {
             latest_version := filepath.Join(asset_dir, latest.Latest)
             latest_summ, err := readSummary(latest_version)
@@ -96,25 +91,42 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
                 return fmt.Errorf("failed to read the latest version summary for %q; %w", latest_version, err)
             }
 
+            finish_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+            if err != nil {
+                return fmt.Errorf("failed to parse the upload finish time at %q; %w", summary_path, err)
+            }
             latest_time, err := time.Parse(time.RFC3339, latest_summ.UploadFinish)
             if err != nil {
                 return fmt.Errorf("failed to read the latest version's upload finish time from %q; %w", latest_version, err)
             }
-            overwrite = current_time.After(latest_time) 
+            overwrite_latest = finish_time.After(latest_time) 
         } else if errors.Is(err, os.ErrNotExist) {
-            overwrite = true
+            overwrite_latest = true
             latest = &latestMetadata{}
         } else {
             return fmt.Errorf("failed to read the latest version for %s; %w", asset_dir, err)
         }
 
-        if overwrite {
+        if overwrite_latest {
             latest_path := filepath.Join(asset_dir, latestFileName)
             latest.Latest = *(incoming.Version)
             err := dumpJson(latest_path, latest)
             if err != nil {
                 return fmt.Errorf("failed to update the latest version at %q; %w", latest_path, err)
             }
+        }
+
+        // Adding a log.
+        log_info := map[string]interface{} {
+            "type": "add-version",
+            "project": project,
+            "asset": *(incoming.Asset),
+            "version": *(incoming.Version),
+            "latest": overwrite_latest,
+        }
+        err = dumpLog(registry, &log_info)
+        if err != nil {
+            return fmt.Errorf("failed to save log file; %w", err)
         }
 
     } else {

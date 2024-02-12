@@ -5,6 +5,8 @@ import (
     "strings"
     "os"
     "fmt"
+    "path/filepath"
+    "encoding/json"
 )
 
 func dumpRequest(request_type, request_string string) (string, error) {
@@ -36,6 +38,52 @@ func verifyFileContents(path, contents string) error {
         return fmt.Errorf("unexpected contents of %q; %w", path, err)
     }
     return nil
+}
+
+func constructMockRegistry() (string, error) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        return "", fmt.Errorf("failed to create the registry; %w", err)
+    }
+
+    err = os.Mkdir(filepath.Join(reg, logDirName), 0755)
+    if err != nil {
+        return "", fmt.Errorf("failed to create log subdirectory; %w", err)
+    }
+
+    return reg, nil
+}
+
+type logEntry struct {
+    Type string `json:"type"`
+    Project *string `json:"project"`
+    Asset *string `json:"asset"`
+    Version *string `json:"version"`
+    Latest *bool `json:"latest"`
+}
+
+func readAllLogs(registry string) ([]logEntry, error) {
+    logdir := filepath.Join(registry, logDirName)
+    logs, err := os.ReadDir(logdir)
+    if err != nil {
+        return nil, fmt.Errorf("failed to list the log directory contents; %w", err)
+    }
+
+    output := make([]logEntry, len(logs))
+    for i, l := range logs {
+        logpath := filepath.Join(logdir, l.Name())
+        content_raw, err := os.ReadFile(logpath)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read the log at %q; %w", logpath, err)
+        }
+
+        err = json.Unmarshal(content_raw, &(output[i]))
+        if err != nil {
+            return nil, fmt.Errorf("failed to parse the log at %q; %w", logpath, err)
+        }
+    }
+
+    return output, nil
 }
 
 func TestIsBadName(t *testing.T) {

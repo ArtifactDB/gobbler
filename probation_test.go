@@ -67,7 +67,7 @@ func mockProbationVersion(reg, project, asset, version string) error {
 }
 
 func TestApproveProbationHandler(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
@@ -116,6 +116,22 @@ func TestApproveProbationHandler(t *testing.T) {
         t.Fatal("latest version should be updated after approval")
     }
 
+    // Checking that logs are created.
+    logs, err := readAllLogs(reg)
+    if err != nil {
+        t.Fatalf("failed to read the logs; %v", err)
+    }
+    if len(logs) != 1 {
+        t.Fatalf("expected exactly one entry in the log directory")
+    }
+    if logs[0].Type != "add-version" || 
+        logs[0].Project == nil || *(logs[0].Project) != project || 
+        logs[0].Asset == nil || *(logs[0].Asset) != asset || 
+        logs[0].Version == nil || *(logs[0].Version) != version || 
+        logs[0].Latest == nil || !*(logs[0].Latest) {
+        t.Fatalf("unexpected contents for first log in %q", reg)
+    }
+
     // Repeated approval attempts fail.
     err = approveProbationHandler(reqpath, reg, []string{ self })
     if err == nil || !strings.Contains(err.Error(), "not on probation") {
@@ -125,7 +141,7 @@ func TestApproveProbationHandler(t *testing.T) {
 
 func TestApproveProbationHandlerNotLatest(t *testing.T) {
     for _, other_latest := range []bool{ true, false } {
-        reg, err := os.MkdirTemp("", "")
+        reg, err := constructMockRegistry()
         if err != nil {
             t.Fatalf("failed to create the registry; %v", err)
         }
@@ -204,11 +220,23 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
                 t.Fatal("latest version should be updated after approval")
             }
         }
+
+        // Checking that a suitable log is created.
+        logs, err := readAllLogs(reg)
+        if err != nil {
+            t.Fatalf("failed to read the logs; %v", err)
+        }
+        if len(logs) != 1 {
+            t.Fatalf("expected exactly one entry in the log directory")
+        }
+        if logs[0].Latest == nil || *(logs[0].Latest) == other_latest {
+            t.Fatalf("unexpected latest flag after probation approval for first log in %q", reg)
+        }
     }
 }
 
 func TestRejectProbationHandler(t *testing.T) {
-    reg, err := os.MkdirTemp("", "")
+    reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
