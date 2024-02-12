@@ -9,7 +9,7 @@ import (
     "errors"
 )
 
-func setup_source_for_transfer_test() (string, error) {
+func setupSourceForTransferTest() (string, error) {
     src, err := os.MkdirTemp("", "")
     if err != nil {
         return "", fmt.Errorf("failed to create the temporary directory; %w", err)
@@ -70,17 +70,6 @@ func setup_source_for_transfer_test() (string, error) {
     return src, nil
 }
 
-func verify_file_contents(path, contents string) error {
-    observed, err := os.ReadFile(path)
-    if err != nil {
-        return fmt.Errorf("failed to read %q; %w", path, err)
-    }
-    if string(observed) != contents {
-        return fmt.Errorf("unexpected contents of %q; %w", path, err)
-    }
-    return nil
-}
-
 func TestTransferSimple(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
@@ -91,7 +80,7 @@ func TestTransferSimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_transfer_test()
+    src, err := setupSourceForTransferTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -104,7 +93,7 @@ func TestTransferSimple(t *testing.T) {
 
     // Checking a few manifest entries...
     destination := filepath.Join(reg, project, asset, version)
-    man, err := ReadManifest(destination)
+    man, err := readManifest(destination)
     if err != nil {
         t.Fatalf("failed to read the manifest; %v", err)
     }
@@ -118,15 +107,15 @@ func TestTransferSimple(t *testing.T) {
     }
 
     // Checking some of the actual files.
-    err = verify_file_contents(filepath.Join(destination, "type"), "electric")
+    err = verifyFileContents(filepath.Join(destination, "type"), "electric")
     if err != nil {
         t.Fatal(err)
     }
-    err = verify_file_contents(filepath.Join(destination, "evolution", "down"), "pichu")
+    err = verifyFileContents(filepath.Join(destination, "evolution", "down"), "pichu")
     if err != nil {
         t.Fatal(err)
     }
-    err = verify_file_contents(filepath.Join(destination, "moves", "normal", "double_team"), "0")
+    err = verifyFileContents(filepath.Join(destination, "moves", "normal", "double_team"), "0")
     if err != nil {
         t.Fatal(err)
     }
@@ -142,7 +131,7 @@ func TestTransferSkipHidden(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_transfer_test()
+    src, err := setupSourceForTransferTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -179,7 +168,7 @@ func TestTransferSkipHidden(t *testing.T) {
     }
 }
 
-func extract_symlink_target(path string) (string, error) {
+func extractSymlinkTarget(path string) (string, error) {
     finfo, err := os.Lstat(path)
     if err != nil {
         return "", fmt.Errorf("failed to stat %q; %w", path, err)
@@ -196,7 +185,7 @@ func extract_symlink_target(path string) (string, error) {
     return target, nil
 }
 
-func verify_symlink(manifest map[string]ManifestEntry, version_dir, path, contents, target_project, target_asset, target_version, target_path string, has_ancestor bool) error {
+func verifySymlink(manifest map[string]manifestEntry, version_dir, path, contents, target_project, target_asset, target_version, target_path string, has_ancestor bool) error {
     info, ok := manifest[path]
     if !ok || 
         int(info.Size) != len(contents) || 
@@ -210,12 +199,12 @@ func verify_symlink(manifest map[string]ManifestEntry, version_dir, path, conten
     }
 
     full := filepath.Join(version_dir, path)
-    err := verify_file_contents(full, contents)
+    err := verifyFileContents(full, contents)
     if err != nil {
         return err
     }
 
-    target, err := extract_symlink_target(full)
+    target, err := extractSymlinkTarget(full)
     if err != nil {
         return err
     }
@@ -226,14 +215,14 @@ func verify_symlink(manifest map[string]ManifestEntry, version_dir, path, conten
     return nil
 }
 
-func verify_not_symlink(manifest map[string]ManifestEntry, version_dir, path, contents string) error {
+func verifyNotSymlink(manifest map[string]manifestEntry, version_dir, path, contents string) error {
     info, ok := manifest[path]
     if !ok || int(info.Size) != len(contents) || info.Link != nil {
         return fmt.Errorf("unexpected manifest entry for %q", path)
     }
 
     full := filepath.Join(version_dir, path)
-    err := verify_file_contents(full, contents)
+    err := verifyFileContents(full, contents)
     if err != nil {
         return err
     }
@@ -241,8 +230,8 @@ func verify_not_symlink(manifest map[string]ManifestEntry, version_dir, path, co
     return nil
 }
 
-func verify_ancestral_symlink(
-    manifest map[string]ManifestEntry, 
+func verifyAncestralSymlink(
+    manifest map[string]manifestEntry, 
     version_dir, 
     path, 
     registry,
@@ -289,7 +278,7 @@ func TestTransferDeduplication(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_transfer_test()
+    src, err := setupSourceForTransferTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -301,7 +290,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"" + version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -339,37 +328,37 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
         destination := filepath.Join(reg, project, asset, new_version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
         // Different file name.
-        err = verify_symlink(man, destination, "evolution/next", "raichu", project, asset, version, "evolution/up", false)
+        err = verifySymlink(man, destination, "evolution/next", "raichu", project, asset, version, "evolution/up", false)
         if err != nil {
             t.Fatal(err)
         }
 
         // Same file name.
-        err = verify_symlink(man, destination, "moves/electric/thunder", "110", project, asset, version, "moves/electric/thunder", false)
+        err = verifySymlink(man, destination, "moves/electric/thunder", "110", project, asset, version, "moves/electric/thunder", false)
         if err != nil {
             t.Fatal(err)
         }
 
         // Modified file.
-        err = verify_not_symlink(man, destination, "moves/electric/thunder_shock", "some_different_value")
+        err = verifyNotSymlink(man, destination, "moves/electric/thunder_shock", "some_different_value")
         if err != nil {
             t.Fatal(err)
         }
 
         // New file.
-        err = verify_not_symlink(man, destination, "moves/steel/iron_tail", "100")
+        err = verifyNotSymlink(man, destination, "moves/steel/iron_tail", "100")
         if err != nil {
             t.Fatal(err)
         }
@@ -398,46 +387,46 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
         destination := filepath.Join(reg, project, asset, new_version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verify_symlink(man, destination, "evolution/final", "raichu", project, asset, "blue", "evolution/next", true)
+        err = verifySymlink(man, destination, "evolution/final", "raichu", project, asset, "blue", "evolution/next", true)
         if err != nil {
             t.Fatal(err)
         }
-        err = verify_ancestral_symlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        err = verify_symlink(man, destination, "moves/electric/thunderbolt", "90", project, asset, "blue", "moves/electric/thunderbolt", true)
-        if err != nil {
-            t.Fatal(err)
-        }
-        err = verify_ancestral_symlink(man, destination, "moves/electric/thunderbolt", reg, project, asset, "red", "moves/electric/thunderbolt") 
+        err = verifyAncestralSymlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_not_symlink(man, destination, "moves/electric/thunder_shock", "9999")
+        err = verifySymlink(man, destination, "moves/electric/thunderbolt", "90", project, asset, "blue", "moves/electric/thunderbolt", true)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verifyAncestralSymlink(man, destination, "moves/electric/thunderbolt", reg, project, asset, "red", "moves/electric/thunderbolt") 
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_not_symlink(man, destination, "moves/normal/feint", "30")
+        err = verifyNotSymlink(man, destination, "moves/electric/thunder_shock", "9999")
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_symlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "blue", "moves/steel/iron_tail", false)
+        err = verifyNotSymlink(man, destination, "moves/normal/feint", "30")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = verifySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "blue", "moves/steel/iron_tail", false)
         if err != nil {
             t.Fatal(err)
         }
@@ -451,37 +440,37 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
         destination := filepath.Join(reg, project, asset, new_version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verify_symlink(man, destination, "evolution/final", "raichu", project, asset, "green", "evolution/final", true)
+        err = verifySymlink(man, destination, "evolution/final", "raichu", project, asset, "green", "evolution/final", true)
         if err != nil {
             t.Fatal(err)
         }
-        err = verify_ancestral_symlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
+        err = verifyAncestralSymlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_symlink(man, destination, "moves/electric/thunder_shock", "9999", project, asset, "green", "moves/electric/thunder_shock", false)
+        err = verifySymlink(man, destination, "moves/electric/thunder_shock", "9999", project, asset, "green", "moves/electric/thunder_shock", false)
         if err != nil {
             t.Fatal(err)
         }
 
         // We can also form new ancestral links.
-        err = verify_symlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "green", "moves/steel/iron_tail", true)
+        err = verifySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "green", "moves/steel/iron_tail", true)
         if err != nil {
             t.Fatal(err)
         }
-        err = verify_ancestral_symlink(man, destination, "moves/steel/iron_tail", reg, project, asset, "blue", "moves/steel/iron_tail")
+        err = verifyAncestralSymlink(man, destination, "moves/steel/iron_tail", reg, project, asset, "blue", "moves/steel/iron_tail")
         if err != nil {
             t.Fatal(err)
         }
@@ -494,7 +483,7 @@ func TestTransferLinks(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_transfer_test()
+    src, err := setupSourceForTransferTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -508,11 +497,11 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, "red", SummaryFileName), []byte("{}"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, "red", summaryFileName), []byte("{}"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"red\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"red\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -521,11 +510,11 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, "blue", SummaryFileName), []byte("{}"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, "blue", summaryFileName), []byte("{}"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"blue\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"blue\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -534,11 +523,11 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, "green", SummaryFileName), []byte("{}"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, "green", summaryFileName), []byte("{}"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, LatestFileName), []byte("{ \"latest\": \"green\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"green\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -587,35 +576,35 @@ func TestTransferLinks(t *testing.T) {
         }
 
         destination := filepath.Join(reg, project, asset, "kanto")
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verify_symlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
+        err = verifySymlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_symlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
+        err = verifySymlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
         if err != nil {
             t.Fatal(err)
         }
-        err = verify_ancestral_symlink(man, destination, "moves/electric/THUNDERBOLT", reg, "pokemon", "pikachu", "red", "moves/electric/thunderbolt")
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        err = verify_symlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
-        if err != nil {
-            t.Fatal(err)
-        }
-        err = verify_ancestral_symlink(man, destination, "best_friend", reg, "pokemon", "pikachu", "red", "evolution/down")
+        err = verifyAncestralSymlink(man, destination, "moves/electric/THUNDERBOLT", reg, "pokemon", "pikachu", "red", "moves/electric/thunderbolt")
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verify_not_symlink(man, destination, "types/second", "steel")
+        err = verifySymlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verifyAncestralSymlink(man, destination, "best_friend", reg, "pokemon", "pikachu", "red", "evolution/down")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = verifyNotSymlink(man, destination, "types/second", "steel")
         if err != nil {
             t.Fatal(err)
         }
@@ -630,7 +619,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to irrelevant files are copied.
     {
-        src, err := setup_source_for_transfer_test()
+        src, err := setupSourceForTransferTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -661,12 +650,12 @@ func TestTransferLinkFailures(t *testing.T) {
         }
 
         destination := filepath.Join(reg, project, asset, version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verify_not_symlink(man, destination, "asdasd", "gotta catch em all")
+        err = verifyNotSymlink(man, destination, "asdasd", "gotta catch em all")
         if err != nil {
             t.Fatal(err)
         }
@@ -728,7 +717,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to probational versions are forbidden.
     {
-        src, err := setup_source_for_transfer_test()
+        src, err := setupSourceForTransferTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -740,7 +729,7 @@ func TestTransferLinkFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, version, SummaryFileName), []byte(`{ "on_probation": true }`), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, summaryFileName), []byte(`{ "on_probation": true }`), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -759,7 +748,7 @@ func TestTransferLinkFailures(t *testing.T) {
 
     // Links to internal files are forbidden.
     {
-        src, err := setup_source_for_transfer_test()
+        src, err := setupSourceForTransferTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -771,12 +760,12 @@ func TestTransferLinkFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, version, SummaryFileName), []byte(`{}`), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, summaryFileName), []byte(`{}`), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = os.Symlink(filepath.Join(reg, project, asset, version, SummaryFileName), filepath.Join(src, "asdasd"))
+        err = os.Symlink(filepath.Join(reg, project, asset, version, summaryFileName), filepath.Join(src, "asdasd"))
         if err != nil {
             t.Fatalf("failed to create a test link to a registry file")
         }

@@ -88,7 +88,7 @@ func main() {
                                 } else {
                                     reportable_err = err0
                                 }
-                            } else if strings.HasPrefix(reqtype, "permissions-") {
+                            } else if strings.HasPrefix(reqtype, "set_permissions-") {
                                 reportable_err = setPermissionsHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
                                 reportable_err = refreshLatestHandler(reqpath, registry, administrators)
@@ -135,7 +135,7 @@ func main() {
     go func() {
         for {
             <-ticker.C
-            err := PurgeOldFiles(staging, time.Hour * 24 * 7)
+            err := purgeOldFiles(staging, time.Hour * 24 * 7)
             if err != nil {
                 log.Println(err)
             }

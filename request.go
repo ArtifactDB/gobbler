@@ -13,11 +13,11 @@ type UploadRequest struct {
     Project *string `json:"project"`
     Asset *string `json:"asset"`
     Version *string `json:"version"`
-    Permissions *Permissions `json:"permissions"`
+    Permissions *permissionsMetadata `json:"permissions"`
     OnProbation *bool `json:"on_probation"`
 }
 
-func ReadUploadRequest(path string) (*UploadRequest, error) {
+func readUploadRequest(path string) (*UploadRequest, error) {
     handle, err := os.ReadFile(path)
     if err != nil {
         return nil, fmt.Errorf("failed to read %q; %w", path, err)
@@ -33,12 +33,12 @@ func ReadUploadRequest(path string) (*UploadRequest, error) {
         return nil, fmt.Errorf("expected a 'source' property in %q; %w", path, err)
     }
     source := *(details.Source)
-    source_user, err := IdentifyUser(source)
+    source_user, err := identifyUser(source)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", source, err)
     }
 
-    req_user, err := IdentifyUser(path)
+    req_user, err := identifyUser(path)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", path, err)
     }

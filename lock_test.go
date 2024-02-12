@@ -14,10 +14,10 @@ func TestLock(t *testing.T) {
         t.Fatalf("failed to create a temporary directory; %v", err)
     }
 
-    lockpath := filepath.Join(dir, LockFileName)
+    lockpath := filepath.Join(dir, lockFileName)
 
     {
-        handle, err := Lock(lockpath, 10 * time.Second)
+        handle, err := lock(lockpath, 10 * time.Second)
         if err != nil {
             t.Fatalf("failed to create a lock file; %v", err)
         }
@@ -26,19 +26,19 @@ func TestLock(t *testing.T) {
             t.Fatalf("failed to create a lock file; %v", err)
         }
 
-        err = Unlock(handle)
+        err = unlock(handle)
         if err != nil {
             t.Fatalf("failed to unlock the file; %v", err)
         }
     }
 
     {
-        handle2, err := Lock(lockpath, 0)
+        handle2, err := lock(lockpath, 0)
         if err != nil {
             t.Fatalf("failed to use existing lock file; %v", err)
         }
 
-        err = Unlock(handle2)
+        err = unlock(handle2)
         if err != nil {
             t.Fatalf("failed to unlock the file; %v", err)
         }

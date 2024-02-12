@@ -13,7 +13,7 @@ func TestReadManifest(t *testing.T) {
     }
 
     err = os.WriteFile(
-        filepath.Join(f, ManifestFileName),
+        filepath.Join(f, manifestFileName),
         []byte(`
 { 
     "foobar": {
@@ -53,7 +53,7 @@ func TestReadManifest(t *testing.T) {
         t.Fatalf("failed to create test manifest; %v", err)
     }
 
-    out, err := ReadManifest(f)
+    out, err := readManifest(f)
     if err != nil {
         t.Fatalf("failed to read test manifest; %v", err)
     }

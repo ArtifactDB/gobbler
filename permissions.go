@@ -12,7 +12,7 @@ import (
     "time"
 )
 
-type Uploader struct {
+type uploaderEntry struct {
     Id *string `json:"id"`
     Asset *string `json:"asset"`
     Version *string `json:"version"`
@@ -20,14 +20,14 @@ type Uploader struct {
     Trusted *bool `json:"trusted"`
 }
 
-type Permissions struct {
+type permissionsMetadata struct {
     Owners []string `json:"owners"`
-    Uploaders []Uploader `json:"uploaders"`
+    Uploaders []uploaderEntry `json:"uploaders"`
 }
 
-const PermissionsFileName = "..permissions"
+const permissionsFileName = "..permissions"
 
-func IdentifyUser(path string) (string, error) {
+func identifyUser(path string) (string, error) {
     sinfo, err := os.Stat(path)
     if err != nil {
         return "", fmt.Errorf("failed to inspect '" + path + "'; %w", err)
@@ -45,13 +45,13 @@ func IdentifyUser(path string) (string, error) {
     return uinfo.Username, nil
 }
 
-func ReadPermissions(path string) (*Permissions, error) {
-    handle, err := os.ReadFile(filepath.Join(path, PermissionsFileName))
+func readPermissions(path string) (*permissionsMetadata, error) {
+    handle, err := os.ReadFile(filepath.Join(path, permissionsFileName))
     if err != nil {
         return nil, fmt.Errorf("failed to read %q; %w", path, err)
     }
 
-    var output Permissions
+    var output permissionsMetadata
     err = json.Unmarshal(handle, &output)
     if err != nil {
         return nil, fmt.Errorf("failed to parse JSON from %q; %w", path, err)
@@ -60,7 +60,7 @@ func ReadPermissions(path string) (*Permissions, error) {
     return &output, nil
 }
 
-func IsAuthorizedToAdmin(username string, administrators []string) bool {
+func isAuthorizedToAdmin(username string, administrators []string) bool {
     if administrators != nil {
         for _, s := range administrators {
             if s == username {
@@ -71,8 +71,8 @@ func IsAuthorizedToAdmin(username string, administrators []string) bool {
     return false
 }
 
-func IsAuthorizedToMaintain(username string, administrators []string, owners []string) bool {
-    if IsAuthorizedToAdmin(username, administrators) {
+func isAuthorizedToMaintain(username string, administrators []string, owners []string) bool {
+    if isAuthorizedToAdmin(username, administrators) {
         return true
     }
     if owners != nil {
@@ -85,8 +85,8 @@ func IsAuthorizedToMaintain(username string, administrators []string, owners []s
     return false
 }
 
-func IsAuthorizedToUpload(username string, administrators []string, permissions *Permissions, asset, version *string) (bool, bool) {
-    if IsAuthorizedToMaintain(username, administrators, permissions.Owners) {
+func isAuthorizedToUpload(username string, administrators []string, permissions *permissionsMetadata, asset, version *string) (bool, bool) {
+    if isAuthorizedToMaintain(username, administrators, permissions.Owners) {
         return true, true
     }
 
@@ -123,7 +123,7 @@ func IsAuthorizedToUpload(username string, administrators []string, permissions 
     return false, false
 }
 
-func ValidateUploaders(uploaders []Uploader) error {
+func validateUploaders(uploaders []uploaderEntry) error {
     for _, u := range uploaders {
         if u.Id == nil {
             return errors.New("all entries of 'uploaders' should have an 'id' property")
@@ -143,7 +143,7 @@ func ValidateUploaders(uploaders []Uploader) error {
 func setPermissionsHandler(reqpath, registry string, administrators []string) error {
     incoming := struct {
         Project *string `json:"project"`
-        Permissions Permissions `json:"permissions"`
+        Permissions permissionsMetadata `json:"permissions"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -165,26 +165,26 @@ func setPermissionsHandler(reqpath, registry string, administrators []string) er
         }
     }
 
-    source_user, err := IdentifyUser(reqpath)
+    source_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     project := *(incoming.Project)
     project_dir := filepath.Join(registry, project)
-    lock_path := filepath.Join(project_dir, LockFileName)
-    handle, err := Lock(lock_path, 1000 * time.Second)
+    lock_path := filepath.Join(project_dir, lockFileName)
+    handle, err := lock(lock_path, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer Unlock(handle)
+    defer unlock(handle)
 
-    existing, err := ReadPermissions(project_dir)
+    existing, err := readPermissions(project_dir)
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
 
-    if !IsAuthorizedToMaintain(source_user, administrators, existing.Owners) {
+    if !isAuthorizedToMaintain(source_user, administrators, existing.Owners) {
         return fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project)
     }
 
@@ -192,14 +192,14 @@ func setPermissionsHandler(reqpath, registry string, administrators []string) er
         existing.Owners = incoming.Permissions.Owners
     }
     if incoming.Permissions.Uploaders != nil {
-        err := ValidateUploaders(incoming.Permissions.Uploaders)
+        err := validateUploaders(incoming.Permissions.Uploaders)
         if err != nil {
             return fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err)
         }
         existing.Uploaders = incoming.Permissions.Uploaders
     }
 
-    perm_path := filepath.Join(project_dir, PermissionsFileName)
+    perm_path := filepath.Join(project_dir, permissionsFileName)
     err = dumpJson(perm_path, &existing)
     if err != nil {
         return fmt.Errorf("failed to write permissions for %q; %w", project, err)

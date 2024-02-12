@@ -9,21 +9,21 @@ import (
     "strings"
 )
 
-type LatestMetadata struct {
+type latestMetadata struct {
     Latest string `json:"latest"`
 }
 
-const LatestFileName = "..latest"
+const latestFileName = "..latest"
 
-func ReadLatest(path string) (*LatestMetadata, error) {
-    latest_path := filepath.Join(path, LatestFileName)
+func readLatest(path string) (*latestMetadata, error) {
+    latest_path := filepath.Join(path, latestFileName)
 
     latest_raw, err := os.ReadFile(latest_path)
     if err != nil {
         return nil, fmt.Errorf("failed to read '" + latest_path + "'; %w", err)
     }
 
-    var output LatestMetadata
+    var output latestMetadata
     err = json.Unmarshal(latest_raw, &output)
     if err != nil {
         return nil, fmt.Errorf("failed to parse JSON in '" + latest_path + "'; %w", err)
@@ -45,7 +45,7 @@ func refreshLatest(asset_dir string) error {
     for _, entry := range entries {
         if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
             full_path := filepath.Join(asset_dir, entry.Name())
-            summ, err := ReadSummary(full_path)
+            summ, err := readSummary(full_path)
             if err != nil {
                 return fmt.Errorf("failed to read summary from %q; %w", full_path, err)
             }
@@ -66,9 +66,9 @@ func refreshLatest(asset_dir string) error {
         }
     }
 
-    latest_path := filepath.Join(asset_dir, LatestFileName)
+    latest_path := filepath.Join(asset_dir, latestFileName)
     if found {
-        output := LatestMetadata { Latest: most_recent_name }
+        output := latestMetadata { Latest: most_recent_name }
         err := dumpJson(latest_path, &output)
         if err != nil {
             return fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)
@@ -84,12 +84,12 @@ func refreshLatest(asset_dir string) error {
 }
 
 func refreshLatestHandler(reqpath, registry string, administrators []string) error {
-    source_user, err := IdentifyUser(reqpath)
+    source_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    if !IsAuthorizedToAdmin(source_user, administrators) {
+    if !isAuthorizedToAdmin(source_user, administrators) {
         return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
     }
 
@@ -126,12 +126,12 @@ func refreshLatestHandler(reqpath, registry string, administrators []string) err
     }
 
     asset_dir := filepath.Join(registry, *(incoming.Project), *(incoming.Asset))
-    lock_path := filepath.Join(asset_dir, LockFileName)
-    handle, err := Lock(lock_path, 1000 * time.Second)
+    lock_path := filepath.Join(asset_dir, lockFileName)
+    handle, err := lock(lock_path, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the asset directory %q; %w", asset_dir, err)
     }
-    defer Unlock(handle)
+    defer unlock(handle)
 
     return refreshLatest(asset_dir)
 }

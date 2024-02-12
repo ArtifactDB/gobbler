@@ -7,7 +7,7 @@ import (
 )
 
 func uploadHandler(reqpath, registry string, administrators []string) (*Configuration, error) {
-    request, err := ReadUploadRequest(reqpath)
+    request, err := readUploadRequest(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to parse request at %q; %w", reqpath, err)
     }
@@ -15,7 +15,7 @@ func uploadHandler(reqpath, registry string, administrators []string) (*Configur
     upload_start := time.Now()
     source := *(request.Source)
 
-    config, err := Configure(request, registry, administrators)
+    config, err := configure(request, registry, administrators)
     if err != nil {
         return nil, fmt.Errorf("failed to configure upload for %q; %w", source, err)
     }
@@ -25,22 +25,22 @@ func uploadHandler(reqpath, registry string, administrators []string) (*Configur
         return nil, fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
-    // Locking the entire project directory to write out shared metadata.
+    // locking the entire project directory to write out shared metadata.
     // Technically we don't need to do this until we get around to writing
     // ..usage, but it's just a bit safer that way, and besides: who is going
     // to upload to the same proejct at the same time?
     project_dir := filepath.Join(registry, config.Project)
-    lock_path := filepath.Join(project_dir, LockFileName)
-    handle, err := Lock(lock_path, 1000 * time.Second)
+    lock_path := filepath.Join(project_dir, lockFileName)
+    handle, err := lock(lock_path, 1000 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer Unlock(handle)
+    defer unlock(handle)
 
     asset_dir := filepath.Join(project_dir, config.Asset)
     if !config.OnProbation {
-        latest := LatestMetadata { Latest: config.Version }
-        latest_path := filepath.Join(asset_dir, LatestFileName)
+        latest := latestMetadata { Latest: config.Version }
+        latest_path := filepath.Join(asset_dir, latestFileName)
         err := dumpJson(latest_path, &latest)
         if err != nil {
             return nil, fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
@@ -49,7 +49,7 @@ func uploadHandler(reqpath, registry string, administrators []string) (*Configur
 
     version_dir := filepath.Join(asset_dir, config.Version)
     {
-        summary := SummaryMetadata {
+        summary := summaryMetadata {
             UploadUserId: config.User,
             UploadStart: upload_start.Format(time.RFC3339),
             UploadFinish: time.Now().Format(time.RFC3339),
@@ -58,7 +58,7 @@ func uploadHandler(reqpath, registry string, administrators []string) (*Configur
             summary.OnProbation = &(config.OnProbation)
         }
 
-        summary_path := filepath.Join(version_dir, SummaryFileName)
+        summary_path := filepath.Join(version_dir, summaryFileName)
         err := dumpJson(summary_path, &summary)
         if err != nil {
             return nil, fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
@@ -66,18 +66,18 @@ func uploadHandler(reqpath, registry string, administrators []string) (*Configur
     }
 
     {
-        extra, err := ComputeUsage(version_dir, true)
+        extra, err := computeUsage(version_dir, true)
         if err != nil {
             return nil, fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
         }
 
-        usage, err := ReadUsage(project_dir)
+        usage, err := readUsage(project_dir)
         if err != nil {
             return nil, fmt.Errorf("failed to read existing usage for project %q; %w", config.Project, err)
         }
         usage.Total += extra
 
-        usage_path := filepath.Join(project_dir, UsageFileName)
+        usage_path := filepath.Join(project_dir, usageFileName)
         err = dumpJson(usage_path, &usage)
         if err != nil {
             return nil, fmt.Errorf("failed to save usage for %q; %w", project_dir, err)

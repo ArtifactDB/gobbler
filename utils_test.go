@@ -27,6 +27,17 @@ func dumpRequest(request_type, request_string string) (string, error) {
     return reqname, nil
 }
 
+func verifyFileContents(path, contents string) error {
+    observed, err := os.ReadFile(path)
+    if err != nil {
+        return fmt.Errorf("failed to read %q; %w", path, err)
+    }
+    if string(observed) != contents {
+        return fmt.Errorf("unexpected contents of %q; %w", path, err)
+    }
+    return nil
+}
+
 func TestIsBadName(t *testing.T) {
     var err error
 

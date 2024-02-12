@@ -25,7 +25,7 @@ func TestReadUploadRequest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to dump the test JSON; %v", err)
     }
-    req, err := ReadUploadRequest(tmpname)
+    req, err := readUploadRequest(tmpname)
     if err != nil {
         t.Fatalf("failed to parse the upload request; %v", err)
     }
@@ -38,7 +38,7 @@ func TestReadUploadRequest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to dump the test JSON; %v", err)
     }
-    req, err = ReadUploadRequest(tmpname)
+    req, err = readUploadRequest(tmpname)
     if err != nil {
         t.Fatalf("failed to parse the upload request; %v", err)
     }
@@ -51,7 +51,7 @@ func TestReadUploadRequest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to dump the test JSON; %v", err)
     }
-    req, err = ReadUploadRequest(tmpname)
+    req, err = readUploadRequest(tmpname)
     if err != nil {
         t.Fatalf("failed to parse the upload request; %v", err)
     }
@@ -64,7 +64,7 @@ func TestReadUploadRequest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to dump the test JSON; %v", err)
     }
-    req, err = ReadUploadRequest(tmpname)
+    req, err = readUploadRequest(tmpname)
     if err != nil {
         t.Fatalf("failed to parse the upload request; %v", err)
     }
@@ -77,7 +77,7 @@ func TestReadUploadRequest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to dump the test JSON; %v", err)
     }
-    _, err = ReadUploadRequest(tmpname)
+    _, err = readUploadRequest(tmpname)
     if err == nil || !strings.Contains(err.Error(), "failed to find owner") {
         t.Fatal("expected a failure on checking the source directory")
     }

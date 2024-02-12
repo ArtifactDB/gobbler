@@ -16,7 +16,7 @@ func TestReadUsage(t *testing.T) {
     }
 
     err = os.WriteFile(
-        filepath.Join(f, UsageFileName),
+        filepath.Join(f, usageFileName),
         []byte(`{ "total": 9999 }`),
         0644,
     )
@@ -24,7 +24,7 @@ func TestReadUsage(t *testing.T) {
         t.Fatalf("failed to create test ..usage; %v", err)
     }
 
-    out, err := ReadUsage(f)
+    out, err := readUsage(f)
     if err != nil {
         t.Fatalf("failed to read test ..usage; %v", err)
     }
@@ -83,7 +83,7 @@ func TestComputeUsage(t *testing.T) {
     }
 
     // Actually running some tests.
-    total, err := ComputeUsage(src, true)
+    total, err := computeUsage(src, true)
     if err != nil {
         t.Fatalf("failed to create compute usage; %v", err)
     }
@@ -99,7 +99,7 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("failed to create mock file; %v", err)
     }
 
-    total, err = ComputeUsage(src, true)
+    total, err = computeUsage(src, true)
     if err != nil {
         t.Fatalf("failed to create compute usage; %v", err)
     }
@@ -107,7 +107,7 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("sum of file sizes is different from expected (%d, got %d) when ignoring soft links", expected_size, total)
     }
 
-    total, err = ComputeUsage(src, false)
+    total, err = computeUsage(src, false)
     if err != nil {
         t.Fatalf("failed to create compute usage; %v", err)
     }
@@ -124,7 +124,7 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("failed to create mock file; %v", err)
     }
 
-    _, err = ComputeUsage(src, false)
+    _, err = computeUsage(src, false)
     if err == nil || !strings.Contains(err.Error(), "symlinks to directories") {
         t.Fatalf("expected a failure in the presence of symlink to a directory")
     }
@@ -183,7 +183,7 @@ func TestRefreshUsageHandler(t *testing.T) {
         t.Fatalf("failed to perform the refresh; %v", err)
     }
 
-    used, err := ReadUsage(project_dir)
+    used, err := readUsage(project_dir)
     if err != nil {
         t.Fatalf("failed to read the usage request; %v", err)
     }
