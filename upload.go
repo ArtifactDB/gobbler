@@ -353,22 +353,22 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
         return nil, fmt.Errorf("failed to configure the version for request %q; %w", reqpath, err)
     }
 
-    // Now transferring all the files.
+    // Now transferring all the files. This involves setting up an abort loop
+    // to remove failed uploads from the registry, lest they clutter things up.
+    has_failed := true
+    defer func() {
+        if has_failed {
+            os.RemoveAll(filepath.Join(registry, project, asset, version))
+        }
+    }()
+
     err = Transfer(source, registry, project, asset, version)
     if err != nil {
         return nil, fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
-    // Writing out the various pieces of metadata.
-    if !on_probation {
-        latest := latestMetadata { Latest: version }
-        latest_path := filepath.Join(asset_dir, latestFileName)
-        err := dumpJson(latest_path, &latest)
-        if err != nil {
-            return nil, fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
-        }
-    }
-
+    // Writing out the various pieces of metadata. This should be, in theory,
+    // the 'no-throw' section as no user-supplied values are involved here.
     version_dir := filepath.Join(asset_dir, version)
     upload_finish := time.Now()
     {
@@ -400,6 +400,8 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
         }
         usage.Total += extra
 
+        // Try to do this write later to reduce the chance of an error
+        // triggering an abort after the usage total has been updated.
         usage_path := filepath.Join(project_dir, usageFileName)
         err = dumpJson(usage_path, &usage)
         if err != nil {
@@ -407,8 +409,19 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
         }
     }
 
-    // Adding a log.
     if !on_probation {
+        // Doing this as late as possible to reduce the chances of an error
+        // triggering an abort _after_ the latest version has been updated.
+        // I suppose we could try to reset to the previous value; but if the
+        // writes failed there's no guarantee that a reset would work either.
+        latest := latestMetadata { Latest: version }
+        latest_path := filepath.Join(asset_dir, latestFileName)
+        err := dumpJson(latest_path, &latest)
+        if err != nil {
+            return nil, fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
+        }
+
+        // Adding a log.
         log_info := map[string]interface{} {
             "type": "add-version",
             "project": project,
@@ -416,11 +429,12 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
             "version": version,
             "latest": true,
         }
-        err := dumpLog(registry, log_info)
+        err = dumpLog(registry, log_info)
         if err != nil {
             return nil, fmt.Errorf("failed to save log file; %w", err)
         }
     }
 
+    has_failed = false
     return &uploadConfiguration{ Project: project, Version: version }, nil
 }
