@@ -6,6 +6,7 @@ import (
     "fmt"
     "path/filepath"
     "time"
+    "errors"
 )
 
 func baseProbationHandler(reqpath, registry string, administrators []string, approve bool) error {
@@ -63,7 +64,8 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
         return fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir)
     }
 
-    version_dir := filepath.Join(project_dir, *(incoming.Asset), *(incoming.Version))
+    asset_dir := filepath.Join(project_dir, *(incoming.Asset))
+    version_dir := filepath.Join(asset_dir, *(incoming.Version))
     summ, err := readSummary(version_dir)
     if err != nil {
         return fmt.Errorf("failed to read the version summary at %q; %w", version_dir, err)
@@ -78,6 +80,41 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
         err = dumpJson(summary_path, &summ)
         if err != nil {
             return fmt.Errorf("failed to update the version summary at %q; %w", summary_path, err)
+        }
+
+        current_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+        if err != nil {
+            return fmt.Errorf("failed to parse the upload finish time at %q; %w", summary_path, err)
+        }
+
+        latest, err := readLatest(asset_dir)
+        overwrite := false
+        if err == nil {
+            latest_version := filepath.Join(asset_dir, latest.Latest)
+            latest_summ, err := readSummary(latest_version)
+            if err != nil {
+                return fmt.Errorf("failed to read the latest version summary for %q; %w", latest_version, err)
+            }
+
+            latest_time, err := time.Parse(time.RFC3339, latest_summ.UploadFinish)
+            if err != nil {
+                return fmt.Errorf("failed to read the latest version's upload finish time from %q; %w", latest_version, err)
+            }
+            overwrite = current_time.After(latest_time) 
+        } else if errors.Is(err, os.ErrNotExist) {
+            overwrite = true
+            latest = &latestMetadata{}
+        } else {
+            return fmt.Errorf("failed to read the latest version for %s; %w", asset_dir, err)
+        }
+
+        if overwrite {
+            latest_path := filepath.Join(asset_dir, latestFileName)
+            latest.Latest = *(incoming.Version)
+            err := dumpJson(latest_path, latest)
+            if err != nil {
+                return fmt.Errorf("failed to update the latest version at %q; %w", latest_path, err)
+            }
         }
 
     } else {
