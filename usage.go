@@ -117,7 +117,7 @@ func refreshUsageHandler(reqpath, registry string, administrators []string) erro
 
     usage_path := filepath.Join(project_dir, UsageFileName)
     usage_meta := UsageMetadata{ Total: new_usage }
-    err = dump_json(usage_path, &usage_meta)
+    err = dumpJson(usage_path, &usage_meta)
     if err != nil {
         return fmt.Errorf("failed to write new usage for %q; %w", *(incoming.Project), err)
     }

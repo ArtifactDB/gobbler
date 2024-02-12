@@ -78,59 +78,38 @@ func main() {
 
                         go func(reqpath, basename string) {
                             var reportable_err error
-                            logpath := filepath.Join(logdir, basename)
+                            payload := map[string]string{}
 
                             if strings.HasPrefix(reqtype, "upload-") {
                                 config, err0 := Upload(reqpath, registry, administrators)
                                 if err0 != nil {
-                                    err := DumpUploadSuccessLog(logpath, config.Project, config.Version)
-                                    if err != nil {
-                                        log.Println("failed to dump success log for '" + basename + "'; ", err)
-                                    }
+                                    payload["project"] = config.Project
+                                    payload["version"] = config.Version
                                 } else {
                                     reportable_err = err0
                                 }
-
                             } else if strings.HasPrefix(reqtype, "permissions-") {
-                                err0 := SetPermissions(reqpath, registry, administrators)
-                                if err0 != nil {
-                                    err := TouchSuccessLog(logpath)
-                                    if err != nil {
-                                        log.Println("failed to touch success log for '" + basename + "'; ", err)
-                                    }
-                                } else {
-                                    reportable_err = err0
-                                }
-
+                                reportable_err = SetPermissions(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-                                err0 := refreshLatestHandler(reqpath, registry, administrators)
-                                if err0 != nil {
-                                    err := TouchSuccessLog(logpath)
-                                    if err != nil {
-                                        log.Println("failed to touch success log for '" + basename + "'; ", err)
-                                    }
-                                } else {
-                                    reportable_err = err0
-                                }
-
+                                reportable_err = refreshLatestHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-                                err0 := refreshUsageHandler(reqpath, registry, administrators)
-                                if err0 != nil {
-                                    err := TouchSuccessLog(logpath)
-                                    if err != nil {
-                                        log.Println("failed to touch success log for '" + basename + "'; ", err)
-                                    }
-                                } else {
-                                    reportable_err = err0
+                                reportable_err = refreshUsageHandler(reqpath, registry, administrators)
+                            }
+
+                            if reportable_err == nil {
+                                payload["status"] = "SUCCESS"
+                            } else {
+                                log.Println(reportable_err.Error())
+                                payload = map[string]string{
+                                    "status": "FAILED",
+                                    "reason": reportable_err.Error(),
                                 }
                             }
 
-                            if reportable_err != nil {
-                                log.Println(reportable_err.Error())
-                                err = DumpFailureLog(logpath, reportable_err)
-                                if err != nil {
-                                    log.Println("failed to dump failure log for '" + basename + "'; ", err)
-                                }
+                            logpath := filepath.Join(logdir, basename)
+                            err = dumpJson(logpath, payload)
+                            if err != nil {
+                                log.Println("failed to dump response for '" + basename + "'; ", err)
                             }
                         }(event.Name, basename)
                     }

@@ -3,8 +3,6 @@ package main
 import (
     "fmt"
     "time"
-    "encoding/json"
-    "os"
     "path/filepath"
 )
 
@@ -41,19 +39,11 @@ func Upload(reqpath, registry string, administrators []string) (*Configuration, 
 
     asset_dir := filepath.Join(project_dir, config.Asset)
     if !config.OnProbation {
-        latest := LatestMetadata {
-            Latest: config.Version,
-        }
-
-        latest_str, err := json.MarshalIndent(&latest, "", "    ")
-        if err != nil {
-            return nil, fmt.Errorf("failed to stringify latest for upload from %q; %w", source, err)
-        }
-
+        latest := LatestMetadata { Latest: config.Version }
         latest_path := filepath.Join(asset_dir, LatestFileName)
-        err = os.WriteFile(latest_path, latest_str, 0644)
+        err := dumpJson(latest_path, &latest)
         if err != nil {
-            return nil, fmt.Errorf("failed to write to %q; %w", latest_path, err)
+            return nil, fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
         }
     }
 
@@ -69,14 +59,9 @@ func Upload(reqpath, registry string, administrators []string) (*Configuration, 
         }
 
         summary_path := filepath.Join(version_dir, SummaryFileName)
-        summary_str, err := json.MarshalIndent(&summary, "", "    ")
+        err := dumpJson(summary_path, &summary)
         if err != nil {
-            return nil, fmt.Errorf("failed to stringify summary for %q; %w", summary_path, err)
-        }
-
-        err = os.WriteFile(summary_path, summary_str, 0644)
-        if err != nil {
-            return nil, fmt.Errorf("failed to write to %q; %w", summary_path, err)
+            return nil, fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
         }
     }
 
@@ -90,17 +75,12 @@ func Upload(reqpath, registry string, administrators []string) (*Configuration, 
         if err != nil {
             return nil, fmt.Errorf("failed to read existing usage for project %q; %w", config.Project, err)
         }
-
         usage.Total += extra
-        usage_path := filepath.Join(project_dir, UsageFileName)
-        usage_str, err := json.MarshalIndent(&usage, "", "    ")
-        if err != nil {
-            return nil, fmt.Errorf("failed to stringify usage for %q; %w", usage_path, err)
-        }
 
-        err = os.WriteFile(usage_path, usage_str, 0644)
+        usage_path := filepath.Join(project_dir, UsageFileName)
+        err = dumpJson(usage_path, &usage)
         if err != nil {
-            return nil, fmt.Errorf("failed to write to %q; %w", usage_path, err)
+            return nil, fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
         }
     }
 

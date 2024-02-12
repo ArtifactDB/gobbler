@@ -69,9 +69,9 @@ func refreshLatest(asset_dir string) error {
     latest_path := filepath.Join(asset_dir, LatestFileName)
     if found {
         output := LatestMetadata { Latest: most_recent_name }
-        err := dump_json(latest_path, &output)
+        err := dumpJson(latest_path, &output)
         if err != nil {
-            return fmt.Errorf("failed to save '..latest' to %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)
         }
     } else {
         err := os.Remove(latest_path)

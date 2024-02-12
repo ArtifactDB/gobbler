@@ -8,7 +8,6 @@ import (
     "io"
     "io/fs"
     "encoding/hex"
-    "encoding/json"
     "errors"
     "strconv"
     "strings"
@@ -348,25 +347,17 @@ func Transfer(source, registry, project, asset, version string) error {
     }
 
     // Dumping the JSON metadata.
-    manifest_str, err := json.MarshalIndent(&manifest, "", "    ")
-    if err != nil {
-        return fmt.Errorf("failed to convert the manifest to JSON; %w", err)
-    }
     manifest_path := filepath.Join(destination, ManifestFileName)
-    err = os.WriteFile(manifest_path, manifest_str, 0644)
+    err = dumpJson(manifest_path, &manifest)
     if err != nil {
-        return fmt.Errorf("failed to save the manifest to '" + manifest_path + "'; %w", err)
+        return fmt.Errorf("failed to save manifest for %q; %w", destination, err)
     }
 
     for k, v := range links {
-        link_str, err := json.MarshalIndent(&v, "", "    ")
-        if err != nil {
-            return fmt.Errorf("failed to convert link for '" + k + "' to JSON; %w", err)
-        }
         link_path := filepath.Join(destination, k, LinksFileName)
-        err = os.WriteFile(link_path, link_str, 0644)
+        err = dumpJson(link_path, &v)
         if err != nil {
-            return fmt.Errorf("failed to save links to '" + link_path + "'; %w", err)
+            return fmt.Errorf("failed to save links for %q; %w", k, err)
         }
     }
 

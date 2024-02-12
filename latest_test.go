@@ -71,7 +71,7 @@ func TestrefreshLatestHandler(t *testing.T) {
             UploadStart: currently.Format(time.RFC3339),
             UploadFinish: currently.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
         }
-        err = dump_json(filepath.Join(version_dir, SummaryFileName), &summ)
+        err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
         if err != nil {
             t.Fatalf("failed to write the asset summary; %v", err)
         }
@@ -117,7 +117,7 @@ func TestrefreshLatestHandler(t *testing.T) {
         }
 
         summ.OnProbation = &on_probation
-        err = dump_json(filepath.Join(version_dir, SummaryFileName), &summ)
+        err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
         if err != nil {
             t.Fatalf("failed to update version summary; %v", err)
         }
@@ -146,7 +146,7 @@ func TestrefreshLatestHandler(t *testing.T) {
             }
 
             summ.OnProbation = &on_probation
-            err = dump_json(filepath.Join(version_dir, SummaryFileName), &summ)
+            err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
             if err != nil {
                 t.Fatalf("failed to update version summary; %v", err)
             }

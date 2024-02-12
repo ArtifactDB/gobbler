@@ -195,15 +195,10 @@ func SetPermissions(path, registry string, administrators []string) error {
         existing.Uploaders = incoming.Permissions.Uploaders
     }
 
-    perm_str, err := json.MarshalIndent(&existing, "", "    ")
-    if err != nil {
-        return fmt.Errorf("failed to stringify permissions for %q; %w", project, err)
-    }
-
     perm_path := filepath.Join(project_dir, PermissionsFileName)
-    err = os.WriteFile(perm_path, perm_str, 0644)
+    err = dumpJson(perm_path, &existing)
     if err != nil {
-        return fmt.Errorf("failed to write to %q; %w", perm_path, err)
+        return fmt.Errorf("failed to write permissions for %q; %w", project, err)
     }
 
     return nil

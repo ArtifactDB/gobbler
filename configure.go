@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "path/filepath"
-    "encoding/json"
     "time"
     "os"
     "errors"
@@ -119,14 +118,9 @@ func create_new_project_directory(dir string, username string, details *UploadRe
         perms.Uploaders = []Uploader{}
     }
 
-    perm_str, err := json.MarshalIndent(&perms, "", "    ")
+    err = dumpJson(filepath.Join(dir, PermissionsFileName), &perms)
     if err != nil {
-        return fmt.Errorf("failed to convert permissions to JSON; %w", err)
-    }
-
-    err = os.WriteFile(filepath.Join(dir, PermissionsFileName), perm_str, 0755)
-    if err != nil {
-        return fmt.Errorf("failed to write permissions; %w", err)
+        return fmt.Errorf("failed to write permissions for %q; %w", dir, err)
     }
 
     // Dumping a mock quota and usage file for consistency with gypsum.
@@ -136,7 +130,7 @@ func create_new_project_directory(dir string, username string, details *UploadRe
         return fmt.Errorf("failed to write quota for '" + dir + "'; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(dir, "..usage"), []byte("{ \"total\": 0 }"), 0755)
+    err = os.WriteFile(filepath.Join(dir, UsageFileName), []byte("{ \"total\": 0 }"), 0755)
     if err != nil {
         return fmt.Errorf("failed to write usage for '" + dir + "'; %w", err)
     }
