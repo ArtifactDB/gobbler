@@ -37,7 +37,7 @@ func TestReadLatest(t *testing.T) {
     }
 }
 
-func TestrefreshLatestHandler(t *testing.T) {
+func TestRefreshLatestHandler(t *testing.T) {
     // Mocking up something interesting.
     reg, err := os.MkdirTemp("", "")
     if err != nil {
