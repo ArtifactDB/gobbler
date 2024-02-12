@@ -8,9 +8,9 @@ import (
     "fmt"
 )
 
-const LockFileName = "..LOCK"
+const lockFileName = "..LOCK"
 
-func Lock(path string, timeout time.Duration) (*os.File, error) {
+func lock(path string, timeout time.Duration) (*os.File, error) {
     handle, err := os.OpenFile(path, os.O_WRONLY | os.O_CREATE, 0644)
     if err != nil {
         return nil, errors.New("failed to create the lock file at '" + path + "'")
@@ -36,7 +36,7 @@ func Lock(path string, timeout time.Duration) (*os.File, error) {
 	}
 }
 
-func Unlock(handle *os.File) error {
+func unlock(handle *os.File) error {
     err := syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
     if err != nil {
         return fmt.Errorf("failed to unlock '" + handle.Name() + "'; %w", err)

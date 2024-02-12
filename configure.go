@@ -12,7 +12,7 @@ import (
     "unicode"
 )
 
-func increment_series_path(prefix string, dir string) string {
+func incrementSeriesPath(prefix string, dir string) string {
     if prefix == "" {
         return filepath.Join(dir, "..series")
     } else {
@@ -20,8 +20,8 @@ func increment_series_path(prefix string, dir string) string {
     }
 }
 
-func increment_series(prefix string, dir string) (string, error) {
-    series_path := increment_series_path(prefix, dir)
+func incrementSeries(prefix string, dir string) (string, error) {
+    series_path := incrementSeriesPath(prefix, dir)
 
     num := 0
     if _, err := os.Stat(series_path); err == nil {
@@ -82,30 +82,30 @@ func increment_series(prefix string, dir string) (string, error) {
     return candidate_name, nil
 }
 
-func create_new_project_directory(dir string, username string, details *UploadRequest) error {
+func createNewProjectDirectory(dir string, username string, details *UploadRequest) error {
     err := os.Mkdir(dir, 0755)
     if err != nil {
         return fmt.Errorf("failed to make a new directory'; %w", err)
     }
 
     // Adding permissions.
-    var perms Permissions;
+    var perms permissionsMetadata;
     if details.Permissions != nil && details.Permissions.Owners != nil {
         perms.Owners = details.Permissions.Owners
     } else {
         perms.Owners = []string{ username }
     }
     if details.Permissions != nil && details.Permissions.Uploaders != nil {
-        err := ValidateUploaders(details.Permissions.Uploaders)
+        err := validateUploaders(details.Permissions.Uploaders)
         if err != nil {
             return fmt.Errorf("invalid 'permissions.uploaders' in the request details; %w", err)
         }
         perms.Uploaders = details.Permissions.Uploaders
     } else {
-        perms.Uploaders = []Uploader{}
+        perms.Uploaders = []uploaderEntry{}
     }
 
-    err = dumpJson(filepath.Join(dir, PermissionsFileName), &perms)
+    err = dumpJson(filepath.Join(dir, permissionsFileName), &perms)
     if err != nil {
         return fmt.Errorf("failed to write permissions for %q; %w", dir, err)
     }
@@ -117,7 +117,7 @@ func create_new_project_directory(dir string, username string, details *UploadRe
         return fmt.Errorf("failed to write quota for '" + dir + "'; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(dir, UsageFileName), []byte("{ \"total\": 0 }"), 0755)
+    err = os.WriteFile(filepath.Join(dir, usageFileName), []byte("{ \"total\": 0 }"), 0755)
     if err != nil {
         return fmt.Errorf("failed to write usage for '" + dir + "'; %w", err)
     }
@@ -125,13 +125,13 @@ func create_new_project_directory(dir string, username string, details *UploadRe
     return nil
 }
 
-func process_project(registry string, username string, details *UploadRequest) (string, bool, error) {
-    lock_path := filepath.Join(registry, LockFileName)
-    handle, err := Lock(lock_path, 1000 * time.Second)
+func processProject(registry string, username string, details *UploadRequest) (string, bool, error) {
+    lock_path := filepath.Join(registry, lockFileName)
+    handle, err := lock(lock_path, 1000 * time.Second)
     if err != nil {
         return "", false, fmt.Errorf("failed to acquire the global registry lock; %w", err)
     }
-    defer Unlock(handle)
+    defer unlock(handle)
 
     // Creating a new project from a series.
     if details.Project == nil {
@@ -144,12 +144,12 @@ func process_project(registry string, username string, details *UploadRequest) (
             return "", false, errors.New("prefix must contain only uppercase letters (got '" + prefix + "')")
         }
 
-        candidate_name, err := increment_series(prefix, registry)
+        candidate_name, err := incrementSeries(prefix, registry)
         if err != nil {
             return "", false, err
         }
 
-        err = create_new_project_directory(filepath.Join(registry, candidate_name), username, details)
+        err = createNewProjectDirectory(filepath.Join(registry, candidate_name), username, details)
         if err != nil {
             return "", false, fmt.Errorf("failed to populate internals for '" + candidate_name + "'; %w", err)
         }
@@ -171,7 +171,7 @@ func process_project(registry string, username string, details *UploadRequest) (
             return "", false, errors.New("new user-supplied project names should not start with an uppercase letter")
         }
 
-        err = create_new_project_directory(filepath.Join(registry, project), username, details)
+        err = createNewProjectDirectory(filepath.Join(registry, project), username, details)
         if err != nil {
             return "", false, fmt.Errorf("failed to populate internals for '" + project + "'; %w", err)
         }
@@ -187,7 +187,7 @@ func process_project(registry string, username string, details *UploadRequest) (
     return project, false, nil
 }
 
-func process_asset(project_dir string, details *UploadRequest) (string, error) {
+func processAsset(project_dir string, details *UploadRequest) (string, error) {
     // No need to lock here, as multiple processes can be requesting the same
     // asset at once... it's the versions we need to be worrying about.
     if details.Asset == nil {
@@ -211,15 +211,15 @@ func process_asset(project_dir string, details *UploadRequest) (string, error) {
     return asset, nil
 }
 
-func process_version(asset_dir string, is_new_project bool, details *UploadRequest) (string, error) {
-    lock_path := filepath.Join(asset_dir, LockFileName)
-    handle, err := Lock(lock_path, 1000 * time.Second)
+func processVersion(asset_dir string, is_new_project bool, details *UploadRequest) (string, error) {
+    lock_path := filepath.Join(asset_dir, lockFileName)
+    handle, err := lock(lock_path, 1000 * time.Second)
     if err != nil {
         return "", fmt.Errorf("failed to acquire the lock on the asset directory %q; %w", asset_dir, err)
     }
-    defer Unlock(handle)
+    defer unlock(handle)
 
-    series_path := increment_series_path("", asset_dir)
+    series_path := incrementSeriesPath("", asset_dir)
 
     // Creating a new version from a series.
     if details.Version == nil {
@@ -229,7 +229,7 @@ func process_version(asset_dir string, is_new_project bool, details *UploadReque
             }
         }
 
-        candidate_name, err := increment_series("", asset_dir)
+        candidate_name, err := incrementSeries("", asset_dir)
         if err != nil {
             return "", err
         }
@@ -275,7 +275,7 @@ type Configuration struct {
     OnProbation bool
 }
 
-func Configure(request *UploadRequest, registry string, administrators [] string) (*Configuration, error) {
+func configure(request *UploadRequest, registry string, administrators []string) (*Configuration, error) {
     details_path := request.Self
     if request.Source == nil {
         return nil, fmt.Errorf("expected a 'source' property in the upload request at %q", details_path)
@@ -283,23 +283,23 @@ func Configure(request *UploadRequest, registry string, administrators [] string
     source := *(request.Source)
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
-    username, err := IdentifyUser(source)
+    username, err := identifyUser(source)
     if err != nil {
         return nil, fmt.Errorf("failed to identify the user for '" + source + "'; %w", err)
     }
 
-    project, is_new, err := process_project(registry, username, request)
+    project, is_new, err := processProject(registry, username, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
     }
 
     project_dir := filepath.Join(registry, project)
     if !is_new {
-        perms, err := ReadPermissions(project_dir)
+        perms, err := readPermissions(project_dir)
         if err != nil {
             return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
         }
-        ok, trusted := IsAuthorizedToUpload(username, administrators, perms, request.Asset, request.Version)
+        ok, trusted := isAuthorizedToUpload(username, administrators, perms, request.Asset, request.Version)
         if !ok {
             return nil, fmt.Errorf("user '" + username + "' is not authorized to upload to '" + project + "'")
         }
@@ -308,13 +308,13 @@ func Configure(request *UploadRequest, registry string, administrators [] string
         }
     }
 
-    asset, err := process_asset(project_dir, request)
+    asset, err := processAsset(project_dir, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the asset for '" + source + "'; %w", err)
     }
 
     asset_dir := filepath.Join(project_dir, asset)
-    version, err := process_version(asset_dir, is_new, request)
+    version, err := processVersion(asset_dir, is_new, request)
     if err != nil {
         return nil, fmt.Errorf("failed to process the version for '" + source + "'; %w", err)
     }

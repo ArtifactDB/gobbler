@@ -10,7 +10,7 @@ import (
     "errors"
 )
 
-func setup_source_for_upload_test() (string, error) {
+func setupSourceForUploadTest() (string, error) {
     src, err := os.MkdirTemp("", "")
     if err != nil {
         return "", fmt.Errorf("failed to create the temporary directory; %w", err)
@@ -29,7 +29,7 @@ func setup_source_for_upload_test() (string, error) {
     return src, nil
 }
 
-func TestUploadSimple(t *testing.T) {
+func TestUploadHandlerSimple(t *testing.T) {
     project := "original_series"
     asset := "gastly"
 
@@ -38,7 +38,7 @@ func TestUploadSimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_upload_test()
+    src, err := setupSourceForUploadTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -52,7 +52,7 @@ func TestUploadSimple(t *testing.T) {
     // Executing the first transfer.
     old_usage := int64(0)
     {
-        config, err := Upload(reqname, reg, nil)
+        config, err := uploadHandler(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -68,7 +68,7 @@ func TestUploadSimple(t *testing.T) {
 
         // Checking a few manifest entries and files.
         destination := filepath.Join(reg, config.Project, config.Asset, config.Version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
@@ -76,13 +76,13 @@ func TestUploadSimple(t *testing.T) {
         if !ok || int(info.Size) != len("haunter") || info.Link != nil {
             t.Fatal("unexpected manifest entry for 'evolution'")
         }
-        err = verify_file_contents(filepath.Join(destination, "moves"), "lick,confuse_ray,shadow_ball,dream_eater")
+        err = verifyFileContents(filepath.Join(destination, "moves"), "lick,confuse_ray,shadow_ball,dream_eater")
         if err != nil {
             t.Fatalf("could not verify 'moves'; %v", err)
         }
 
         // Checking out the summary.
-        summ, err := ReadSummary(destination)
+        summ, err := readSummary(destination)
         if err != nil {
             t.Fatalf("failed to read the summary; %v", err)
         }
@@ -113,11 +113,11 @@ func TestUploadSimple(t *testing.T) {
 
         // Checking out the usage.
         project_dir := filepath.Join(reg, config.Project)
-        used, err := ReadUsage(project_dir)
+        used, err := readUsage(project_dir)
         if err != nil {
             t.Fatalf("failed to read the usage; %v", err)
         }
-        expected_usage, err := ComputeUsage(project_dir, true)
+        expected_usage, err := computeUsage(project_dir, true)
         if err != nil {
             t.Fatalf("failed to compute the expected usage; %v", err)
         }
@@ -134,7 +134,7 @@ func TestUploadSimple(t *testing.T) {
         old_usage = expected_usage
 
         // Checking out the latest version.
-        latest, err := ReadLatest(filepath.Join(reg, config.Project, config.Asset))
+        latest, err := readLatest(filepath.Join(reg, config.Project, config.Asset))
         if err != nil {
             t.Fatalf("failed to read the latest; %v", err)
         }
@@ -151,7 +151,7 @@ func TestUploadSimple(t *testing.T) {
             t.Fatalf("failed to update the 'evolution' file; %v", err)
         }
 
-        config, err := Upload(reqname, reg, nil)
+        config, err := uploadHandler(reqname, reg, nil)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -163,7 +163,7 @@ func TestUploadSimple(t *testing.T) {
         }
 
         destination := filepath.Join(reg, config.Project, config.Asset, config.Version)
-        man, err := ReadManifest(destination)
+        man, err := readManifest(destination)
         if err != nil {
             t.Fatalf("failed to read the manifest; %v", err)
         }
@@ -175,18 +175,18 @@ func TestUploadSimple(t *testing.T) {
         if !ok || minfo.Link == nil {
             t.Fatal("expected a link for 'moves' in the manifest")
         }
-        err = verify_file_contents(filepath.Join(destination, "evolution"), all_evos)
+        err = verifyFileContents(filepath.Join(destination, "evolution"), all_evos)
         if err != nil {
             t.Fatalf("could not verify 'evolution'; %v", err)
         }
 
         // Ensuring that the usage accumulates.
         project_dir := filepath.Join(reg, config.Project)
-        usage, err := ReadUsage(project_dir)
+        usage, err := readUsage(project_dir)
         if err != nil {
             t.Fatalf("failed to read the usage; %v", err)
         }
-        expected_usage, err := ComputeUsage(project_dir, true)
+        expected_usage, err := computeUsage(project_dir, true)
         if err != nil {
             t.Fatalf("failed to compute the expected usage; %v", err)
         }
@@ -203,7 +203,7 @@ func TestUploadSimple(t *testing.T) {
         }
 
         // Confirming that we updated to the latest version.
-        latest, err := ReadLatest(filepath.Join(reg, config.Project, config.Asset))
+        latest, err := readLatest(filepath.Join(reg, config.Project, config.Asset))
         if err != nil {
             t.Fatalf("failed to read the latest; %v", err)
         }
@@ -213,7 +213,7 @@ func TestUploadSimple(t *testing.T) {
     }
 }
 
-func TestUploadProbation(t *testing.T) {
+func TestUploadHandlerProbation(t *testing.T) {
     prefix := "POKEDEX"
     asset := "Gastly"
 
@@ -222,7 +222,7 @@ func TestUploadProbation(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setup_source_for_upload_test()
+    src, err := setupSourceForUploadTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -233,7 +233,7 @@ func TestUploadProbation(t *testing.T) {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    config, err := Upload(reqname, reg, nil)
+    config, err := uploadHandler(reqname, reg, nil)
     if err != nil {
         t.Fatalf("failed to perform the upload; %v", err)
     }
@@ -248,7 +248,7 @@ func TestUploadProbation(t *testing.T) {
     }
 
     // Summary file states that it's on probation.
-    summ, err := ReadSummary(filepath.Join(reg, config.Project, config.Asset, config.Version))
+    summ, err := readSummary(filepath.Join(reg, config.Project, config.Asset, config.Version))
     if err != nil {
         t.Fatalf("failed to read the summary; %v", err)
     }
@@ -257,7 +257,7 @@ func TestUploadProbation(t *testing.T) {
     }
 
     // No latest file should be created for probational projects.
-    _, err = ReadLatest(filepath.Join(reg, config.Project, config.Asset))
+    _, err = readLatest(filepath.Join(reg, config.Project, config.Asset))
     if err == nil || !errors.Is(err, os.ErrNotExist) {
         t.Fatal("no ..latest file should be created on probation")
     }

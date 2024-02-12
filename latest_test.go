@@ -19,7 +19,7 @@ func TestReadLatest(t *testing.T) {
     }
 
     err = os.WriteFile(
-        filepath.Join(f, LatestFileName),
+        filepath.Join(f, latestFileName),
         []byte(`{ "latest": "argle" }`),
         0644,
     )
@@ -27,7 +27,7 @@ func TestReadLatest(t *testing.T) {
         t.Fatalf("failed to create test ..latest; %v", err)
     }
 
-    out, err := ReadLatest(f)
+    out, err := readLatest(f)
     if err != nil {
         t.Fatalf("failed to read test ..latest; %v", err)
     }
@@ -37,7 +37,7 @@ func TestReadLatest(t *testing.T) {
     }
 }
 
-func TestrefreshLatestHandler(t *testing.T) {
+func TestRefreshLatestHandler(t *testing.T) {
     // Mocking up something interesting.
     reg, err := os.MkdirTemp("", "")
     if err != nil {
@@ -66,12 +66,12 @@ func TestrefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to create version directory; %v", err)
         }
 
-        summ := SummaryMetadata {
+        summ := summaryMetadata {
             UploadUserId: "aaron",
             UploadStart: currently.Format(time.RFC3339),
             UploadFinish: currently.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
         }
-        err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
+        err = dumpJson(filepath.Join(version_dir, summaryFileName), &summ)
         if err != nil {
             t.Fatalf("failed to write the asset summary; %v", err)
         }
@@ -99,7 +99,7 @@ func TestrefreshLatestHandler(t *testing.T) {
         t.Fatalf("failed to perform the refresh; %v", err)
     }
 
-    latest, err := ReadLatest(asset_dir)
+    latest, err := readLatest(asset_dir)
     if err != nil {
         t.Fatalf("failed to read the latest version; %v", err)
     }
@@ -111,13 +111,13 @@ func TestrefreshLatestHandler(t *testing.T) {
     on_probation := true
     {
         version_dir := filepath.Join(asset_dir, "3")
-        summ, err := ReadSummary(version_dir)
+        summ, err := readSummary(version_dir)
         if err != nil {
             t.Fatalf("failed to read version 3; %v", err)
         }
 
         summ.OnProbation = &on_probation
-        err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
+        err = dumpJson(filepath.Join(version_dir, summaryFileName), &summ)
         if err != nil {
             t.Fatalf("failed to update version summary; %v", err)
         }
@@ -127,7 +127,7 @@ func TestrefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
 
-        latest, err := ReadLatest(asset_dir)
+        latest, err := readLatest(asset_dir)
         if err != nil {
             t.Fatalf("failed to read the latest version; %v", err)
         }
@@ -140,13 +140,13 @@ func TestrefreshLatestHandler(t *testing.T) {
     {
         for i := 1; i <= 2; i++ {
             version_dir := filepath.Join(asset_dir, strconv.Itoa(i))
-            summ, err := ReadSummary(version_dir)
+            summ, err := readSummary(version_dir)
             if err != nil {
                 t.Fatalf("failed to read version %d; %v", i, err)
             }
 
             summ.OnProbation = &on_probation
-            err = dumpJson(filepath.Join(version_dir, SummaryFileName), &summ)
+            err = dumpJson(filepath.Join(version_dir, summaryFileName), &summ)
             if err != nil {
                 t.Fatalf("failed to update version summary; %v", err)
             }
@@ -156,7 +156,7 @@ func TestrefreshLatestHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
-        _, err := ReadLatest(asset_dir)
+        _, err := readLatest(asset_dir)
         if err == nil || !errors.Is(err, os.ErrNotExist) {
             t.Fatalf("latest version should not exist for all-probational asset; %v", err)
         }

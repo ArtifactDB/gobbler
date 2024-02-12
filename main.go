@@ -81,15 +81,15 @@ func main() {
                             payload := map[string]string{}
 
                             if strings.HasPrefix(reqtype, "upload-") {
-                                config, err0 := Upload(reqpath, registry, administrators)
+                                config, err0 := uploadHandler(reqpath, registry, administrators)
                                 if err0 != nil {
                                     payload["project"] = config.Project
                                     payload["version"] = config.Version
                                 } else {
                                     reportable_err = err0
                                 }
-                            } else if strings.HasPrefix(reqtype, "permissions-") {
-                                reportable_err = SetPermissions(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "set_permissions-") {
+                                reportable_err = setPermissionsHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
                                 reportable_err = refreshLatestHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_usage-") {
@@ -135,7 +135,7 @@ func main() {
     go func() {
         for {
             <-ticker.C
-            err := PurgeOldFiles(staging, time.Hour * 24 * 7)
+            err := purgeOldFiles(staging, time.Hour * 24 * 7)
             if err != nil {
                 log.Println(err)
             }

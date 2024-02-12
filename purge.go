@@ -8,7 +8,7 @@ import (
     "errors"
 )
 
-func PurgeOldFiles(dir string, limit time.Duration) error {
+func purgeOldFiles(dir string, limit time.Duration) error {
     var to_delete []string
     present := time.Now()
     messages := []string{}

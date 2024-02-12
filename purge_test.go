@@ -31,7 +31,7 @@ func TestPurgeOldFiles (t *testing.T) {
     }
 
     // Deleting with a 1-hour expiry.
-    err = PurgeOldFiles(dir, 1 * time.Hour)
+    err = purgeOldFiles(dir, 1 * time.Hour)
     if (err != nil) {
         t.Fatal(err)
     }
@@ -44,7 +44,7 @@ func TestPurgeOldFiles (t *testing.T) {
     }
 
     // Deleting with an immediate expiry.
-    err = PurgeOldFiles(dir, 0 * time.Hour)
+    err = purgeOldFiles(dir, 0 * time.Hour)
     if (err != nil) {
         t.Fatal(err)
     }

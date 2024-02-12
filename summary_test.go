@@ -13,7 +13,7 @@ func TestReadSummary(t *testing.T) {
     }
 
     err = os.WriteFile(
-        filepath.Join(f, SummaryFileName),
+        filepath.Join(f, summaryFileName),
         []byte(`
 { 
     "upload_user_id": "aaron",
@@ -26,7 +26,7 @@ func TestReadSummary(t *testing.T) {
         t.Fatalf("failed to create test summary; %v", err)
     }
 
-    out, err := ReadSummary(f)
+    out, err := readSummary(f)
     if err != nil {
         t.Fatalf("failed to read test summary; %v", err)
     }
@@ -37,7 +37,7 @@ func TestReadSummary(t *testing.T) {
 
     // Trying again with the probational flag.
     err = os.WriteFile(
-        filepath.Join(f, SummaryFileName),
+        filepath.Join(f, summaryFileName),
         []byte(`
 { 
     "upload_user_id": "aaron",
@@ -51,7 +51,7 @@ func TestReadSummary(t *testing.T) {
         t.Fatalf("failed to create test summary; %v", err)
     }
 
-    out, err = ReadSummary(f)
+    out, err = readSummary(f)
     if err != nil {
         t.Fatalf("failed to read test summary; %v", err)
     }
