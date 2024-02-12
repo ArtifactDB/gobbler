@@ -4,6 +4,8 @@ import (
     "encoding/json"
     "os"
     "fmt"
+    "errors"
+    "strings"
 )
 
 func dumpJson(path string, output interface{}) error {
@@ -17,5 +19,18 @@ func dumpJson(path string, output interface{}) error {
         return fmt.Errorf("failed to write to %q; %w", path, err)
     }
 
+    return nil
+}
+
+func isBadName(name string) error {
+    if len(name) == 0 {
+        return errors.New("name cannot be empty")
+    }
+    if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+        return errors.New("name cannot contain '/' or '\\'")
+    }
+    if strings.HasPrefix(name, "..") {
+        return errors.New("name cannot start with '..'")
+    }
     return nil
 }

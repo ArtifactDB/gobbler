@@ -12,19 +12,6 @@ import (
     "unicode"
 )
 
-func is_bad_name(name string) error {
-    if len(name) == 0 {
-        return errors.New("name cannot be empty")
-    }
-    if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-        return errors.New("name cannot contain '/' or '\\'")
-    }
-    if strings.HasPrefix(name, "..") {
-        return errors.New("name cannot start with '..'")
-    }
-    return nil
-}
-
 func increment_series_path(prefix string, dir string) string {
     if prefix == "" {
         return filepath.Join(dir, "..series")
@@ -172,7 +159,7 @@ func process_project(registry string, username string, details *UploadRequest) (
 
     // Creating a new project from a pre-supplied name.
     project := *(details.Project)
-    err = is_bad_name(project)
+    err = isBadName(project)
     if err != nil {
         return "", false, fmt.Errorf("invalid project name; %w", err)
     }
@@ -207,7 +194,7 @@ func process_asset(project_dir string, details *UploadRequest) (string, error) {
         return "", errors.New("expected an 'asset' property in the request details")
     }
 
-    err := is_bad_name(*details.Asset)
+    err := isBadName(*details.Asset)
     if err != nil {
         return "", fmt.Errorf("invalid asset name; %w", err)
     }
@@ -257,7 +244,7 @@ func process_version(asset_dir string, is_new_project bool, details *UploadReque
     }
 
     // Otherwise using the user-supplied version name.
-    err = is_bad_name(*details.Version)
+    err = isBadName(*details.Version)
     if err != nil {
         return "", fmt.Errorf("invalid version name; %w", err)
     }

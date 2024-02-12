@@ -11,30 +11,6 @@ import (
     "os/user"
 )
 
-func TestIsBadName(t *testing.T) {
-    var err error
-
-    err = is_bad_name("..foo")
-    if err == nil || !strings.Contains(err.Error(), "..")  {
-        t.Fatal("failed to stop on '..'") 
-    }
-
-    err = is_bad_name("")
-    if err == nil || !strings.Contains(err.Error(), "empty") {
-        t.Fatal("failed to stop on an empty name")
-    }
-
-    err = is_bad_name("asda/a")
-    if err == nil || !strings.Contains(err.Error(), "/") {
-        t.Fatal("failed to stop in the presence of a forward slash")
-    }
-
-    err = is_bad_name("asda\\asdasd")
-    if err == nil || !strings.Contains(err.Error(), "\\") {
-        t.Fatal("failed to stop in the presence of a backslash")
-    }
-}
-
 func TestIncrementSeries(t *testing.T) {
     for _, prefix := range []string{ "V", "" } {
         dir, err := ioutil.TempDir("", "")

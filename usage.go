@@ -100,6 +100,14 @@ func refreshUsageHandler(reqpath, registry string, administrators []string) erro
         if err != nil {
             return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
+
+        if incoming.Project == nil {
+            return fmt.Errorf("expected 'project' property in %q; %w", reqpath, err)
+        }
+        err = isBadName(*(incoming.Project))
+        if err != nil {
+            return fmt.Errorf("invalid name for 'project' property in %q; %w", reqpath, err)
+        }
     }
 
     project_dir := filepath.Join(registry, *(incoming.Project))

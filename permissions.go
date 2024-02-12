@@ -155,6 +155,14 @@ func SetPermissions(path, registry string, administrators []string) error {
         if err != nil {
             return fmt.Errorf("failed to parse JSON from %q; %w", path, err)
         }
+
+        if incoming.Project == nil {
+            return fmt.Errorf("expected 'project' string in request %q", path)
+        }
+        err = isBadName(*(incoming.Project))
+        if err != nil {
+            return fmt.Errorf("invalid name for 'project' property in %q; %w", path, err)
+        }
     }
 
     source_user, err := IdentifyUser(path)
@@ -162,11 +170,7 @@ func SetPermissions(path, registry string, administrators []string) error {
         return fmt.Errorf("failed to find owner of %q; %w", path, err)
     }
 
-    if incoming.Project == nil {
-        return fmt.Errorf("expected 'project' string in request %q", path)
-    }
     project := *(incoming.Project)
-
     project_dir := filepath.Join(registry, project)
     lock_path := filepath.Join(project_dir, LockFileName)
     handle, err := Lock(lock_path, 1000 * time.Second)
