@@ -35,7 +35,12 @@ func main() {
     if _, err := os.Stat(response_dir); errors.Is(err, os.ErrNotExist) {
         err := os.Mkdir(response_dir, 0755)
         if err != nil {
-            log.Fatal("failed to create a responses subdirectory; ", err)
+            log.Fatalf("failed to create a 'responses' subdirectory in %q; %v", staging, err)
+        }
+    } else {
+        err := os.Chmod(response_dir, 0755)
+        if err != nil {
+            log.Fatalf("failed to validate permissions for the 'responses' subdirectory in %q; %v", staging, err)
         }
     }
 
