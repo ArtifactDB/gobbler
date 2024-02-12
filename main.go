@@ -101,6 +101,17 @@ func main() {
                                 } else {
                                     reportable_err = err0
                                 }
+
+                            } else if strings.HasPrefix(reqtype, "refresh_latest-") {
+                                err0 := refreshLatestHandler(reqpath, registry, administrators)
+                                if err0 != nil {
+                                    err := TouchSuccessLog(logpath)
+                                    if err != nil {
+                                        log.Println("failed to touch success log for '" + basename + "'; ", err)
+                                    }
+                                } else {
+                                    reportable_err = err0
+                                }
                             }
 
                             if reportable_err != nil {

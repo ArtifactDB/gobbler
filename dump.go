@@ -3,14 +3,14 @@ package main
 import (
     "encoding/json"
     "os"
+    "fmt"
 )
 
 func DumpFailureLog(path string, failure error) error {
     payload := map[string]string{}
     payload["status"] = "FAILED"
     payload["reason"] = failure.Error()
-    deets, _ := json.MarshalIndent(&payload, "", "    ")
-    return os.WriteFile(path, deets, 0644)
+    return dump_json(path, payload)
 }
 
 func DumpUploadSuccessLog(path, project, version string) error {
@@ -18,10 +18,23 @@ func DumpUploadSuccessLog(path, project, version string) error {
     payload["status"] = "SUCCESS"
     payload["project"] = project
     payload["version"] = version
-    deets, _ := json.MarshalIndent(&payload, "", "    ")
-    return os.WriteFile(path, deets, 0644)
+    return dump_json(path, payload)
 }
 
 func TouchSuccessLog(path string) error {
     return os.WriteFile(path, []byte(""), 0644)
+}
+
+func dump_json(path string, output interface{}) error {
+    str, err := json.MarshalIndent(output, "", "    ")
+    if err != nil {
+        return fmt.Errorf("failed to stringify output to JSON; %w", err)
+    }
+
+    err = os.WriteFile(path, str, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to write to %q; %w", path, err)
+    }
+
+    return nil
 }
