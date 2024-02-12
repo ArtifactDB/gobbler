@@ -94,6 +94,10 @@ func main() {
                                 reportable_err = refreshLatestHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "refresh_usage-") {
                                 reportable_err = refreshUsageHandler(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "approve_probation-") {
+                                reportable_err = approveProbationHandler(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "reject_probation-") {
+                                reportable_err = rejectProbationHandler(reqpath, registry, administrators)
                             }
 
                             if reportable_err == nil {
