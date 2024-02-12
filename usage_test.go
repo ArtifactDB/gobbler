@@ -5,6 +5,8 @@ import (
     "os"
     "path/filepath"
     "strings"
+    "fmt"
+    "os/user"
 )
 
 func TestReadUsage(t *testing.T) {
@@ -125,5 +127,67 @@ func TestComputeUsage(t *testing.T) {
     _, err = ComputeUsage(src, false)
     if err == nil || !strings.Contains(err.Error(), "symlinks to directories") {
         t.Fatalf("expected a failure in the presence of symlink to a directory")
+    }
+}
+
+func TestRefreshUsageHandler(t *testing.T) {
+    // Mocking up something interesting.
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    project_name := "foobar"
+    project_dir := filepath.Join(reg, project_name)
+    err = os.Mkdir(project_dir, 0755)
+    if err != nil {
+        t.Fatalf("failed to create project directory; %v", err)
+    }
+
+    expected_size := int64(0)
+    for _, asset := range []string{ "WHEE", "STUFF", "BLAH" } {
+        version_dir := filepath.Join(project_dir, asset)
+        err := os.Mkdir(version_dir, 0755)
+        if err != nil {
+            t.Fatalf("failed to create asset directory; %v", err)
+        }
+
+        message := "I am " + asset
+        err = os.WriteFile(filepath.Join(version_dir, "thingy"), []byte(message), 0644)
+        if err != nil {
+            t.Fatalf("failed to write a mock file; %v", err)
+        }
+
+        expected_size += int64(len(message))
+    }
+
+    // Running the latest information.
+    reqpath, err := dump_request("refresh_usage", fmt.Sprintf(`{ "project": "%s" }`, project_name))
+    if err != nil {
+        t.Fatalf("failed to write the request; %v", err)
+    }
+
+    err = refreshUsageHandler(reqpath, reg, nil)
+    if err == nil || !strings.Contains(err.Error(), "not authorized") {
+        t.Fatalf("unexpected authorization for refresh request")
+    }
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatalf("failed to find the current user; %v", err)
+    }
+    self_name := self.Username
+
+    err = refreshUsageHandler(reqpath, reg, []string{ self_name })
+    if err != nil {
+        t.Fatalf("failed to perform the refresh; %v", err)
+    }
+
+    used, err := ReadUsage(project_dir)
+    if err != nil {
+        t.Fatalf("failed to read the usage request; %v", err)
+    }
+    if used.Total != expected_size {
+        t.Fatalf("usage is not as expected")
     }
 }

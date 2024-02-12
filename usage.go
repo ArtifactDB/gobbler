@@ -7,6 +7,7 @@ import (
     "io/fs"
     "strings"
     "path/filepath"
+    "time"
 )
 
 type UsageMetadata struct {
@@ -74,4 +75,52 @@ func ComputeUsage(dir string, skip_symlinks bool) (int64, error) {
     })
 
     return total, err
+}
+
+func refreshUsageHandler(reqpath, registry string, administrators []string) error {
+    source_user, err := IdentifyUser(reqpath)
+    if err != nil {
+        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+    }
+
+    if !IsAuthorizedToAdmin(source_user, administrators) {
+        return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
+    }
+
+    incoming := struct {
+        Project *string `json:"project"`
+    }{}
+    {
+        handle, err := os.ReadFile(reqpath)
+        if err != nil {
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+        }
+
+        err = json.Unmarshal(handle, &incoming)
+        if err != nil {
+            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+        }
+    }
+
+    project_dir := filepath.Join(registry, *(incoming.Project))
+    lock_path := filepath.Join(project_dir, LockFileName)
+    handle, err := Lock(lock_path, 1000 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
+    }
+    defer Unlock(handle)
+
+    new_usage, err := ComputeUsage(project_dir, true)
+    if err != nil {
+        return fmt.Errorf("failed to compute usage for %q; %w", *(incoming.Project), err)
+    }
+
+    usage_path := filepath.Join(project_dir, UsageFileName)
+    usage_meta := UsageMetadata{ Total: new_usage }
+    err = dump_json(usage_path, &usage_meta)
+    if err != nil {
+        return fmt.Errorf("failed to write new usage for %q; %w", *(incoming.Project), err)
+    }
+
+    return nil
 }
