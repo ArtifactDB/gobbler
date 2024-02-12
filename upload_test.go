@@ -29,26 +29,6 @@ func setup_source_for_upload_test() (string, error) {
     return src, nil
 }
 
-func dump_request(request_type, request_string string) (string, error) {
-    handle, err := os.CreateTemp("", "request-" + request_type + "-")
-    if err != nil {
-        return "", fmt.Errorf("failed to create temp file; %w", err)
-    }
-
-    _, err = handle.WriteString(request_string)
-    if err != nil {
-        return "", fmt.Errorf("failed to write string; %w", err)
-    }
-
-    reqname := handle.Name()
-    err = handle.Close()
-    if err != nil {
-        return "", fmt.Errorf("failed to close file; %w", err)
-    }
-
-    return reqname, nil
-}
-
 func TestUploadSimple(t *testing.T) {
     project := "original_series"
     asset := "gastly"
@@ -64,7 +44,7 @@ func TestUploadSimple(t *testing.T) {
     }
 
     req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, src, project, asset)
-    reqname, err := dump_request("upload", req_string)
+    reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
     }
@@ -248,7 +228,7 @@ func TestUploadProbation(t *testing.T) {
     }
 
     req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "FOO", "on_probation": true }`, src, prefix, asset)
-    reqname, err := dump_request("upload", req_string)
+    reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
     }

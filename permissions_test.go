@@ -241,7 +241,7 @@ func TestSetPermissions(t *testing.T) {
     }
 
     {
-        reqpath, err := dump_request(
+        reqpath, err := dumpRequest(
             "permissions",
             fmt.Sprintf(`{ "project": "%s", "permissions": { "owners": [ "%s", "gary" ] } }`, project, self),
         )
@@ -268,7 +268,7 @@ func TestSetPermissions(t *testing.T) {
     }
 
     {
-        reqpath, err := dump_request(
+        reqpath, err := dumpRequest(
             "permissions",
             fmt.Sprintf(`
 { 
@@ -318,7 +318,7 @@ func TestSetPermissions(t *testing.T) {
             t.Fatalf("failed to create some mock permissions")
         }
 
-        reqpath, err := dump_request(
+        reqpath, err := dumpRequest(
             "permissions",
             fmt.Sprintf(`{ "project": "%s" }`, project),
         )

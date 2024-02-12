@@ -162,7 +162,7 @@ func TestRefreshUsageHandler(t *testing.T) {
     }
 
     // Running the latest information.
-    reqpath, err := dump_request("refresh_usage", fmt.Sprintf(`{ "project": "%s" }`, project_name))
+    reqpath, err := dumpRequest("refresh_usage", fmt.Sprintf(`{ "project": "%s" }`, project_name))
     if err != nil {
         t.Fatalf("failed to write the request; %v", err)
     }

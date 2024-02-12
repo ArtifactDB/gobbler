@@ -78,7 +78,7 @@ func TestrefreshLatestHandler(t *testing.T) {
     }
 
     // Now formulating the request.
-    reqpath, err := dump_request("refresh_latest", fmt.Sprintf(`{ "project": "%s", "asset": "%s" }`, project_name, asset_name))
+    reqpath, err := dumpRequest("refresh_latest", fmt.Sprintf(`{ "project": "%s", "asset": "%s" }`, project_name, asset_name))
     if err != nil {
         t.Fatalf("failed to write the request; %v", err)
     }
