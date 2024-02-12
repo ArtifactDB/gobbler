@@ -14,10 +14,10 @@ import (
 
 type uploaderEntry struct {
     Id *string `json:"id"`
-    Asset *string `json:"asset"`
-    Version *string `json:"version"`
-    Until *string `json:"until"`
-    Trusted *bool `json:"trusted"`
+    Asset *string `json:"asset,omitempty"`
+    Version *string `json:"version,omitempty"`
+    Until *string `json:"until,omitempty"`
+    Trusted *bool `json:"trusted,omitempty"`
 }
 
 type permissionsMetadata struct {
