@@ -182,7 +182,6 @@ func createRelativeSymlink(relative_target, relative_link, full_link string) err
 func Transfer(source, registry, project, asset, version string) error {
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]interface{}{}
-    links := map[string]map[string]linkMetadata{}
     manifest_cache := map[string]map[string]manifestEntry{}
     summary_cache := map[string]bool{}
 
@@ -226,6 +225,18 @@ func Transfer(source, registry, project, asset, version string) error {
         } else if !errors.Is(err, os.ErrNotExist) {
             return fmt.Errorf("failed to stat '" + latest_path + "; %w", err)
         }
+    }
+
+    // Creating a function to add the links.
+    links := map[string]map[string]*linkMetadata{}
+    addLink := func(rel string, link_info *linkMetadata) {
+        subdir, base := filepath.Split(rel)
+        sublinks, ok := links[subdir]
+        if !ok {
+            sublinks = map[string]*linkMetadata{}
+            links[subdir] = sublinks
+        }
+        sublinks[base] = link_info
     }
 
     err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
@@ -289,14 +300,7 @@ func Transfer(source, registry, project, asset, version string) error {
                 if err != nil {
                     return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
                 }
-
-                subdir, base := filepath.Split(rel)
-                sublinks, ok := links[subdir]
-                if !ok {
-                    sublinks = map[string]linkMetadata{}
-                    links[subdir] = sublinks
-                }
-                sublinks[base] = *(obj.Link)
+                addLink(rel, obj.Link)
                 return nil
             }
 
@@ -323,6 +327,7 @@ func Transfer(source, registry, project, asset, version string) error {
             if err != nil {
                 return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
             }
+            addLink(rel, man_entry.Link)
             return nil
         }
 

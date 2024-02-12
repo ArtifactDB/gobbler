@@ -7,6 +7,7 @@ import (
     "fmt"
     "strings"
     "errors"
+    "encoding/json"
 )
 
 func setupSourceForTransferTest() (string, error) {
@@ -210,6 +211,34 @@ func verifySymlink(manifest map[string]manifestEntry, version_dir, path, content
     }
     if !strings.HasPrefix(target, "../") || !strings.HasSuffix(target, "/" + target_project + "/" + target_asset + "/" + target_version + "/" + target_path) {
         return fmt.Errorf("unexpected symlink target for %q (got %q)", path, target)
+    }
+
+    {
+        dir, base := filepath.Split(path)
+        linkmeta_path := filepath.Join(version_dir, dir, linksFileName)
+        linkmeta_raw, err := os.ReadFile(linkmeta_path)
+        if err != nil {
+            return fmt.Errorf("failed to read the link metadata; %w", err)
+        }
+
+        var linkmeta map[string]linkMetadata
+        err = json.Unmarshal(linkmeta_raw, &linkmeta)
+        if err != nil {
+            return fmt.Errorf("failed to parse the link metadata; %w", err)
+        }
+
+        found, ok := linkmeta[base]
+        if !ok {
+            return fmt.Errorf("failed to find %q in the link metadata of %q", base, dir)
+        }
+
+        if found.Project != target_project || 
+            found.Asset != target_asset || 
+            found.Version != target_version || 
+            found.Path != target_path ||
+            has_ancestor != (found.Ancestor != nil) {
+            return fmt.Errorf("unexpected link metadata entry for %q", path)
+        }
     }
 
     return nil
