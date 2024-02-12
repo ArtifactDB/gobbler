@@ -421,7 +421,7 @@ func TestUploadHandlerPermissions(t *testing.T) {
     }
 }
 
-func TestUploadHandlerProbation(t *testing.T) {
+func TestUploadHandlerNewOnProbation(t *testing.T) {
     prefix := "POKEDEX"
     asset := "Gastly"
 
@@ -467,3 +467,152 @@ func TestUploadHandlerProbation(t *testing.T) {
         t.Fatal("no ..latest file should be created on probation")
     }
 }
+
+func TestUploadHandlerUpdateOnProbation(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatalf("could not identify the current user; %v", err)
+    }
+    self_name := self.Username
+
+    // Uploaders are not trusted by default.
+    {
+        project := "ghost"
+        asset := "gastly"
+        perm_string := fmt.Sprintf(`{ "owners": [], "uploaders": [ { "id": "%s" } ] }`, self_name)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        // First upload to set up the project.
+        config, err := uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        summ, err := readSummary(filepath.Join(reg, project, asset, config.Version))
+        if err != nil {
+            t.Fatalf("failed to read the summary file; %v", err)
+        }
+
+        if summ.OnProbation != nil {
+            t.Fatal("expected no 'on_probation' entry to be present")
+        }
+
+        // Second upload using the previous permissions.
+        config, err = uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        summ, err = readSummary(filepath.Join(reg, project, asset, config.Version))
+        if err != nil {
+            t.Fatalf("failed to read the summary file; %v", err)
+        }
+
+        if !summ.IsProbational() {
+            t.Fatal("expected 'on_probation' to be 'true'")
+        }
+    }
+
+    // Checking that trusted uploaders do not get probation.
+    {
+        project := "pokemon_adventures" // changing the project name to get a new project.
+        asset := "gastly"
+        perm_string := fmt.Sprintf(`{ "owners": [], "uploaders": [ { "id": "%s", "trusted": true } ] }`, self_name)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        // First upload.
+        _, err = uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        // Second upload.
+        config, err := uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        summ, err := readSummary(filepath.Join(reg, project, asset, config.Version))
+        if err != nil {
+            t.Fatalf("failed to read the summary file; %v", err)
+        }
+
+        if summ.OnProbation != nil {
+            t.Fatal("expected no 'on_probation' entry to be present")
+        }
+
+        // ... unless they specifically ask for it.
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "on_probation": true }`, src, project, asset)
+        reqname, err = dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        config, err = uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        summ, err = readSummary(filepath.Join(reg, project, asset, config.Version))
+        if err != nil {
+            t.Fatalf("failed to read the summary file; %v", err)
+        }
+
+        if !summ.IsProbational() {
+            t.Fatal("expected 'on_probation' to be 'true'")
+        }
+    }
+
+    // Owners are free from probation.
+    {
+        project := "ss_anne" // changing project name again.
+        asset := "gastly"
+        perm_string := fmt.Sprintf(`{ "owners": [ "%s" ] }`, self_name)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        // First upload to set up the project.
+        _, err = uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        // Second upload.
+        config, err := uploadHandler(reqname, reg, nil)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        summ, err := readSummary(filepath.Join(reg, project, asset, config.Version))
+        if err != nil {
+            t.Fatalf("failed to read the summary file; %v", err)
+        }
+
+        if summ.OnProbation != nil {
+            t.Fatal("expected no 'on_probation' entry to be present")
+        }
+    }
+}
+
+
