@@ -177,12 +177,9 @@ func setPermissionsHandler(reqpath, registry string, administrators []string) er
             return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
-        if incoming.Project == nil {
-            return fmt.Errorf("expected 'project' string in request %q", reqpath)
-        }
-        err = isBadName(*(incoming.Project))
+        err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid name for 'project' property in %q; %w", reqpath, err)
+            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
         }
     }
 

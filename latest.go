@@ -108,20 +108,14 @@ func refreshLatestHandler(reqpath, registry string, administrators []string) err
             return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
-        if incoming.Project == nil {
-            return fmt.Errorf("expected a 'project' property in %q", reqpath)
-        }
-        err = isBadName(*(incoming.Project))
+        err = isMissingOrBadName(incoming.Project) 
         if err != nil {
-            return fmt.Errorf("invalid value for 'project' property in %q; %w", reqpath, err)
+            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
         }
 
-        if incoming.Asset == nil {
-            return fmt.Errorf("expected an 'asset' property in %q", reqpath)
-        }
-        err = isBadName(*(incoming.Asset))
+        err = isMissingOrBadName(incoming.Asset) 
         if err != nil {
-            return fmt.Errorf("invalid value for 'asset' property in %q; %w", reqpath, err)
+            return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
         }
     }
 

@@ -34,3 +34,11 @@ func isBadName(name string) error {
     }
     return nil
 }
+
+func isMissingOrBadName(name *string) error {
+    if name == nil {
+        return errors.New("missing name")
+    } else {
+        return isBadName(*name)
+    }
+}
