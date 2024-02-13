@@ -112,6 +112,17 @@ func TestDeleteProject(t *testing.T) {
     if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
         t.Fatal("fail to throw for invalid request")
     }
+
+    // Checking that logs were correctly written.
+    logs, err := readAllLogs(reg)
+    if err != nil {
+        t.Fatalf("failed to read all logs; %v", err)
+    }
+
+    if len(logs) != 1 || logs[0].Type != "delete-project" ||
+        logs[0].Project == nil || *(logs[0].Project) != project {
+        t.Fatal("logs are not as expected from project deletion")
+    }
 }
 
 func TestDeleteAsset(t *testing.T) {
@@ -164,6 +175,18 @@ func TestDeleteAsset(t *testing.T) {
     err = deleteAssetHandler(reqpath, reg, []string{ self })
     if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
         t.Fatal("fail to throw for invalid request")
+    }
+
+    // Checking that logs were correctly written.
+    logs, err := readAllLogs(reg)
+    if err != nil {
+        t.Fatalf("failed to read all logs; %v", err)
+    }
+
+    if len(logs) != 1 || logs[0].Type != "delete-asset" ||
+        logs[0].Project == nil || *(logs[0].Project) != project ||
+        logs[0].Asset == nil || *(logs[0].Asset) != asset {
+        t.Fatal("logs are not as expected from asset deletion")
     }
 }
 
@@ -242,6 +265,19 @@ func TestDeleteVersion(t *testing.T) {
         err = deleteVersionHandler(reqpath, reg, []string{ self })
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Fatal("fail to throw for invalid request")
+        }
+
+        // Checking that logs were correctly written.
+        logs, err := readAllLogs(reg)
+        if err != nil {
+            t.Fatalf("failed to read all logs; %v", err)
+        }
+
+        if len(logs) != 1 || logs[0].Type != "delete-version" ||
+            logs[0].Project == nil || *(logs[0].Project) != project ||
+            logs[0].Asset == nil || *(logs[0].Asset) != asset ||
+            logs[0].Version == nil || *(logs[0].Version) != to_delete {
+            t.Fatal("logs are not as expected from version deletion")
         }
     }
 }
