@@ -53,3 +53,43 @@ func dumpLog(registry string, output interface{}) error {
     path := time.Now().Format(time.RFC3339) + "_" + strconv.Itoa(100000 + rand.Intn(900000))
     return dumpJson(filepath.Join(registry, logDirName, path), output)
 }
+
+func dumpResponse(response_dir, reqname string, content interface{}) error {
+    // Using the save-and-rename paradigm to avoid clients picking up partial writes.
+    temp, err := os.CreateTemp(response_dir, "TEMP")
+    if err != nil {
+        return fmt.Errorf("failed to create temporary file for response to %q; %w", reqname, err)
+    }
+
+    is_closed := false
+    defer func() {
+        if !is_closed {
+            temp.Close()
+        }
+    }()
+
+    as_str, err := json.MarshalIndent(content, "", "    ")
+    if err != nil {
+        return fmt.Errorf("failed to marshal JSON for response to %q; %w", reqname, err)
+    }
+
+    _, err = temp.Write(as_str)
+    if err != nil {
+        return fmt.Errorf("failed to write JSON for response to %q; %w", reqname, err)
+    }
+
+    temp_name := temp.Name()
+    is_closed = true
+    err = temp.Close()
+    if err != nil {
+        return fmt.Errorf("failed to close file for response to %q; %w", reqname, err)
+    }
+
+    logpath := filepath.Join(response_dir, reqname)
+    err = os.Rename(temp_name, logpath)
+    if err != nil {
+        return fmt.Errorf("failed to rename response to %q; %w", reqname, err)
+    }
+
+    return nil
+}

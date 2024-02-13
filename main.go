@@ -131,10 +131,9 @@ func main() {
                                 }
                             }
 
-                            logpath := filepath.Join(response_dir, basename)
-                            err = dumpJson(logpath, payload)
+                            err := dumpResponse(response_dir, basename, &payload)
                             if err != nil {
-                                log.Println("failed to dump response for '" + basename + "'; ", err)
+                                log.Println(err.Error())
                             }
                         }(event.Name, basename)
                     }
