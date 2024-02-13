@@ -83,7 +83,8 @@ func TestRefreshLatestHandler(t *testing.T) {
         t.Fatalf("failed to write the request; %v", err)
     }
 
-    err = refreshLatestHandler(reqpath, reg, nil)
+    globals := newGlobalConfiguration(reg)
+    err = refreshLatestHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")
     }
@@ -94,7 +95,8 @@ func TestRefreshLatestHandler(t *testing.T) {
     }
     self_name := self.Username
 
-    err = refreshLatestHandler(reqpath, reg, []string{ self_name })
+    globals.Administrators = append(globals.Administrators, self_name)
+    err = refreshLatestHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to perform the refresh; %v", err)
     }
@@ -122,7 +124,7 @@ func TestRefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to update version summary; %v", err)
         }
 
-        err = refreshLatestHandler(reqpath, reg, []string{ self_name })
+        err = refreshLatestHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
@@ -152,7 +154,7 @@ func TestRefreshLatestHandler(t *testing.T) {
             }
         }
 
-        err = refreshLatestHandler(reqpath, reg, []string{ self_name })
+        err = refreshLatestHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
@@ -161,5 +163,4 @@ func TestRefreshLatestHandler(t *testing.T) {
             t.Fatalf("latest version should not exist for all-probational asset; %v", err)
         }
     }
-
 }

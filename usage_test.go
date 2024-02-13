@@ -136,6 +136,7 @@ func TestRefreshUsageHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+    globals := newGlobalConfiguration(reg)
 
     project_name := "foobar"
     project_dir := filepath.Join(reg, project_name)
@@ -167,7 +168,7 @@ func TestRefreshUsageHandler(t *testing.T) {
         t.Fatalf("failed to write the request; %v", err)
     }
 
-    err = refreshUsageHandler(reqpath, reg, nil)
+    err = refreshUsageHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")
     }
@@ -178,7 +179,8 @@ func TestRefreshUsageHandler(t *testing.T) {
     }
     self_name := self.Username
 
-    err = refreshUsageHandler(reqpath, reg, []string{ self_name })
+    globals.Administrators = append(globals.Administrators, self_name)
+    err = refreshUsageHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to perform the refresh; %v", err)
     }

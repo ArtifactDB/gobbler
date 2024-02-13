@@ -77,13 +77,13 @@ func computeUsage(dir string, skip_symlinks bool) (int64, error) {
     return total, err
 }
 
-func refreshUsageHandler(reqpath, registry string, administrators []string) error {
+func refreshUsageHandler(reqpath string, globals *globalConfiguration) error {
     source_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    if !isAuthorizedToAdmin(source_user, administrators) {
+    if !isAuthorizedToAdmin(source_user, globals.Administrators) {
         return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
     }
 
@@ -107,13 +107,12 @@ func refreshUsageHandler(reqpath, registry string, administrators []string) erro
         }
     }
 
-    project_dir := filepath.Join(registry, *(incoming.Project))
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     new_usage, err := computeUsage(project_dir, true)
     if err != nil {

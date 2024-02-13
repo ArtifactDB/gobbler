@@ -161,7 +161,7 @@ type unsafePermissionsMetadata struct {
     Uploaders []unsafeUploaderEntry `json:"uploaders"`
 }
 
-func setPermissionsHandler(reqpath, registry string, administrators []string) error {
+func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     incoming := struct {
         Project *string `json:"project"`
         Permissions *unsafePermissionsMetadata `json:"permissions"`
@@ -189,20 +189,19 @@ func setPermissionsHandler(reqpath, registry string, administrators []string) er
     }
 
     project := *(incoming.Project)
-    project_dir := filepath.Join(registry, project)
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    project_dir := filepath.Join(globals.Registry, project)
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     existing, err := readPermissions(project_dir)
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
 
-    if !isAuthorizedToMaintain(source_user, administrators, existing.Owners) {
+    if !isAuthorizedToMaintain(source_user, globals.Administrators, existing.Owners) {
         return fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project)
     }
 

@@ -83,13 +83,13 @@ func refreshLatest(asset_dir string) error {
     return nil
 }
 
-func refreshLatestHandler(reqpath, registry string, administrators []string) error {
+func refreshLatestHandler(reqpath string, globals *globalConfiguration) error {
     source_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    if !isAuthorizedToAdmin(source_user, administrators) {
+    if !isAuthorizedToAdmin(source_user, globals.Administrators) {
         return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
     }
 
@@ -119,13 +119,15 @@ func refreshLatestHandler(reqpath, registry string, administrators []string) err
         }
     }
 
-    asset_dir := filepath.Join(registry, *(incoming.Project), *(incoming.Asset))
-    lock_path := filepath.Join(asset_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    // Technically we only need a lock on the asset directory, but all
+    // mutating operations will lock the project directory, so we respect that.
+    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
-        return fmt.Errorf("failed to acquire the lock on the asset directory %q; %w", asset_dir, err)
+        return fmt.Errorf("failed to acquire the lock on the project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
+    asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     return refreshLatest(asset_dir)
 }

@@ -233,6 +233,8 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         t.Fatalf("failed to create some mock permissions; %v", err)
     }
 
+    globals := newGlobalConfiguration(reg)
+
     // Pure owners.
     {
         reqpath, err := dumpRequest(
@@ -243,7 +245,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -271,7 +273,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -299,7 +301,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatal("expected a permissions failure for invalid uploaders")
         }
@@ -312,7 +314,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatal("expected a permissions failure for invalid uploaders")
         }
@@ -337,7 +339,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, reg, nil)
+        err = setPermissionsHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("unexpected authorization for a non-owner")
         }

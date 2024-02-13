@@ -21,12 +21,11 @@ func main() {
         flag.Usage()
         os.Exit(1)
     }
-    staging := *spath
-    registry := *rpath
 
-    administrators := []string{}
+    staging := *spath
+    globals := newGlobalConfiguration(*rpath)
     if *mstr != "" {
-        administrators = strings.Split(*mstr, ",")
+        globals.Administrators = strings.Split(*mstr, ",")
     }
 
     // Setting up special subdirectories.
@@ -44,7 +43,7 @@ func main() {
         }
     }
 
-    log_dir := filepath.Join(registry, logDirName)
+    log_dir := filepath.Join(globals.Registry, logDirName)
     if _, err := os.Stat(log_dir); errors.Is(err, os.ErrNotExist) {
         err := os.Mkdir(log_dir, 0755)
         if err != nil {
@@ -96,7 +95,7 @@ func main() {
                             payload := map[string]string{}
 
                             if strings.HasPrefix(reqtype, "upload-") {
-                                config, err0 := uploadHandler(reqpath, registry, administrators)
+                                config, err0 := uploadHandler(reqpath, &globals)
                                 if err0 != nil {
                                     payload["project"] = config.Project
                                     payload["version"] = config.Version
@@ -104,21 +103,21 @@ func main() {
                                     reportable_err = err0
                                 }
                             } else if strings.HasPrefix(reqtype, "set_permissions-") {
-                                reportable_err = setPermissionsHandler(reqpath, registry, administrators)
+                                reportable_err = setPermissionsHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-                                reportable_err = refreshLatestHandler(reqpath, registry, administrators)
+                                reportable_err = refreshLatestHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-                                reportable_err = refreshUsageHandler(reqpath, registry, administrators)
+                                reportable_err = refreshUsageHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "approve_probation-") {
-                                reportable_err = approveProbationHandler(reqpath, registry, administrators)
+                                reportable_err = approveProbationHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "reject_probation-") {
-                                reportable_err = rejectProbationHandler(reqpath, registry, administrators)
+                                reportable_err = rejectProbationHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_project-") {
-                                reportable_err = deleteProjectHandler(reqpath, registry, administrators)
+                                reportable_err = deleteProjectHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_asset-") {
-                                reportable_err = deleteAssetHandler(reqpath, registry, administrators)
+                                reportable_err = deleteAssetHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_version-") {
-                                reportable_err = deleteVersionHandler(reqpath, registry, administrators)
+                                reportable_err = deleteVersionHandler(reqpath, &globals)
                             }
 
                             if reportable_err == nil {

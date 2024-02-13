@@ -83,7 +83,7 @@ func incrementSeries(prefix string, dir string) (string, error) {
     return candidate_name, nil
 }
 
-func configureProject(registry string, username string, project, prefix *string) (string, bool, error) {
+func configureProject(registry string, username string, project, prefix *string, locks *pathLocks) (string, bool, error) {
     // Creating a new project from a series.
     if project == nil {
         if prefix == nil {
@@ -96,12 +96,12 @@ func configureProject(registry string, username string, project, prefix *string)
         }
 
         // Obtaining a global lock to avoid simultaneous increments.
-        lock_path := filepath.Join(registry, lockFileName)
-        handle, err := lock(lock_path, 1000 * time.Second)
+        prefix_path := filepath.Join(registry, prefix_str)
+        err := locks.LockPath(prefix_path, 1000 * time.Second)
         if err != nil {
             return "", false, fmt.Errorf("failed to acquire the global registry lock; %w", err)
         }
-        defer unlock(handle)
+        defer locks.UnlockPath(prefix_path)
 
         candidate_name, err := incrementSeries(prefix_str, registry)
         if err != nil {
@@ -261,7 +261,7 @@ type uploadConfiguration struct {
     Version string
 }
 
-func uploadHandler(reqpath, registry string, administrators []string) (*uploadConfiguration, error) {
+func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfiguration, error) {
     request := struct {
         Source *string `json:"source"`
         Prefix *string `json:"prefix"`
@@ -309,25 +309,24 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
-    project, is_new, err := configureProject(registry, req_user, request.Project, request.Prefix)
+    project, is_new, err := configureProject(globals.Registry, req_user, request.Project, request.Prefix, &(globals.Locks))
     if err != nil {
         return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
     }
 
-    project_dir := filepath.Join(registry, project)
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    project_dir := filepath.Join(globals.Registry, project)
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     if !is_new {
         perms, err := readPermissions(project_dir)
         if err != nil {
             return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
         }
-        ok, trusted := isAuthorizedToUpload(req_user, administrators, perms, request.Asset, request.Version)
+        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
         if !ok {
             return nil, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'")
         }
@@ -354,15 +353,15 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
     }
 
     // Now transferring all the files. This involves setting up an abort loop
-    // to remove failed uploads from the registry, lest they clutter things up.
+    // to remove failed uploads from the globals.Registry, lest they clutter things up.
     has_failed := true
     defer func() {
         if has_failed {
-            os.RemoveAll(filepath.Join(registry, project, asset, version))
+            os.RemoveAll(filepath.Join(globals.Registry, project, asset, version))
         }
     }()
 
-    err = Transfer(source, registry, project, asset, version)
+    err = Transfer(source, globals.Registry, project, asset, version)
     if err != nil {
         return nil, fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
@@ -429,7 +428,7 @@ func uploadHandler(reqpath, registry string, administrators []string) (*uploadCo
             "version": version,
             "latest": true,
         }
-        err = dumpLog(registry, log_info)
+        err = dumpLog(globals.Registry, log_info)
         if err != nil {
             return nil, fmt.Errorf("failed to save log file; %w", err)
         }

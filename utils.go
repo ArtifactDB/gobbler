@@ -12,6 +12,20 @@ import (
     "path/filepath"
 )
 
+type globalConfiguration struct {
+    Registry string
+    Administrators []string
+    Locks pathLocks
+}
+
+func newGlobalConfiguration(registry string) globalConfiguration {
+    return globalConfiguration{ 
+        Registry: registry, 
+        Administrators: []string{},
+        Locks: newPathLocks(),
+    }
+}
+
 func dumpJson(path string, output interface{}) error {
     str, err := json.MarshalIndent(output, "", "    ")
     if err != nil {

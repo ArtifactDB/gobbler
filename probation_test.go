@@ -86,7 +86,8 @@ func TestApproveProbationHandler(t *testing.T) {
     }
 
     // Lack of authorization fails.
-    err = approveProbationHandler(reqpath, reg, nil)
+    globals := newGlobalConfiguration(reg)
+    err = approveProbationHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to approve probation; %v", err)
     }
@@ -95,7 +96,8 @@ func TestApproveProbationHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
     }
-    err = approveProbationHandler(reqpath, reg, []string{ self })
+    globals.Administrators = append(globals.Administrators, self)
+    err = approveProbationHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to approve probation; %v", err)
     }
@@ -133,7 +135,7 @@ func TestApproveProbationHandler(t *testing.T) {
     }
 
     // Repeated approval attempts fail.
-    err = approveProbationHandler(reqpath, reg, []string{ self })
+    err = approveProbationHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not on probation") {
         t.Fatal("expected failure for non-probational version")
     }
@@ -200,7 +202,9 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to identify self; %v", err)
         }
-        err = approveProbationHandler(reqpath, reg, []string{ self })
+        globals := newGlobalConfiguration(reg)
+        globals.Administrators = append(globals.Administrators, self)
+        err = approveProbationHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to approve probation; %v", err)
         }
@@ -240,6 +244,7 @@ func TestRejectProbationHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+    globals := newGlobalConfiguration(reg)
 
     project := "dawn"
     asset := "sinnoh"
@@ -258,14 +263,15 @@ func TestRejectProbationHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
     }
-    err = rejectProbationHandler(reqpath, reg, []string{ self })
+    globals.Administrators = append(globals.Administrators, self)
+    err = rejectProbationHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to reject probation; %v", err)
     }
 
     project_dir := filepath.Join(reg, project)
     if _, err := os.Stat(filepath.Join(project_dir, asset, version)); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Fatalf("failed to delete the probational directory; %v", err)
+        t.Fatal("failed to delete the probational directory")
     }
 
     usage, err := readUsage(project_dir)

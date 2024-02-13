@@ -9,7 +9,7 @@ import (
     "errors"
 )
 
-func baseProbationHandler(reqpath, registry string, administrators []string, approve bool) error {
+func baseProbationHandler(reqpath string, globals *globalConfiguration, approve bool) error {
     incoming := struct {
         Project *string `json:"project"`
         Asset *string `json:"asset"`
@@ -48,19 +48,18 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
     }
 
     project := *(incoming.Project)
-    project_dir := filepath.Join(registry, project)
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    project_dir := filepath.Join(globals.Registry, project)
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     existing, err := readPermissions(project_dir)
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project_dir, err)
     }
-    if !isAuthorizedToMaintain(username, administrators, existing.Owners) {
+    if !isAuthorizedToMaintain(username, globals.Administrators, existing.Owners) {
         return fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir)
     }
 
@@ -124,7 +123,7 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
             "version": *(incoming.Version),
             "latest": overwrite_latest,
         }
-        err = dumpLog(registry, &log_info)
+        err = dumpLog(globals.Registry, &log_info)
         if err != nil {
             return fmt.Errorf("failed to save log file; %w", err)
         }
@@ -160,10 +159,10 @@ func baseProbationHandler(reqpath, registry string, administrators []string, app
     return nil
 }
 
-func approveProbationHandler(reqpath string, registry string, administrators []string) error {
-    return baseProbationHandler(reqpath, registry, administrators, true)
+func approveProbationHandler(reqpath string, globals *globalConfiguration) error {
+    return baseProbationHandler(reqpath, globals, true)
 }
 
-func rejectProbationHandler(reqpath string, registry string, administrators []string) error {
-    return baseProbationHandler(reqpath, registry, administrators, false)
+func rejectProbationHandler(reqpath string, globals *globalConfiguration) error {
+    return baseProbationHandler(reqpath, globals, false)
 }

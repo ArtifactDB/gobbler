@@ -8,12 +8,12 @@ import (
     "time"
 )
 
-func deleteProjectHandler(reqpath, registry string, administrators []string) error {
+func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
-    if !isAuthorizedToAdmin(req_user, administrators) {
+    if !isAuthorizedToAdmin(req_user, globals.Administrators) {
         return fmt.Errorf("user %q is not authorized to delete a project", req_user)
     }
 
@@ -37,7 +37,7 @@ func deleteProjectHandler(reqpath, registry string, administrators []string) err
         }
     }
 
-    project_dir := filepath.Join(registry, *(incoming.Project))
+    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     err = os.RemoveAll(project_dir)
     if err != nil {
         return fmt.Errorf("failed to delete %s; %v", project_dir, err)
@@ -47,7 +47,7 @@ func deleteProjectHandler(reqpath, registry string, administrators []string) err
         "type": "delete-project", 
         "project": *(incoming.Project),
     }
-    err = dumpLog(registry, &payload)
+    err = dumpLog(globals.Registry, &payload)
     if err != nil {
         return fmt.Errorf("failed to create log for project deletion; %w", err)
     }
@@ -55,12 +55,12 @@ func deleteProjectHandler(reqpath, registry string, administrators []string) err
     return nil
 }
 
-func deleteAssetHandler(reqpath, registry string, administrators []string) error {
+func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
-    if !isAuthorizedToAdmin(req_user, administrators) {
+    if !isAuthorizedToAdmin(req_user, globals.Administrators) {
         return fmt.Errorf("user %q is not authorized to delete a project", req_user)
     }
 
@@ -89,13 +89,12 @@ func deleteAssetHandler(reqpath, registry string, administrators []string) error
         }
     }
 
-    project_dir := filepath.Join(registry, *(incoming.Project))
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     to_free, err := computeUsage(asset_dir, true)
@@ -126,7 +125,7 @@ func deleteAssetHandler(reqpath, registry string, administrators []string) error
         "project": *(incoming.Project),
         "asset": *(incoming.Asset),
     }
-    err = dumpLog(registry, &payload)
+    err = dumpLog(globals.Registry, &payload)
     if err != nil {
         return fmt.Errorf("failed to create log for asset deletion; %w", err)
     }
@@ -134,12 +133,12 @@ func deleteAssetHandler(reqpath, registry string, administrators []string) error
     return nil
 }
 
-func deleteVersionHandler(reqpath, registry string, administrators []string) error {
+func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
-    if !isAuthorizedToAdmin(req_user, administrators) {
+    if !isAuthorizedToAdmin(req_user, globals.Administrators) {
         return fmt.Errorf("user %q is not authorized to delete a project", req_user)
     }
 
@@ -173,13 +172,15 @@ func deleteVersionHandler(reqpath, registry string, administrators []string) err
         }
     }
 
-    project_dir := filepath.Join(registry, *(incoming.Project))
-    lock_path := filepath.Join(project_dir, lockFileName)
-    handle, err := lock(lock_path, 1000 * time.Second)
+    // We lock the project directory as (i) it's convention to lock the entire
+    // project even if we're mutating a single asset and (ii) we need to update
+    // the usage anyway so we'd have to obtain this lock eventually.
+    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
+    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlock(handle)
+    defer globals.Locks.UnlockPath(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     version_dir := filepath.Join(asset_dir, *(incoming.Version))
@@ -217,7 +218,7 @@ func deleteVersionHandler(reqpath, registry string, administrators []string) err
         "asset": *(incoming.Asset),
         "version": *(incoming.Version),
     }
-    err = dumpLog(registry, &payload)
+    err = dumpLog(globals.Registry, &payload)
     if err != nil {
         return fmt.Errorf("failed to create log for version deletion; %w", err)
     }

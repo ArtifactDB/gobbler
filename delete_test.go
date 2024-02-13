@@ -80,7 +80,8 @@ func TestDeleteProject(t *testing.T) {
         t.Fatalf("failed to dump a request type; %v", err)
     }
 
-    err = deleteProjectHandler(reqpath, reg, nil)
+    globals := newGlobalConfiguration(reg)
+    err = deleteProjectHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatal("unexpected authorization for non-admin")
     }
@@ -89,7 +90,8 @@ func TestDeleteProject(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
     }
-    err = deleteProjectHandler(reqpath, reg, []string{ self })
+    globals.Administrators = append(globals.Administrators, self)
+    err = deleteProjectHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to delete a project; %v", err)
     }
@@ -108,7 +110,7 @@ func TestDeleteProject(t *testing.T) {
         t.Fatalf("failed to dump a request type; %v", err)
     }
 
-    err = deleteProjectHandler(reqpath, reg, []string{ self })
+    err = deleteProjectHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
         t.Fatal("fail to throw for invalid request")
     }
@@ -138,7 +140,8 @@ func TestDeleteAsset(t *testing.T) {
         t.Fatalf("failed to dump a request type; %v", err)
     }
 
-    err = deleteAssetHandler(reqpath, reg, nil)
+    globals := newGlobalConfiguration(reg)
+    err = deleteAssetHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatal("unexpected authorization for non-admin")
     }
@@ -147,7 +150,8 @@ func TestDeleteAsset(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
     }
-    err = deleteAssetHandler(reqpath, reg, []string{ self })
+    globals.Administrators = append(globals.Administrators, self)
+    err = deleteAssetHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to delete an asset; %v", err)
     }
@@ -172,7 +176,7 @@ func TestDeleteAsset(t *testing.T) {
         t.Fatalf("failed to dump a request type; %v", err)
     }
 
-    err = deleteAssetHandler(reqpath, reg, []string{ self })
+    err = deleteAssetHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
         t.Fatal("fail to throw for invalid request")
     }
@@ -215,7 +219,8 @@ func TestDeleteVersion(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = deleteVersionHandler(reqpath, reg, nil)
+        globals := newGlobalConfiguration(reg)
+        err = deleteVersionHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatal("unexpected authorization for non-admin")
         }
@@ -224,7 +229,8 @@ func TestDeleteVersion(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to identify self; %v", err)
         }
-        err = deleteVersionHandler(reqpath, reg, []string{ self })
+        globals.Administrators = append(globals.Administrators, self)
+        err = deleteVersionHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to delete a version; %v", err)
         }
@@ -262,7 +268,7 @@ func TestDeleteVersion(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = deleteVersionHandler(reqpath, reg, []string{ self })
+        err = deleteVersionHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Fatal("fail to throw for invalid request")
         }

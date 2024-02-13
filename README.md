@@ -305,9 +305,8 @@ mkdir STAGING
 chmod 777 STAGING
 ```
 
-Finally, set up a registry with global read-only permissions.
+Then, set up a registry directory with global read-only permissions.
 
-- The registry should be on a filesystem that supports file locking.
 - The registry and staging directories do not need to be on the same filesystem (e.g., for mounted shares), as long as both are accessible to users. 
 
 ```sh
