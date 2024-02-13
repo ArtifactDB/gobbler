@@ -74,7 +74,7 @@ func refreshLatest(asset_dir string) error {
             return fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)
         }
     } else {
-        err := os.Remove(latest_path)
+        err := os.RemoveAll(latest_path)
         if err != nil {
             return fmt.Errorf("failed to remove %q; %w", latest_path, err)
         }
