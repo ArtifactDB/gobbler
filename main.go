@@ -113,6 +113,12 @@ func main() {
                                 reportable_err = approveProbationHandler(reqpath, registry, administrators)
                             } else if strings.HasPrefix(reqtype, "reject_probation-") {
                                 reportable_err = rejectProbationHandler(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "delete_project-") {
+                                reportable_err = deleteProjectHandler(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "delete_asset-") {
+                                reportable_err = deleteAssetHandler(reqpath, registry, administrators)
+                            } else if strings.HasPrefix(reqtype, "delete_version-") {
+                                reportable_err = deleteVersionHandler(reqpath, registry, administrators)
                             }
 
                             if reportable_err == nil {
