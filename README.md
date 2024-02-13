@@ -12,7 +12,7 @@ Users should never have to interact with the Gobbler directly, as this should be
 
 ## Concepts
 
-The Gobbler aims to mirror most of the concepts used by [**gypsum**](https://github.com/ArtifactDB/gypsum).
+The Gobbler aims to mirror the concepts used by [**gypsum**](https://github.com/ArtifactDB/gypsum).
 In particular, the file organization and structure of the `..`-prefixed metadata files should be the same between the Gobbler and **gypsum**.
 This provides a degree of cloud-readiness, as administrators can easily switch from the Gobbler to **gypsum** by just uploading the contents of the local directory to a Cloudflare R2 bucket.
 
@@ -21,6 +21,7 @@ This provides a degree of cloud-readiness, as administrators can easily switch f
 The Gobbler stores all files in a local directory called the "registry", organized in a hierarchy of project, asset and versions.
 That is, each project may have multiple assets, and each asset may have multiple versions.
 All user-supplied files are associated with a particular project-asset-version combination.
+For consistency with **gypsum**'s terminology, we will define an "upload" as a filesystem copy of user-supplied files into the registry. 
 
 Within the directory, files associated with a project-asset-version combination will be stored in the `{project}/{asset}/{version}/` subdirectory.
 For each project-asset-version combination, the set of all user-supplied files is recorded in the `{project}/{asset}/{version}/..manifest` file.
@@ -136,14 +137,130 @@ Upon creation of a request file, the Gobbler will parse it and execute the reque
 After completing the request, the Gobbler will write a JSON response to the `responses` subdirectory of the staging directory.
 This has the same name as the initial request file, so users can easily poll the subdirectory for the existence of this file.
 Each response will have at least the `type` property (either `SUCCESS` or `FAILED`).
-For failures, this will be an additional `reason` string property to specify the reason.
+For failures, this will be an additional `reason` string property to specify the reason;
+for successes, additional proeprties may be present depending on the request action.
 
 When writing the request file, it is recommended to use the write-and-rename paradigm.
 Specifically, users should write the JSON request body to a file inside the staging directory that does _not_ have the `request-<ACTION>-` prefix.
 Once the write is complete, this file can be renamed to a file with said prefix.
 This ensures that the Gobbler does not read a partially-written file.
 
+### Uploads and updates
 
+To upload a new version of an asset of a project (either in an existing project, or in a new project), users should create a temporary directory within the staging directory.
+The directory may have any name but should avoid starting with `request-`.
+Files within this temporary directory will be transferred to the appropriate subdirectory within the registry, subject to the following rules:
+
+- Hidden files (i.e., prefixed with `.`) are ignored.
+- Symbolic links to directories are not allowed.
+- Symbolic links to files are treated as deduplicating links if the symlink target is an existing file within a project-asset-version subdirectory of the registry.
+  If the target is elsewhere on the filesystem, a copy is performed.
+
+Once this directory is constructed and populated, the user should use the write-and-rename paradigm to create a file with the `request-upload-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the explicit name of the project.
+  The string should start with a lower-case letter to distinguish from prefixed names constructed by incrementing series.
+  This may also be missing, in which case `prefix` should be supplied.
+- `prefix` (optional): string containing an all-uppercase project prefix,
+  used to derive a project name from an incrementing series if `project` is not supplied.
+  Ignored if `project` is provided.
+- `asset`: string containing the name of the asset.
+- `version` (optional): string containing the name of the version.
+  This may be missing, in which case the version is named according to an incrementing series for that project-asset combination.
+- `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
+  Each of these properties has the same type as described [above](#permissions).
+  If `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
+  This property is ignored when uploading a new version of an asset to an existing project.
+- `on_probation` (optional): boolean specifying whether this version of the asset should be considered as probational.
+
+On success, the files will be transferred to the registry and a JSON formatted file will be created in `responses`.
+This will have the `type` property set to `SUCCESS` and the `project` and `version` strings set to the names of the project and version, respectively.
+These will be the same as the request parameters if supplied, otherwise they are created from the relevant incrementing series.
+
+### Setting permissions
+
+Users should use the write-and-rename paradigm to create a file with the `request-set_permissions-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `permissions`: an object containing either or both of `owners` and `uploaders`.
+  Each of these properties has the same type as described [above](#permissions).
+  If any property is missing, the value in the existing permissions is used.
+
+On success, the permissions in the registry are modified and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`..
+
+### Handling probation
+
+To approve probation, a user should use the write-and-rename paradigm to create a file with the `request-approve_probation-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+- `version`: string containing the name of the version.
+
+On success, the probational status is removed and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+To reject probation, a user should use the write-and-rename paradigm to create a file with the `request-reject_probation-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+- `version`: string containing the name of the version.
+
+On success, the relevant version is removed from the registry and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+### Refreshing statistics (admin)
+
+On rare occasions involving frequent updates, some of the inter-version statistics may not be correct.
+For example, the latest version in `..latest` may not keep in sync when many probational versions are approved at once.
+Administrators can fix this manually by requesting a refresh of the relevant statistics.
+
+To refresh project usage, use the write-and-rename paradigm to create a file with the `request-refresh_usage-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+
+On success, the usage is updated and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+To refresh the latest version of an asset, use the write-and-rename paradigm to create a file with the `request-refresh_latest-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+
+On success, the latest version is updated and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+### Deleting content (admin)
+
+Administrators have the ability to delete files from the registry.
+This violates **gypsum**'s immutability contract and should be done sparingly.
+In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated.
+This check involves going through all the manifest files and is currently a manual process.
+
+To delete a project, use the write-and-rename paradigm to create a file with the `request-delete_project-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+
+On success, the project is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+To delete an asset, use the write-and-rename paradigm to create a file with the `request-delete_asset-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+
+On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
+To delete a version, use the write-and-rename paradigm to create a file with the `request-delete_version-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+- `version`: string containing the name of the version.
+
+On success, the version is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
 
 ## Parsing logs
 
@@ -198,7 +315,7 @@ mkdir REGISTRY
 chmod 755 REGISTRY
 ```
 
-The Gobbler can then be started by running the binary with a few arguments:
+The Gobbler can then be started by running the binary with a few arguments, including the UIDs of administrators:
 
 ```sh
 ./gobbler -staging STAGING -registry REGISTRY -admin ADMIN1,ADMIN2
