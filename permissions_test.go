@@ -226,21 +226,17 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
 
     err = os.WriteFile(
         filepath.Join(project_dir, permissionsFileName),
-        []byte(fmt.Sprintf(`
-{
-    "owners": [ "brock", "ash", "oak", "%s" ],
-    "uploaders": [ { "id": "lance" } ]
-}
-        `, self)),
+        []byte(fmt.Sprintf(`{ "owners": [ "brock", "ash", "oak", "%s" ], "uploaders": [ { "id": "lance" } ] }`, self)),
         0644,
     )
     if err != nil {
         t.Fatalf("failed to create some mock permissions; %v", err)
     }
 
+    // Pure owners.
     {
         reqpath, err := dumpRequest(
-            "permissions",
+            "set_permissions",
             fmt.Sprintf(`{ "project": "%s", "permissions": { "owners": [ "%s", "gary" ] } }`, project, self),
         )
         if err != nil {
@@ -265,19 +261,11 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         }
     }
 
+    // Pure uploaders.
     {
         reqpath, err := dumpRequest(
-            "permissions",
-            fmt.Sprintf(`
-{ 
-    "project": "%s", 
-    "permissions": { 
-        "uploaders": [ 
-            { "id": "lorelei", "until": "2022-02-02T20:20:20Z" },
-            { "id": "karen" }
-        ]
-    }
-}`, project),
+            "set_permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "uploaders": [ { "id": "lorelei", "until": "2022-02-02T20:20:20Z" }, { "id": "karen" } ] } }`, project),
         )
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
@@ -301,15 +289,40 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         }
     }
 
+    // Invalid uploaders.
+    {
+        reqpath, err := dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "uploaders": [ { } ] } }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = setPermissionsHandler(reqpath, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+            t.Fatal("expected a permissions failure for invalid uploaders")
+        }
+
+        reqpath, err = dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "uploaders": [ { "id": "cynthia", "until": "YAY" } ] } }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = setPermissionsHandler(reqpath, reg, nil)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
+            t.Fatal("expected a permissions failure for invalid uploaders")
+        }
+    }
+
+    // Not authorized.
     {
         err = os.WriteFile(
             filepath.Join(project_dir, permissionsFileName),
-            []byte(`
-{
-    "owners": [ "brock" ],
-    "uploaders": [ { "id": "lance" } ]
-}
-            `),
+            []byte(`{ "owners": [ "brock" ], "uploaders": [ { "id": "lance" } ] } `),
             0644,
         )
         if err != nil {
@@ -317,7 +330,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         }
 
         reqpath, err := dumpRequest(
-            "permissions",
+            "set_permissions",
             fmt.Sprintf(`{ "project": "%s" }`, project),
         )
         if err != nil {
