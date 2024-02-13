@@ -413,7 +413,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         // triggering an abort _after_ the latest version has been updated.
         // I suppose we could try to reset to the previous value; but if the
         // writes failed there's no guarantee that a reset would work either.
-        latest := latestMetadata { Latest: version }
+        latest := latestMetadata { Version: version }
         latest_path := filepath.Join(asset_dir, latestFileName)
         err := dumpJson(latest_path, &latest)
         if err != nil {

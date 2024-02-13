@@ -114,7 +114,7 @@ func TestApproveProbationHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to read the latest; %v", err)
     }
-    if latest.Latest != version {
+    if latest.Version != version {
         t.Fatal("latest version should be updated after approval")
     }
 
@@ -187,7 +187,7 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
             t.Fatalf("failed to create a mock summary; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "latest": "%s" }`, version2)), 0644)
+        err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "version": "%s" }`, version2)), 0644)
         if err != nil {
             t.Fatalf("failed to write the latest file; %v", err)
         }
@@ -216,11 +216,11 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
         }
 
         if other_latest {
-            if latest.Latest != version2 {
+            if latest.Version != version2 {
                 t.Fatal("latest version should not be updated after approval")
             }
         } else {
-            if latest.Latest != version {
+            if latest.Version != version {
                 t.Fatal("latest version should be updated after approval")
             }
         }

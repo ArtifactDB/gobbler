@@ -60,7 +60,7 @@ func mockRegistryForDeletion(project, asset string, versions []string) (string, 
         return "", fmt.Errorf("failed to write usage; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "latest": "%s" }`, versions[len(versions) - 1])), 0644)
+    err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "version": "%s" }`, versions[len(versions) - 1])), 0644)
     if err != nil {
         return "", fmt.Errorf("failed to write latest version; %w", err)
     }
@@ -258,7 +258,7 @@ func TestDeleteVersion(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to read the latest version after deletion; %v", err)
         }
-        if latest.Latest != survivor {
+        if latest.Version != survivor {
             t.Fatal("mismatch in the expected latest version after version deletion")
         }
 

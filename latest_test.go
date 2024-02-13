@@ -20,7 +20,7 @@ func TestReadLatest(t *testing.T) {
 
     err = os.WriteFile(
         filepath.Join(f, latestFileName),
-        []byte(`{ "latest": "argle" }`),
+        []byte(`{ "version": "argle" }`),
         0644,
     )
     if err != nil {
@@ -32,7 +32,7 @@ func TestReadLatest(t *testing.T) {
         t.Fatalf("failed to read test ..latest; %v", err)
     }
 
-    if out.Latest != "argle" {
+    if out.Version != "argle" {
         t.Fatalf("unexpected 'latest' value")
     }
 }
@@ -105,7 +105,7 @@ func TestRefreshLatestHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to read the latest version; %v", err)
     }
-    if latest.Latest != "3" {
+    if latest.Version != "3" {
         t.Fatalf("latest version is not as expected")
     }
 
@@ -133,7 +133,7 @@ func TestRefreshLatestHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to read the latest version; %v", err)
         }
-        if latest.Latest != "2" {
+        if latest.Version != "2" {
             t.Fatalf("latest version is not as expected after probation")
         }
     }

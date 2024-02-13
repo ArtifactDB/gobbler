@@ -10,7 +10,7 @@ import (
 )
 
 type latestMetadata struct {
-    Latest string `json:"latest"`
+    Version string `json:"version"`
 }
 
 const latestFileName = "..latest"
@@ -68,7 +68,7 @@ func refreshLatest(asset_dir string) error {
 
     latest_path := filepath.Join(asset_dir, latestFileName)
     if found {
-        output := latestMetadata { Latest: most_recent_name }
+        output := latestMetadata { Version: most_recent_name }
         err := dumpJson(latest_path, &output)
         if err != nil {
             return fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)

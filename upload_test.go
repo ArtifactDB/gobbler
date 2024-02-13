@@ -188,8 +188,8 @@ func TestUploadHandlerSimple(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to read the latest; %v", err)
     }
-    if latest.Latest != config.Version {
-        t.Fatalf("unexpected latest version (expected %q, got %q)", latest.Latest, config.Version)
+    if latest.Version != config.Version {
+        t.Fatalf("unexpected latest version (expected %q, got %q)", latest.Version, config.Version)
     }
 
     quota_raw, err := os.ReadFile(filepath.Join(reg, config.Project, "..quota"))
@@ -532,8 +532,8 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to read the latest; %v", err)
         }
-        if latest.Latest != config.Version {
-            t.Fatalf("unexpected latest version (expected %q, got %q)", config.Version, latest.Latest)
+        if latest.Version != config.Version {
+            t.Fatalf("unexpected latest version (expected %q, got %q)", config.Version, latest.Version)
         }
     }
 }

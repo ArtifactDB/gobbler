@@ -84,7 +84,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         latest, err := readLatest(asset_dir)
         overwrite_latest := false
         if err == nil {
-            latest_version := filepath.Join(asset_dir, latest.Latest)
+            latest_version := filepath.Join(asset_dir, latest.Version)
             latest_summ, err := readSummary(latest_version)
             if err != nil {
                 return fmt.Errorf("failed to read the latest version summary for %q; %w", latest_version, err)
@@ -108,7 +108,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
 
         if overwrite_latest {
             latest_path := filepath.Join(asset_dir, latestFileName)
-            latest.Latest = *(incoming.Version)
+            latest.Version = *(incoming.Version)
             err := dumpJson(latest_path, latest)
             if err != nil {
                 return fmt.Errorf("failed to update the latest version at %q; %w", latest_path, err)

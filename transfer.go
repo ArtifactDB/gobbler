@@ -200,7 +200,7 @@ func Transfer(source, registry, project, asset, version string) error {
                 return fmt.Errorf("failed to identify the latest version; %w", err)
             }
 
-            manifest, err := readManifest(filepath.Join(asset_dir, latest.Latest))
+            manifest, err := readManifest(filepath.Join(asset_dir, latest.Version))
             if err != nil {
                 return fmt.Errorf("failed to read the latest version's manifest; %w", err)
             }
@@ -209,7 +209,7 @@ func Transfer(source, registry, project, asset, version string) error {
                 self := linkMetadata{
                     Project: project,
                     Asset: asset,
-                    Version: latest.Latest,
+                    Version: latest.Version,
                     Path: k,
                 }
                 if v.Link != nil {

@@ -319,7 +319,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"" + version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -357,7 +357,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -416,7 +416,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -469,7 +469,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
 
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"" + new_version + "\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"" + new_version + "\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -530,7 +530,7 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"red\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"red\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -543,7 +543,7 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"blue\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"blue\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
@@ -556,7 +556,7 @@ func TestTransferLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
-        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"latest\": \"green\" }"), 0644)
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"green\" }"), 0644)
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
