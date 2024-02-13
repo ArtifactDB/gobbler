@@ -119,6 +119,8 @@ func main() {
                                 reportable_err = deleteAssetHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_version-") {
                                 reportable_err = deleteVersionHandler(reqpath, &globals)
+                            } else if strings.HasPrefix(reqtype, "health_check-") {
+                                reportable_err = nil
                             } else {
                                 reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
                             }

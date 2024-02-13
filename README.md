@@ -262,6 +262,12 @@ This file should be JSON-formatted with the following properties:
 
 On success, the version is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
 
+### Health check
+
+To check if a Gobbler service is active, a user should touch a file with the `request-health_check-` prefix.
+The contents of this file are ignored.
+On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+
 ## Parsing logs
 
 For some actions, the Gobbler creates a log within the `..logs/` subdirectory of the registry.
