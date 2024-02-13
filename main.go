@@ -9,6 +9,7 @@ import (
     "os"
     "errors"
     "strings"
+    "fmt"
 )
 
 func main() {
@@ -118,6 +119,8 @@ func main() {
                                 reportable_err = deleteAssetHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_version-") {
                                 reportable_err = deleteVersionHandler(reqpath, &globals)
+                            } else {
+                                reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
                             }
 
                             if reportable_err == nil {
