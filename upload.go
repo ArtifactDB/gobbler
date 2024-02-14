@@ -185,26 +185,28 @@ func populateNewProjectDirectory(dir string, username string, permissions *unsaf
     return nil
 }
 
-func configureAsset(project_dir string, asset *string) (string, error) {
+func configureAsset(project_dir string, asset *string) (string, bool, error) {
     if asset == nil {
-        return "", errors.New("expected an 'asset' property in the request details")
+        return "", false, errors.New("expected an 'asset' property in the request details")
     }
 
     asset_str := *asset
     err := isBadName(asset_str)
     if err != nil {
-        return "", fmt.Errorf("invalid asset name %q; %w", asset_str, err)
+        return "", false, fmt.Errorf("invalid asset name %q; %w", asset_str, err)
     }
 
     asset_dir := filepath.Join(project_dir, asset_str)
+    is_new := false
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         err = os.Mkdir(asset_dir, 0755)
         if err != nil {
-            return "", fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
+            return "", false, fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
         }
+        is_new = true
     }
 
-    return asset_str, nil
+    return asset_str, is_new, nil
 }
 
 func configureVersion(asset_dir string, is_new_project bool, version *string) (string, error) {
@@ -309,7 +311,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
-    project, is_new, err := configureProject(globals.Registry, req_user, request.Project, request.Prefix, &(globals.Locks))
+    project, is_new_project, err := configureProject(globals.Registry, req_user, request.Project, request.Prefix, &(globals.Locks))
     if err != nil {
         return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
     }
@@ -321,7 +323,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
     }
     defer globals.Locks.UnlockPath(project_dir)
 
-    if !is_new {
+    if !is_new_project {
         perms, err := readPermissions(project_dir)
         if err != nil {
             return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
@@ -341,13 +343,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
     }
 
     // Configuring the asset and version.
-    asset, err := configureAsset(project_dir, request.Asset)
+    asset, is_new_asset, err := configureAsset(project_dir, request.Asset)
     if err != nil {
         return nil, fmt.Errorf("failed to configure the asset for request %q; %w", reqpath, err)
     }
     asset_dir := filepath.Join(project_dir, asset)
 
-    version, err := configureVersion(asset_dir, is_new, request.Version)
+    version, err := configureVersion(asset_dir, is_new_asset, request.Version)
     if err != nil {
         return nil, fmt.Errorf("failed to configure the version for request %q; %w", reqpath, err)
     }
