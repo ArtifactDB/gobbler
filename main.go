@@ -99,7 +99,7 @@ func main() {
 
                             if strings.HasPrefix(reqtype, "upload-") {
                                 config, err0 := uploadHandler(reqpath, &globals)
-                                if err0 != nil {
+                                if err0 == nil {
                                     payload["project"] = config.Project
                                     payload["version"] = config.Version
                                 } else {
@@ -108,7 +108,7 @@ func main() {
 
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
                                 res, err0 := refreshLatestHandler(reqpath, &globals)
-                                if err0 != nil {
+                                if err0 == nil {
                                     if res != nil {
                                         payload["version"] = res.Version
                                     }
