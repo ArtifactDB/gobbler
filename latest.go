@@ -32,10 +32,10 @@ func readLatest(path string) (*latestMetadata, error) {
     return &output, nil
 }
 
-func refreshLatest(asset_dir string) error {
+func refreshLatest(asset_dir string) (*latestMetadata, error) {
     entries, err := os.ReadDir(asset_dir)
     if err != nil {
-        return fmt.Errorf("failed to list versions in %q; %w", asset_dir, err)
+        return nil, fmt.Errorf("failed to list versions in %q; %w", asset_dir, err)
     }
 
     found := false
@@ -47,7 +47,7 @@ func refreshLatest(asset_dir string) error {
             full_path := filepath.Join(asset_dir, entry.Name())
             summ, err := readSummary(full_path)
             if err != nil {
-                return fmt.Errorf("failed to read summary from %q; %w", full_path, err)
+                return nil, fmt.Errorf("failed to read summary from %q; %w", full_path, err)
             }
             if summ.IsProbational() {
                 continue
@@ -55,7 +55,7 @@ func refreshLatest(asset_dir string) error {
 
             as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
             if err != nil {
-                return fmt.Errorf("could not parse 'upload_finish' from %q; %w", full_path, err)
+                return nil, fmt.Errorf("could not parse 'upload_finish' from %q; %w", full_path, err)
             }
 
             if !found || most_recent.Before(as_time) {
@@ -71,26 +71,26 @@ func refreshLatest(asset_dir string) error {
         output := latestMetadata { Version: most_recent_name }
         err := dumpJson(latest_path, &output)
         if err != nil {
-            return fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)
+            return nil, fmt.Errorf("failed to update latest version in %q; %w", asset_dir, err)
         }
+        return &output, nil
     } else {
         err := os.RemoveAll(latest_path)
         if err != nil {
-            return fmt.Errorf("failed to remove %q; %w", latest_path, err)
+            return nil, fmt.Errorf("failed to remove %q; %w", latest_path, err)
         }
+        return nil, nil
     }
-
-    return nil
 }
 
-func refreshLatestHandler(reqpath string, globals *globalConfiguration) error {
+func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latestMetadata, error) {
     source_user, err := identifyUser(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     if !isAuthorizedToAdmin(source_user, globals.Administrators) {
-        return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
+        return nil, fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
     }
 
     incoming := struct {
@@ -100,22 +100,22 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return nil, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
         err = isMissingOrBadName(incoming.Project) 
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return nil, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
         }
 
         err = isMissingOrBadName(incoming.Asset) 
         if err != nil {
-            return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
+            return nil, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
         }
     }
 
@@ -124,10 +124,11 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) error {
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
-        return fmt.Errorf("failed to acquire the lock on the project directory %q; %w", project_dir, err)
+        return nil, fmt.Errorf("failed to acquire the lock on the project directory %q; %w", project_dir, err)
     }
     defer globals.Locks.UnlockPath(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
-    return refreshLatest(asset_dir)
+    output, err := refreshLatest(asset_dir)
+    return output, err
 }

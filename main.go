@@ -93,7 +93,7 @@ func main() {
 
                         go func(reqpath, basename string) {
                             var reportable_err error
-                            payload := map[string]string{}
+                            payload := map[string]interface{}{}
 
                             if strings.HasPrefix(reqtype, "upload-") {
                                 config, err0 := uploadHandler(reqpath, &globals)
@@ -103,12 +103,27 @@ func main() {
                                 } else {
                                     reportable_err = err0
                                 }
+
+                            } else if strings.HasPrefix(reqtype, "refresh_latest-") {
+                                res, err0 := refreshLatestHandler(reqpath, &globals)
+                                if err0 != nil {
+                                    if res != nil {
+                                        payload["version"] = res.Version
+                                    }
+                                } else {
+                                    reportable_err = err0
+                                }
+
+                            } else if strings.HasPrefix(reqtype, "refresh_usage-") {
+                                res, err0 := refreshUsageHandler(reqpath, &globals)
+                                if err0 != nil {
+                                    payload["total"] = res.Total
+                                } else {
+                                    reportable_err = err0
+                                }
+
                             } else if strings.HasPrefix(reqtype, "set_permissions-") {
                                 reportable_err = setPermissionsHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-                                reportable_err = refreshLatestHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-                                reportable_err = refreshUsageHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "approve_probation-") {
                                 reportable_err = approveProbationHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "reject_probation-") {
@@ -129,7 +144,7 @@ func main() {
                                 payload["status"] = "SUCCESS"
                             } else {
                                 log.Println(reportable_err.Error())
-                                payload = map[string]string{
+                                payload = map[string]interface{}{
                                     "status": "FAILED",
                                     "reason": reportable_err.Error(),
                                 }

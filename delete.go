@@ -207,7 +207,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
     }
 
-    err = refreshLatest(asset_dir)
+    _, err = refreshLatest(asset_dir)
     if err != nil {
         return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, err)
     }

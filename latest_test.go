@@ -84,7 +84,7 @@ func TestRefreshLatestHandler(t *testing.T) {
     }
 
     globals := newGlobalConfiguration(reg)
-    err = refreshLatestHandler(reqpath, &globals)
+    _, err = refreshLatestHandler(reqpath, &globals)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")
     }
@@ -96,9 +96,12 @@ func TestRefreshLatestHandler(t *testing.T) {
     self_name := self.Username
 
     globals.Administrators = append(globals.Administrators, self_name)
-    err = refreshLatestHandler(reqpath, &globals)
+    res, err := refreshLatestHandler(reqpath, &globals)
     if err != nil {
         t.Fatalf("failed to perform the refresh; %v", err)
+    }
+    if res.Version != "3" {
+        t.Fatal("latest version is not as expected")
     }
 
     latest, err := readLatest(asset_dir)
@@ -106,7 +109,7 @@ func TestRefreshLatestHandler(t *testing.T) {
         t.Fatalf("failed to read the latest version; %v", err)
     }
     if latest.Version != "3" {
-        t.Fatalf("latest version is not as expected")
+        t.Fatal("latest version is not as expected")
     }
 
     // Injecting some probation.
@@ -124,9 +127,12 @@ func TestRefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to update version summary; %v", err)
         }
 
-        err = refreshLatestHandler(reqpath, &globals)
+        res, err := refreshLatestHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
+        }
+        if res.Version != "2" {
+            t.Fatal("latest version is not as expected")
         }
 
         latest, err := readLatest(asset_dir)
@@ -134,7 +140,7 @@ func TestRefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to read the latest version; %v", err)
         }
         if latest.Version != "2" {
-            t.Fatalf("latest version is not as expected after probation")
+            t.Fatal("latest version is not as expected after probation")
         }
     }
 
@@ -154,13 +160,17 @@ func TestRefreshLatestHandler(t *testing.T) {
             }
         }
 
-        err = refreshLatestHandler(reqpath, &globals)
+        res, err := refreshLatestHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
-        _, err := readLatest(asset_dir)
+        if res != nil {
+            t.Fatal("latest version should not exist for all-probational asset")
+        }
+
+        _, err = readLatest(asset_dir)
         if err == nil || !errors.Is(err, os.ErrNotExist) {
-            t.Fatalf("latest version should not exist for all-probational asset; %v", err)
+            t.Fatal("latest version should not exist for all-probational asset")
         }
     }
 }

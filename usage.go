@@ -77,14 +77,14 @@ func computeUsage(dir string, skip_symlinks bool) (int64, error) {
     return total, err
 }
 
-func refreshUsageHandler(reqpath string, globals *globalConfiguration) error {
+func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMetadata, error) {
     source_user, err := identifyUser(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     if !isAuthorizedToAdmin(source_user, globals.Administrators) {
-        return fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
+        return nil, fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
     }
 
     incoming := struct {
@@ -93,38 +93,38 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return nil, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return nil, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
         }
     }
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
-        return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
+        return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
     defer globals.Locks.UnlockPath(project_dir)
 
     new_usage, err := computeUsage(project_dir, true)
     if err != nil {
-        return fmt.Errorf("failed to compute usage for %q; %w", *(incoming.Project), err)
+        return nil, fmt.Errorf("failed to compute usage for %q; %w", *(incoming.Project), err)
     }
 
     usage_path := filepath.Join(project_dir, usageFileName)
     usage_meta := usageMetadata{ Total: new_usage }
     err = dumpJson(usage_path, &usage_meta)
     if err != nil {
-        return fmt.Errorf("failed to write new usage for %q; %w", *(incoming.Project), err)
+        return nil, fmt.Errorf("failed to write new usage for %q; %w", *(incoming.Project), err)
     }
 
-    return nil
+    return &usage_meta, nil
 }
