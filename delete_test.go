@@ -104,6 +104,12 @@ func TestDeleteProject(t *testing.T) {
         t.Fatal("oops, deleted the entire registry")
     }
 
+    // No-ops if repeated with already-deleted project.
+    err = deleteProjectHandler(reqpath, &globals)
+    if err != nil {
+        t.Fatalf("failed to delete a project; %v", err)
+    }
+
     // Checking that inputs are valid.
     reqpath, err = dumpRequest("delete_project", "{}")
     if err != nil {
@@ -168,6 +174,12 @@ func TestDeleteAsset(t *testing.T) {
     }
     if usage.Total != 0 {
         t.Fatal("expected zero usage after asset deletion")
+    }
+
+    // No-ops if repeated with already-deleted asset.
+    err = deleteAssetHandler(reqpath, &globals)
+    if err != nil {
+        t.Fatalf("failed to delete a project; %v", err)
     }
 
     // Checking that inputs are valid.
@@ -260,6 +272,12 @@ func TestDeleteVersion(t *testing.T) {
         }
         if latest.Version != survivor {
             t.Fatal("mismatch in the expected latest version after version deletion")
+        }
+
+        // No-ops if repeated with already-deleted version.
+        err = deleteVersionHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to delete a project; %v", err)
         }
 
         // Checking that inputs are valid.
