@@ -78,13 +78,15 @@ func main() {
                 // no Writes are being performed on a renamed file.
                 if event.Has(fsnotify.Create) {
                     info, err := os.Stat(event.Name)
-                    if err != nil {
+                    if errors.Is(err, os.ErrNotExist) {
+                        continue
+                    } else if err != nil {
                         log.Println("failed to stat;", err)
-                        return
+                        continue
                     }
 
                     if info.IsDir() {
-                        return
+                        continue
                     }
 
                     basename := filepath.Base(event.Name)
