@@ -136,7 +136,7 @@ Upon creation of a request file, the Gobbler will parse it and execute the reque
 
 After completing the request, the Gobbler will write a JSON response to the `responses` subdirectory of the staging directory.
 This has the same name as the initial request file, so users can easily poll the subdirectory for the existence of this file.
-Each response will have at least the `type` property (either `SUCCESS` or `FAILED`).
+Each response will have at least the `status` property (either `SUCCESS` or `FAILED`).
 For failures, this will be an additional `reason` string property to specify the reason;
 for successes, additional proeprties may be present depending on the request action.
 
@@ -175,7 +175,7 @@ This file should be JSON-formatted with the following properties:
 - `on_probation` (optional): boolean specifying whether this version of the asset should be considered as probational.
 
 On success, the files will be transferred to the registry and a JSON formatted file will be created in `responses`.
-This will have the `type` property set to `SUCCESS` and the `project` and `version` strings set to the names of the project and version, respectively.
+This will have the `status` property set to `SUCCESS` and the `project` and `version` strings set to the names of the project and version, respectively.
 These will be the same as the request parameters if supplied, otherwise they are created from the relevant incrementing series.
 
 ### Setting permissions
@@ -188,7 +188,7 @@ This file should be JSON-formatted with the following properties:
   Each of these properties has the same type as described [above](#permissions).
   If any property is missing, the value in the existing permissions is used.
 
-On success, the permissions in the registry are modified and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`..
+On success, the permissions in the registry are modified and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`..
 
 ### Handling probation
 
@@ -199,7 +199,7 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
 
-On success, the probational status is removed and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the probational status is removed and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 To reject probation, a user should use the write-and-rename paradigm to create a file with the `request-reject_probation-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -208,7 +208,7 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
 
-On success, the relevant version is removed from the registry and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the relevant version is removed from the registry and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 ### Refreshing statistics (admin)
 
@@ -221,7 +221,7 @@ This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
 
-On success, the usage is updated and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the usage is updated and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 To refresh the latest version of an asset, use the write-and-rename paradigm to create a file with the `request-refresh_latest-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -229,7 +229,7 @@ This file should be JSON-formatted with the following properties:
 - `project`: string containing the name of the project.
 - `asset`: string containing the name of the asset.
 
-On success, the latest version is updated and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the latest version is updated and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 ### Deleting content (admin)
 
@@ -243,7 +243,7 @@ This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
 
-On success, the project is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the project is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 To delete an asset, use the write-and-rename paradigm to create a file with the `request-delete_asset-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -251,7 +251,7 @@ This file should be JSON-formatted with the following properties:
 - `project`: string containing the name of the project.
 - `asset`: string containing the name of the asset.
 
-On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 To delete a version, use the write-and-rename paradigm to create a file with the `request-delete_version-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -266,7 +266,7 @@ On success, the version is deleted and a JSON formatted file will be created in 
 
 To check if a Gobbler service is active, a user should touch a file with the `request-health_check-` prefix.
 The contents of this file are ignored.
-On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 ## Parsing logs
 
