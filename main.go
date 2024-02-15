@@ -118,7 +118,7 @@ func main() {
 
                             } else if strings.HasPrefix(reqtype, "refresh_usage-") {
                                 res, err0 := refreshUsageHandler(reqpath, &globals)
-                                if err0 != nil {
+                                if err0 == nil {
                                     payload["total"] = res.Total
                                 } else {
                                     reportable_err = err0
