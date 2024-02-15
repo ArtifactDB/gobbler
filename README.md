@@ -153,8 +153,7 @@ Files within this temporary directory will be transferred to the appropriate sub
 
 - Hidden files (i.e., prefixed with `.`) are ignored.
 - Symbolic links to directories are not allowed.
-- Symbolic links to files are treated as deduplicating links if the symlink target is an existing file within a project-asset-version subdirectory of the registry.
-  If the target is elsewhere on the filesystem, a copy is performed.
+- Symbolic links to files only allowed if the symlink target is an existing file within a project-asset-version subdirectory of the registry.
 
 Once this directory is constructed and populated, the user should use the write-and-rename paradigm to create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -168,6 +167,8 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 - `version` (optional): string containing the name of the version.
   This may be missing, in which case the version is named according to an incrementing series for that project-asset combination.
+- `source`: string containing the name of the temporary directory, itself containing the files to be uploaded for this version of the asset.
+  This temporary directory is expected to be inside the staging directory.
 - `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
   Each of these properties has the same type as described [above](#permissions).
   If `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
@@ -244,6 +245,7 @@ This file should be JSON-formatted with the following properties:
 - `project`: string containing the name of the project.
 
 On success, the project is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
+A success is still reported even if the project is not present, in which case the operation is a no-op.
 
 To delete an asset, use the write-and-rename paradigm to create a file with the `request-delete_asset-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -252,6 +254,7 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 
 On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
+A success is still reported even if the asset or its project is not present, in which case the operation is a no-op.
 
 To delete a version, use the write-and-rename paradigm to create a file with the `request-delete_version-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -261,6 +264,7 @@ This file should be JSON-formatted with the following properties:
 - `version`: string containing the name of the version.
 
 On success, the version is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
+A success is still reported even if the version, its asset or its project is not present, in which case the operation is a no-op.
 
 ### Health check
 
