@@ -84,7 +84,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
     }
 
     if !isAuthorizedToAdmin(source_user, globals.Administrators) {
-        return nil, fmt.Errorf("user %q is not authorized to refreseh the latest version (%q)", source_user, reqpath)
+        return nil, fmt.Errorf("user %q is not authorized to refresh the latest version (%q)", source_user, reqpath)
     }
 
     incoming := struct {
