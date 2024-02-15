@@ -273,7 +273,7 @@ func Transfer(source, registry, project, asset, version string) error {
         }
         insize := restat.Size()
 
-        // Symlinks to files inside the destination directory are preserved.
+        // Symlinks to files inside the registry are preserved.
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
             target, err := os.Readlink(path)
             if err != nil {
@@ -284,28 +284,27 @@ func Transfer(source, registry, project, asset, version string) error {
             if err != nil {
                 return fmt.Errorf("failed to stat link target %q; %w", target, err)
             }
-            if tstat.IsDir() {
-                return fmt.Errorf("symbolic links to directories are not supported (%q); %w", target, err)
-            }
 
             inside, err := filepath.Rel(registry, target)
-            if err == nil && !strings.HasPrefix(inside, "../") {
-                obj, err := resolveSymlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
-                if err != nil {
-                    return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
-                }
-                manifest[rel] = *obj
-
-                err = createRelativeSymlink(inside, rel, final)
-                if err != nil {
-                    return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
-                }
-                addLink(rel, obj.Link)
-                return nil
+            if err != nil || strings.HasPrefix(inside, "../") {
+                return fmt.Errorf("symbolic links to files outside the registry (%q) are not supported", target)
+            }
+            if tstat.IsDir() {
+                return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
             }
 
-            // Otherwise we need to compute the actual size.
-            insize = tstat.Size()
+            obj, err := resolveSymlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
+            if err != nil {
+                return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
+            }
+            manifest[rel] = *obj
+
+            err = createRelativeSymlink(inside, rel, final)
+            if err != nil {
+                return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
+            }
+            addLink(rel, obj.Link)
+            return nil
         }
 
         insum, err := computeChecksum(path)

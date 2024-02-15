@@ -646,7 +646,7 @@ func TestTransferLinkFailures(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    // Links to irrelevant files are copied.
+    // Links to irrelevant files are forbidden.
     {
         src, err := setupSourceForTransferTest()
         if err != nil {
@@ -674,19 +674,8 @@ func TestTransferLinkFailures(t *testing.T) {
         asset := "PIKAPIKA"
         version := "SILVER"
         err = Transfer(src, reg, project, asset, version)
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        destination := filepath.Join(reg, project, asset, version)
-        man, err := readManifest(destination)
-        if err != nil {
-            t.Fatalf("failed to read the manifest; %v", err)
-        }
-
-        err = verifyNotSymlink(man, destination, "asdasd", "gotta catch em all")
-        if err != nil {
-            t.Fatal(err)
+        if err == nil || !strings.Contains(err.Error(), "outside the registry") {
+            t.Fatal("expected transfer failure for files outside the registry")
         }
     }
 
@@ -813,7 +802,7 @@ func TestTransferLinkFailures(t *testing.T) {
             t.Fatalf("failed to create the temporary directory; %v", err)
         }
 
-        mock, err := os.MkdirTemp("", "")
+        mock, err := os.MkdirTemp(reg, "")
         if err != nil {
             t.Fatalf("failed to create the temporary directory as a link target; %v", err)
         }
