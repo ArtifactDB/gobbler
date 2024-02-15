@@ -99,7 +99,7 @@ func TestUploadHandlerSimple(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -253,6 +253,17 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
             t.Fatalf("configuration should have failed without a source")
         }
+
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        reqname, err = dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        _, err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "same directory as") {
+            t.Fatalf("configuration should have failed if the source is a path instead of a name")
+        }
     }
 
     {
@@ -260,7 +271,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         asset := "gastly"
         version := "lavender"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -277,7 +288,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         asset := "gastly"
         version := "lavender"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -294,7 +305,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         asset := "..gastly"
         version := "lavender"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -311,7 +322,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         asset := "gastly"
         version := "..lavender"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -344,7 +355,7 @@ func TestUploadHandlerNewPermissions(t *testing.T) {
         project := "indigo_league"
         perm_string := `{ "owners": [ "YAY", "NAY" ] }`
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, filepath.Base(src), project, asset, version, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -372,7 +383,7 @@ func TestUploadHandlerNewPermissions(t *testing.T) {
         new_id := "foo"
         perm_string := fmt.Sprintf(`{ "uploaders": [ { "id": "%s" } ] }`, new_id)
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, filepath.Base(src), project, asset, version, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -398,7 +409,7 @@ func TestUploadHandlerNewPermissions(t *testing.T) {
     // Check that uploaders in the permissions are validated.
     {
         project := "battle_frontier"
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "uploaders": [{}] } }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "uploaders": [{}] } }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -414,7 +425,7 @@ func TestUploadHandlerNewPermissions(t *testing.T) {
         project := "sinnoh_league"
         perm_string := `{ "uploaders": [ { "id": "argle", "until": "bargle" } ] }`
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, src, project, asset, version, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": %s }`, filepath.Base(src), project, asset, version, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -446,7 +457,7 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
     // Uploading the first version.
     old_usage := int64(0)
     {
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -467,7 +478,7 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
     // Executing another transfer on a different version.
     version = "cerulean"
     {
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -555,7 +566,7 @@ func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
     asset := "BAR"
     version := "whee"
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -576,7 +587,7 @@ func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
     }
 
     // Trying without any version.
-    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, src, project, asset)
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, filepath.Base(src), project, asset)
     reqname, err = dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -605,7 +616,7 @@ func TestUploadHandlerUpdatePermissions(t *testing.T) {
     asset := "BAR"
     version := "whee"
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "owners": [] } }`, src, project, asset, version)
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "permissions": { "owners": [] } }`, filepath.Base(src), project, asset, version)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -620,7 +631,7 @@ func TestUploadHandlerUpdatePermissions(t *testing.T) {
     }
 
     // Now attempting to create a new version.
-    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "stuff" }`, src, project, asset)
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "stuff" }`, filepath.Base(src), project, asset)
     reqname, err = dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -648,7 +659,7 @@ func TestUploadHandlerProjectSeries(t *testing.T) {
     asset := "gastly"
     version := "v1"
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, src, prefix, asset, version)
+    req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), prefix, asset, version)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -699,7 +710,7 @@ func TestUploadHandlerProjectSeriesFailures(t *testing.T) {
         asset := "gastly"
         version := "v1"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "asset": "%s", "version": "%s" }`, src, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -716,7 +727,7 @@ func TestUploadHandlerProjectSeriesFailures(t *testing.T) {
         asset := "gastly"
         version := "v1"
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, src, prefix, asset, version)
+        req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), prefix, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -745,7 +756,7 @@ func TestUploadHandlerVersionSeries(t *testing.T) {
     project := "aaron"
     asset := "BAR"
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, src, project, asset)
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, filepath.Base(src), project, asset)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -775,7 +786,7 @@ func TestUploadHandlerVersionSeries(t *testing.T) {
     }
 
     // Trying with a version.
-    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "FOO" }`, src, project, asset)
+    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "FOO" }`, filepath.Base(src), project, asset)
     reqname, err = dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -802,7 +813,7 @@ func TestUploadHandlerNewOnProbation(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "FOO", "on_probation": true }`, src, prefix, asset)
+    req_string := fmt.Sprintf(`{ "source": "%s", "prefix": "%s", "asset": "%s", "version": "FOO", "on_probation": true }`, filepath.Base(src), prefix, asset)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
@@ -867,7 +878,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         project := "ghost"
         asset := "gastly"
         perm_string := fmt.Sprintf(`{ "owners": [], "uploaders": [ { "id": "%s" } ] }`, self_name)
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, filepath.Base(src), project, asset, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -909,7 +920,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         project := "pokemon_adventures" // changing the project name to get a new project.
         asset := "gastly"
         perm_string := fmt.Sprintf(`{ "owners": [], "uploaders": [ { "id": "%s", "trusted": true } ] }`, self_name)
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, filepath.Base(src), project, asset, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -937,7 +948,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         }
 
         // ... unless they specifically ask for it.
-        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "on_probation": true }`, src, project, asset)
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "on_probation": true }`, filepath.Base(src), project, asset)
         reqname, err = dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -963,7 +974,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         project := "ss_anne" // changing project name again.
         asset := "gastly"
         perm_string := fmt.Sprintf(`{ "owners": [ "%s" ] }`, self_name)
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, src, project, asset, perm_string)
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "permissions": %s }`, filepath.Base(src), project, asset, perm_string)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)

@@ -298,6 +298,10 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
             return nil, fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err)
         }
         source = *(request.Source)
+        if source != filepath.Base(source) {
+            return nil, fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath)
+        }
+        source = filepath.Join(filepath.Dir(reqpath), source)
 
         source_user, err := identifyUser(source)
         if err != nil {
