@@ -1,10 +1,18 @@
-name: Test and build Go
+name: Unit tests
 
 on:
   push:
     branches:
       - master
+    paths:
+      - '**.go'
+      - 'go.**'
+      - .github/workflows/build.yaml
   pull_request:
+    paths:
+      - '**.go'
+      - 'go.**'
+      - .github/workflows/build.yaml
 
 jobs:
   test:
@@ -39,7 +47,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - uses: wangyoucao577/go-release-action@v1
+      - name: Build latest
+        uses: wangyoucao577/go-release-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           goos: ${{ matrix.os }}
