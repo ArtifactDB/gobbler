@@ -1,5 +1,9 @@
 # Gobbling data on shared filesystems
 
+[![Test and build](https://github.com/ArtifactDB/gobbler/actions/workflows/build.yaml/badge.svg)](https://github.com/ArtifactDB/gobbler/actions/workflows/build.yaml)
+[![Publish version](https://github.com/ArtifactDB/gobbler/actions/workflows/publish.yaml/badge.svg)](https://github.com/ArtifactDB/gobbler/actions/workflows/publish.yaml)
+[![Latest version](https://img.shields.io/github/v/tag/ArtifactDB/gobbler?label=Version)](https://github.com/ArtifactDB/gobbler/releases)
+
 ## Overview 
 
 The Gobbler implements [**gypsum**](https://github.com/ArtifactDB/gypsum-worker)-like storage of ArtifactDB-managed files on a shared filesystem.
@@ -8,7 +12,8 @@ We simplify authentication by using Unix file permissions to determine ownership
 In fact, no HTTP requests are required at all, as the user and Gobbler communicate solely through filesystem events.
 
 This document is intended for system administrators who want to spin up their own instance or developers of new clients to the Gobbler service.
-Users should never have to interact with the Gobbler directly, as this should be mediated by client packages in relevant frameworks like R/Bioconductor.
+Users should never have to interact with the Gobbler directly, as this should be mediated by client packages in relevant frameworks like R or Python.
+For example, the [**gobbler** R package](https://github.com/ArtifactDB/gobbler-R) provides an R interface to a local Gobbler service.
 
 ## Concepts
 
