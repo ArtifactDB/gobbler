@@ -74,7 +74,8 @@ The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z
 The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
 If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
 
-If no `..links` file is present at a particular file prefix, it can be assumed that there are no linked-from files with that prefix.
+If no `..links` file is present in a particular subdirectory, it can be assumed that there are no linked-from files in the same subdirectory. 
+This guarantee does not apply recursively, i.e., linked-from files may still be present in nested subdirectories.
 
 ### Permissions
 
