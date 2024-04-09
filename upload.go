@@ -13,236 +13,27 @@ import (
     "unicode"
 )
 
-func incrementSeriesPath(prefix string, dir string) string {
-    if prefix == "" {
-        return filepath.Join(dir, "..series")
-    } else {
-        return filepath.Join(dir, "..series_" + prefix)
-    }
-}
-
-func incrementSeries(prefix string, dir string) (string, error) {
-    series_path := incrementSeriesPath(prefix, dir)
-
-    num := 0
-    if _, err := os.Stat(series_path); err == nil {
-        content, err := os.ReadFile(series_path)
-        if err != nil {
-            return "", fmt.Errorf("failed to read '" + series_path + "'; %w", err)
-        }
-        num, err = strconv.Atoi(string(content))
-        if err != nil {
-            return "", fmt.Errorf("failed to determine latest number from '" + series_path + "; %w", err)
-        }
-    }
-
-    num += 1
-    as_str := strconv.Itoa(num)
-    candidate_name := prefix + as_str
-
-    // Checking that it doesn't already exist.
-    if _, err := os.Stat(filepath.Join(dir, candidate_name)); err == nil {
-        dhandle, err := os.Open(dir)
-        if err != nil {
-            return "", fmt.Errorf("failed to obtain a handle for the output directory; %w", err)
-        }
-
-        all_names, err := dhandle.Readdirnames(-1)
-        if err != nil {
-            return "", fmt.Errorf("failed to read subdirectories of the output directory; %w", err)
-        }
-        if prefix != "" {
-            for _, subdir := range all_names {
-                if strings.HasPrefix(subdir, prefix) {
-                    curnum, err := strconv.Atoi(strings.TrimPrefix(subdir, prefix))
-                    if err != nil && curnum > num {
-                        num = curnum
-                    }
-                }
-            }
-        } else {
-            for _, subdir := range all_names {
-                curnum, err := strconv.Atoi(subdir)
-                if err != nil && curnum > num {
-                    num = curnum
-                }
-            }
-        }
-
-        num += 1
-        as_str = strconv.Itoa(num)
-        candidate_name = prefix + as_str
-    }
-
-    // Updating the series.
-    err := os.WriteFile(series_path, []byte(as_str), 0644)
+func configureAsset(project_dir string, asset *string) error {
+    err := isBadName(asset)
     if err != nil {
-        return "", fmt.Errorf("failed to update the series counter for '" + prefix + "'; %w", err)
+        return fmt.Errorf("invalid asset name %q; %w", asset, err)
     }
 
-    return candidate_name, nil
-}
-
-func configureProject(registry string, username string, project, prefix *string, locks *pathLocks) (string, bool, error) {
-    // Creating a new project from a series.
-    if project == nil {
-        if prefix == nil {
-            return "", false, errors.New("expected a 'prefix' property in the request details")
-        }
-        prefix_str := *(prefix)
-        re, _ := regexp.Compile("^[A-Z]+$")
-        if !re.MatchString(prefix_str) {
-            return "", false, fmt.Errorf("prefix must contain only uppercase letters (got %q)", prefix_str)
-        }
-
-        // Obtaining a global lock to avoid simultaneous increments.
-        prefix_path := filepath.Join(registry, prefix_str)
-        err := locks.LockPath(prefix_path, 1000 * time.Second)
+    asset_dir := filepath.Join(project_dir, asset)
+    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+        err = os.Mkdir(asset_dir, 0755)
         if err != nil {
-            return "", false, fmt.Errorf("failed to acquire the global registry lock; %w", err)
+            return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
         }
-        defer locks.UnlockPath(prefix_path)
-
-        candidate_name, err := incrementSeries(prefix_str, registry)
-        if err != nil {
-            return "", false, err
-        }
-
-        err = os.Mkdir(filepath.Join(registry, candidate_name), 0755)
-        if err != nil {
-            return "", false, fmt.Errorf("failed to make a new directory'; %w", err)
-        }
-
-        return candidate_name, true, nil
-    }
-
-    project_str := *project
-    err := isBadName(project_str)
-    if err != nil {
-        return "", false, fmt.Errorf("invalid project name; %w", err)
-    }
-
-    // Creating a new project from a pre-supplied name.
-    project_dir := filepath.Join(registry, project_str)
-    info, err := os.Stat(project_dir)
-    if errors.Is(err, os.ErrNotExist) {
-        if unicode.IsUpper(rune(project_str[0])) {
-            return "", false, errors.New("new user-supplied project names should not start with an uppercase letter")
-        }
-
-        // No need to lock here, MkdirAll just no-ops if the directory already exists.
-        err := os.MkdirAll(filepath.Join(registry, project_str), 0755)
-        if err != nil {
-            return "", false, fmt.Errorf("failed to make a new directory'; %w", err)
-        }
-
-        return project_str, true, nil
-    }
-
-    // Updating an existing directory.
-    if err != nil || !info.IsDir() {
-        return "", false, fmt.Errorf("failed to inspect an existing project directory %q; %w", project_str, err)
-    }
-
-    return project_str, false, nil
-}
-
-func populateNewProjectDirectory(dir string, username string, permissions *unsafePermissionsMetadata) error {
-    // Adding permissions.
-    perms := permissionsMetadata{}
-    if permissions != nil && permissions.Owners != nil {
-        perms.Owners = permissions.Owners
-    } else {
-        perms.Owners = []string{ username }
-    }
-    if permissions != nil && permissions.Uploaders != nil {
-        san, err := sanitizeUploaders(permissions.Uploaders)
-        if err != nil {
-            return fmt.Errorf("invalid 'permissions.uploaders' in the request details; %w", err)
-        }
-        perms.Uploaders = san
-    } else {
-        perms.Uploaders = []uploaderEntry{}
-    }
-
-    err := dumpJson(filepath.Join(dir, permissionsFileName), &perms)
-    if err != nil {
-        return fmt.Errorf("failed to write permissions for %q; %w", dir, err)
-    }
-
-    // Dumping a mock quota and usage file for consistency with gypsum.
-    // Note that the quota isn't actually enforced yet.
-    err = os.WriteFile(filepath.Join(dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0755)
-    if err != nil {
-        return fmt.Errorf("failed to write quota for '" + dir + "'; %w", err)
-    }
-
-    err = os.WriteFile(filepath.Join(dir, usageFileName), []byte("{ \"total\": 0 }"), 0755)
-    if err != nil {
-        return fmt.Errorf("failed to write usage for '" + dir + "'; %w", err)
     }
 
     return nil
 }
 
-func configureAsset(project_dir string, asset *string) (string, bool, error) {
-    if asset == nil {
-        return "", false, errors.New("expected an 'asset' property in the request details")
-    }
-
-    asset_str := *asset
-    err := isBadName(asset_str)
+func configureVersion(asset_dir string, version string) error {
+    err := isBadName(verison)
     if err != nil {
-        return "", false, fmt.Errorf("invalid asset name %q; %w", asset_str, err)
-    }
-
-    asset_dir := filepath.Join(project_dir, asset_str)
-    is_new := false
-    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
-        err = os.Mkdir(asset_dir, 0755)
-        if err != nil {
-            return "", false, fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
-        }
-        is_new = true
-    }
-
-    return asset_str, is_new, nil
-}
-
-func configureVersion(asset_dir string, is_new_project bool, version *string) (string, error) {
-    series_path := incrementSeriesPath("", asset_dir)
-
-    // Creating a new version from a series.
-    if version == nil {
-        if _, err := os.Stat(series_path); errors.Is(err, os.ErrNotExist) {
-            if !is_new_project { // check it's not a newly created project, in which case it wouldn't have a series yet.
-                return "", errors.New("must provide 'version' in '" + asset_dir + "' initialized without a version series")
-            }
-        }
-
-        candidate_name, err := incrementSeries("", asset_dir)
-        if err != nil {
-            return "", err
-        }
-
-        candidate_path := filepath.Join(asset_dir, candidate_name)
-        err = os.Mkdir(candidate_path, 0755)
-        if err != nil {
-            return "", fmt.Errorf("failed to create a new version directory at '" + candidate_path + "'; %w", err)
-        }
-
-        return candidate_name, nil
-    }
-
-    // Otherwise using the user-supplied version name.
-    if _, err := os.Stat(series_path); err == nil {
-        return "", errors.New("cannot use user-supplied 'version' in '" + asset_dir + "' initialized with a version series")
-    }
-
-    version_str := *version
-    err := isBadName(version_str)
-    if err != nil {
-        return "", fmt.Errorf("invalid version name %q; %w", version_str, err)
+        return "", fmt.Errorf("invalid version name %q; %w", version, err)
     }
 
     candidate_path := filepath.Join(asset_dir, version_str)
@@ -270,7 +61,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Version *string `json:"version"`
-        Permissions *unsafePermissionsMetadata `json:"permissions"`
         OnProbation *bool `json:"on_probation"`
     }{}
 
@@ -327,27 +117,20 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
     }
     defer globals.Locks.UnlockPath(project_dir)
 
-    if !is_new_project {
-        perms, err := readPermissions(project_dir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
-        }
-        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
-        if !ok {
-            return nil, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'")
-        }
-        if !trusted {
-            on_probation = true
-        }
-    } else {
-        err := populateNewProjectDirectory(project_dir, req_user, request.Permissions)
-        if err != nil {
-            return nil, fmt.Errorf("failed to populate project metadata for request %q; %w", reqpath, err)
-        }
+    perms, err := readPermissions(project_dir)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
+    }
+    ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
+    if !ok {
+        return nil, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'")
+    }
+    if !trusted {
+        on_probation = true
     }
 
     // Configuring the asset and version.
-    asset, is_new_asset, err := configureAsset(project_dir, request.Asset)
+    asset, err := configureAsset(project_dir, request.Asset)
     if err != nil {
         return nil, fmt.Errorf("failed to configure the asset for request %q; %w", reqpath, err)
     }
