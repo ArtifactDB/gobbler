@@ -151,9 +151,24 @@ Specifically, users should write the JSON request body to a file inside the stag
 Once the write is complete, this file can be renamed to a file with said prefix.
 This ensures that the Gobbler does not read a partially-written file.
 
+### Creating projects (admin)
+
+Administrators are responsible for creating new projects within the registry.
+This is done using the write-and-rename paradigm to create a file with the `request-create_project-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the new project.
+  This should not contain `/`, `\`, or `.`.
+- `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
+  Each of these properties has the same type as described [above](#permissions).
+  If `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
+  This property is ignored when uploading a new version of an asset to an existing project.
+
+On success, a new project is created with the designated permissions and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
+
 ### Uploads and updates
 
-To upload a new version of an asset of a project (either in an existing project, or in a new project), users should create a temporary directory within the staging directory.
+To upload a new version of an asset of a project, users should create a temporary directory within the staging directory.
 The directory may have any name but should avoid starting with `request-`.
 Files within this temporary directory will be transferred to the appropriate subdirectory within the registry, subject to the following rules:
 
@@ -164,26 +179,16 @@ Files within this temporary directory will be transferred to the appropriate sub
 Once this directory is constructed and populated, the user should use the write-and-rename paradigm to create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
 
-- `project`: string containing the explicit name of the project.
-  The string should start with a lower-case letter to distinguish from prefixed names constructed by incrementing series.
-  This may also be missing, in which case `prefix` should be supplied.
-- `prefix` (optional): string containing an all-uppercase project prefix,
-  used to derive a project name from an incrementing series if `project` is not supplied.
-  Ignored if `project` is provided.
+- `project`: string containing the name of an existing project.
 - `asset`: string containing the name of the asset.
-- `version` (optional): string containing the name of the version.
-  This may be missing, in which case the version is named according to an incrementing series for that project-asset combination.
+  This should not contain `/`, `\`, or `.`.
+- `version`: string containing the name of the version.
+  This should not contain `/`, `\`, or `.`.
 - `source`: string containing the name of the temporary directory, itself containing the files to be uploaded for this version of the asset.
   This temporary directory is expected to be inside the staging directory.
-- `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
-  Each of these properties has the same type as described [above](#permissions).
-  If `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
-  This property is ignored when uploading a new version of an asset to an existing project.
 - `on_probation` (optional): boolean specifying whether this version of the asset should be considered as probational.
 
-On success, the files will be transferred to the registry and a JSON formatted file will be created in `responses`.
-This will have the `status` property set to `SUCCESS` and the `project` and `version` strings set to the names of the project and version, respectively.
-These will be the same as the request parameters if supplied, otherwise they are created from the relevant incrementing series.
+On success, the files will be transferred to the registry and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 ### Setting permissions
 
@@ -195,7 +200,7 @@ This file should be JSON-formatted with the following properties:
   Each of these properties has the same type as described [above](#permissions).
   If any property is missing, the value in the existing permissions is used.
 
-On success, the permissions in the registry are modified and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`..
+On success, the permissions in the registry are modified and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
 ### Handling probation
 
