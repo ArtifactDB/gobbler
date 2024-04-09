@@ -68,14 +68,14 @@ func main() {
                 }
                 log.Println("triggered filesystem event:", event)
 
-                // It is expected that request bodies should be initially
+                // It is recommended that request bodies should be initially
                 // written to some other file (e.g., `.tmpXXXX`) inside the
                 // staging directory, and then moved to the actual file name
                 // (`request-<action>-YYY`). The rename should be atomic and
                 // thus we avoid problems with the code below triggering before
                 // the requester has completed the write of the body. Under
-                // this logic, we only have to watch the Create events as
-                // no Writes are being performed on a renamed file.
+                // this logic, we only have to watch the Create events as no
+                // Writes are being performed on a renamed file.
                 if event.Has(fsnotify.Create) {
                     info, err := os.Stat(event.Name)
                     if errors.Is(err, os.ErrNotExist) {
@@ -97,45 +97,61 @@ func main() {
                             var reportable_err error
                             payload := map[string]interface{}{}
 
-                            if strings.HasPrefix(reqtype, "upload-") {
-                                reportable_err = uploadHandler(reqpath, &globals)
+                            // We prefer an atomic write, but nonetheless, if a request is directly written to the final
+                            // file name, we will continuously retry (for up to 1 second) if there is any error during 
+                            // the reading of the request body. This takes advantage of the fact that an incompletely
+                            // written JSON object must be invalid as it's missing the closing brace.
+                            for i := 0; i < 4; i++ {
+                                if strings.HasPrefix(reqtype, "upload-") {
+                                    reportable_err = uploadHandler(reqpath, &globals)
 
-                            } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-                                res, err0 := refreshLatestHandler(reqpath, &globals)
-                                if err0 == nil {
-                                    if res != nil {
-                                        payload["version"] = res.Version
+                                } else if strings.HasPrefix(reqtype, "refresh_latest-") {
+                                    res, err0 := refreshLatestHandler(reqpath, &globals)
+                                    if err0 == nil {
+                                        if res != nil {
+                                            payload["version"] = res.Version
+                                        }
+                                    } else {
+                                        reportable_err = err0
                                     }
+
+                                } else if strings.HasPrefix(reqtype, "refresh_usage-") {
+                                    res, err0 := refreshUsageHandler(reqpath, &globals)
+                                    if err0 == nil {
+                                        payload["total"] = res.Total
+                                    } else {
+                                        reportable_err = err0
+                                    }
+
+                                } else if strings.HasPrefix(reqtype, "set_permissions-") {
+                                    reportable_err = setPermissionsHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "approve_probation-") {
+                                    reportable_err = approveProbationHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "reject_probation-") {
+                                    reportable_err = rejectProbationHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "create_project-") {
+                                    reportable_err = createProjectHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "delete_project-") {
+                                    reportable_err = deleteProjectHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "delete_asset-") {
+                                    reportable_err = deleteAssetHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "delete_version-") {
+                                    reportable_err = deleteVersionHandler(reqpath, &globals)
+                                } else if strings.HasPrefix(reqtype, "health_check-") {
+                                    reportable_err = nil
                                 } else {
-                                    reportable_err = err0
+                                    reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
                                 }
 
-                            } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-                                res, err0 := refreshUsageHandler(reqpath, &globals)
-                                if err0 == nil {
-                                    payload["total"] = res.Total
-                                } else {
-                                    reportable_err = err0
+                                // If there's no error, or if the error is not a readRequestError, we quit 
+                                // and report the results. If the error is an RRE, we might be reading an 
+                                // incompletely written file, so we wait for a bit and try again.
+                                if reportable_err == nil {
+                                    break
+                                } else if _, ok := reportable_err.(*readRequestError); !ok {
+                                    break
                                 }
-
-                            } else if strings.HasPrefix(reqtype, "set_permissions-") {
-                                reportable_err = setPermissionsHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "approve_probation-") {
-                                reportable_err = approveProbationHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "reject_probation-") {
-                                reportable_err = rejectProbationHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "create_project-") {
-                                reportable_err = createProjectHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "delete_project-") {
-                                reportable_err = deleteProjectHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "delete_asset-") {
-                                reportable_err = deleteAssetHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "delete_version-") {
-                                reportable_err = deleteVersionHandler(reqpath, &globals)
-                            } else if strings.HasPrefix(reqtype, "health_check-") {
-                                reportable_err = nil
-                            } else {
-                                reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
+                                time.Sleep(time.Second / 4.0)
                             }
 
                             if reportable_err == nil {

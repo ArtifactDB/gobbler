@@ -18,27 +18,27 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
-            return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Version)
         if err != nil {
-            return fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err) }
         }
     }
 

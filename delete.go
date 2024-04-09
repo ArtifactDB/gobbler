@@ -24,12 +24,12 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Project)
@@ -75,18 +75,19 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
             return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
         }
+
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
             return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
@@ -160,12 +161,12 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Project)

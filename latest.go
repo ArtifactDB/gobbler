@@ -100,12 +100,12 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return nil, &readRequestError{ fmt.Errorf("failed to read %q; %w", reqpath, err) }
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return nil, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return nil, &readRequestError{ fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
         }
 
         err = isMissingOrBadName(incoming.Project) 

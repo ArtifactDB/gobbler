@@ -150,6 +150,7 @@ When writing the request file, it is recommended to use the write-and-rename par
 Specifically, users should write the JSON request body to a file inside the staging directory that does _not_ have the `request-<ACTION>-` prefix.
 Once the write is complete, this file can be renamed to a file with said prefix.
 This ensures that the Gobbler does not read a partially-written file.
+(That said, a direct write to the final file can still be performed, in which case the Gobbler will perform a few retries to avoid errors from parsing an incomplete file.)
 
 ### Creating projects (admin)
 

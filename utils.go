@@ -26,6 +26,14 @@ func newGlobalConfiguration(registry string) globalConfiguration {
     }
 }
 
+type readRequestError struct {
+    Cause error
+}
+
+func (r *readRequestError) Error() string {
+    return r.Cause.Error()
+}
+
 func dumpJson(path string, content interface{}) error {
     // Using the save-and-rename paradigm to avoid clients picking up partial writes.
     temp, err := os.CreateTemp(filepath.Dir(path), ".temp*.json")
