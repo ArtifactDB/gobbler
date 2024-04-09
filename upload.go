@@ -6,14 +6,10 @@ import (
     "path/filepath"
     "os"
     "encoding/json"
-    "strconv"
-    "strings"
     "errors"
-    "regexp"
-    "unicode"
 )
 
-func configureAsset(project_dir string, asset *string) error {
+func configureAsset(project_dir string, asset string) error {
     err := isBadName(asset)
     if err != nil {
         return fmt.Errorf("invalid asset name %q; %w", asset, err)
@@ -31,33 +27,27 @@ func configureAsset(project_dir string, asset *string) error {
 }
 
 func configureVersion(asset_dir string, version string) error {
-    err := isBadName(verison)
+    err := isBadName(version)
     if err != nil {
-        return "", fmt.Errorf("invalid version name %q; %w", version, err)
+        return fmt.Errorf("invalid version name %q; %w", version, err)
     }
 
-    candidate_path := filepath.Join(asset_dir, version_str)
+    candidate_path := filepath.Join(asset_dir, version)
     if _, err := os.Stat(candidate_path); err == nil {
-        return "", fmt.Errorf("version %q already exists in %q", version_str, asset_dir)
+        return fmt.Errorf("version %q already exists in %q", version, asset_dir)
     }
 
     err = os.Mkdir(candidate_path, 0755)
     if err != nil {
-        return "", fmt.Errorf("failed to create a new version directory at %q; %w", candidate_path, err)
+        return fmt.Errorf("failed to create a new version directory at %q; %w", candidate_path, err)
     }
 
-    return version_str, nil
+    return nil
 }
 
-type uploadConfiguration struct {
-    Project string
-    Version string
-}
-
-func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfiguration, error) {
+func uploadHandler(reqpath string, globals *globalConfiguration) error {
     request := struct {
         Source *string `json:"source"`
-        Prefix *string `json:"prefix"`
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Version *string `json:"version"`
@@ -68,7 +58,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
 
     req_user, err := identifyUser(reqpath)
     if err != nil {
-        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     var source string
@@ -77,68 +67,78 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
         err = json.Unmarshal(handle, &request)
         if err != nil {
-            return nil, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+            return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
         }
 
         if request.Source == nil {
-            return nil, fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err)
+            return fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err)
         }
         source = *(request.Source)
         if source != filepath.Base(source) {
-            return nil, fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath)
+            return fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath)
         }
         source = filepath.Join(filepath.Dir(reqpath), source)
 
         source_user, err := identifyUser(source)
         if err != nil {
-            return nil, fmt.Errorf("failed to find owner of %q; %w", source, err)
+            return fmt.Errorf("failed to find owner of %q; %w", source, err)
         }
         if source_user != req_user {
-            return nil, fmt.Errorf("requesting user must be the same as the owner of the 'source' directory (%s vs %s)", source_user, req_user)
+            return fmt.Errorf("requesting user must be the same as the owner of the 'source' directory (%s vs %s)", source_user, req_user)
         }
     }
 
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
-    project, is_new_project, err := configureProject(globals.Registry, req_user, request.Project, request.Prefix, &(globals.Locks))
-    if err != nil {
-        return nil, fmt.Errorf("failed to process the project for '" + source + "'; %w", err)
+    if request.Project == nil {
+        return fmt.Errorf("expected a 'project' property in %q", reqpath)
     }
+    project := *(request.Project)
 
     project_dir := filepath.Join(globals.Registry, project)
     err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
-        return nil, fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
     defer globals.Locks.UnlockPath(project_dir)
 
     perms, err := readPermissions(project_dir)
     if err != nil {
-        return nil, fmt.Errorf("failed to read permissions for %q; %w", project, err)
+        return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
     ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
     if !ok {
-        return nil, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'")
+        return fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'")
     }
     if !trusted {
         on_probation = true
     }
 
     // Configuring the asset and version.
-    asset, err := configureAsset(project_dir, request.Asset)
+    if request.Asset == nil {
+        return fmt.Errorf("expected an 'asset' property in %q", reqpath)
+    }
+    asset := *(request.Asset)
+
+    err = configureAsset(project_dir, asset)
     if err != nil {
-        return nil, fmt.Errorf("failed to configure the asset for request %q; %w", reqpath, err)
+        return fmt.Errorf("failed to configure the asset for request %q; %w", reqpath, err)
     }
     asset_dir := filepath.Join(project_dir, asset)
 
-    version, err := configureVersion(asset_dir, is_new_asset, request.Version)
+    if request.Version == nil {
+        return fmt.Errorf("expected a 'version' property in %q", reqpath)
+    }
+    version := *(request.Version)
+
+    err = configureVersion(asset_dir, version)
     if err != nil {
-        return nil, fmt.Errorf("failed to configure the version for request %q; %w", reqpath, err)
+        return fmt.Errorf("failed to configure the version for request %q; %w", reqpath, err)
     }
 
     // Now transferring all the files. This involves setting up an abort loop
@@ -152,7 +152,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
 
     err = Transfer(source, globals.Registry, project, asset, version)
     if err != nil {
-        return nil, fmt.Errorf("failed to transfer files from %q; %w", source, err)
+        return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
     // Writing out the various pieces of metadata. This should be, in theory,
@@ -172,19 +172,19 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         summary_path := filepath.Join(version_dir, summaryFileName)
         err := dumpJson(summary_path, &summary)
         if err != nil {
-            return nil, fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
         }
     }
 
     {
         extra, err := computeUsage(version_dir, true)
         if err != nil {
-            return nil, fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
+            return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
         }
 
         usage, err := readUsage(project_dir)
         if err != nil {
-            return nil, fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
+            return fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
         }
         usage.Total += extra
 
@@ -193,7 +193,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         usage_path := filepath.Join(project_dir, usageFileName)
         err = dumpJson(usage_path, &usage)
         if err != nil {
-            return nil, fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
+            return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
         }
     }
 
@@ -206,7 +206,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         latest_path := filepath.Join(asset_dir, latestFileName)
         err := dumpJson(latest_path, &latest)
         if err != nil {
-            return nil, fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
         }
 
         // Adding a log.
@@ -219,10 +219,10 @@ func uploadHandler(reqpath string, globals *globalConfiguration) (*uploadConfigu
         }
         err = dumpLog(globals.Registry, log_info)
         if err != nil {
-            return nil, fmt.Errorf("failed to save log file; %w", err)
+            return fmt.Errorf("failed to save log file; %w", err)
         }
     }
 
     has_failed = false
-    return &uploadConfiguration{ Project: project, Version: version }, nil
+    return nil
 }

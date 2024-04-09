@@ -98,13 +98,7 @@ func main() {
                             payload := map[string]interface{}{}
 
                             if strings.HasPrefix(reqtype, "upload-") {
-                                config, err0 := uploadHandler(reqpath, &globals)
-                                if err0 == nil {
-                                    payload["project"] = config.Project
-                                    payload["version"] = config.Version
-                                } else {
-                                    reportable_err = err0
-                                }
+                                reportable_err = uploadHandler(reqpath, &globals)
 
                             } else if strings.HasPrefix(reqtype, "refresh_latest-") {
                                 res, err0 := refreshLatestHandler(reqpath, &globals)
@@ -130,6 +124,8 @@ func main() {
                                 reportable_err = approveProbationHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "reject_probation-") {
                                 reportable_err = rejectProbationHandler(reqpath, &globals)
+                            } else if strings.HasPrefix(reqtype, "create_project-") {
+                                reportable_err = createProjectHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_project-") {
                                 reportable_err = deleteProjectHandler(reqpath, &globals)
                             } else if strings.HasPrefix(reqtype, "delete_asset-") {

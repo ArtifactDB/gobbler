@@ -7,44 +7,70 @@ import (
     "os"
     "encoding/json"
     "strconv"
-    "strings"
     "errors"
-    "regexp"
-    "unicode"
 )
 
+func createProjectHandler(reqpath string, globals *globalConfiguration) error {
+    req_user, err := identifyUser(reqpath)
+    if err != nil {
+        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+    }
+    if !isAuthorizedToAdmin(req_user, globals.Administrators) {
+        return fmt.Errorf("user %q is not authorized to create a project", req_user)
+    }
 
-func createProject(registry string, username string, project string, locks *pathLocks) error {
+    request := struct {
+        Project *string `json:"project"`
+        Permissions *unsafePermissionsMetadata `json:"permissions"`
+    }{}
+
+    // Reading in the request.
+    handle, err := os.ReadFile(reqpath)
+    if err != nil {
+        return fmt.Errorf("failed to read %q; %w", reqpath, err)
+    }
+    err = json.Unmarshal(handle, &request)
+    if err != nil {
+        return fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err)
+    }
+
+    if request.Project == nil {
+        return fmt.Errorf("expected a 'project' property in %q", reqpath)
+    }
+    project := *(request.Project)
+
+    return createProject(project, request.Permissions, req_user, globals)
+}
+
+func createProject(project string, inperms *unsafePermissionsMetadata, req_user string, globals *globalConfiguration) error {
     err := isBadName(project)
     if err != nil {
-        return "", false, fmt.Errorf("invalid project name; %w", err)
+        return fmt.Errorf("invalid project name; %w", err)
     }
 
     // Creating a new project from a pre-supplied name.
-    project_dir := filepath.Join(registry, project_str)
-    info, err := os.Stat(project_dir)
-    if err == nil || errors.Is(err, os.ErrNotExist) {
-        return "", false, fmt.Errorf("project %q already exists", project)
+    project_dir := filepath.Join(globals.Registry, project)
+    if _, err = os.Stat(project_dir); !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("project %q already exists", project)
     }
 
-    // No need to lock here, MkdirAll just no-ops if the directory already exists.
-    err := os.MkdirAll(project_dir, 0755)
+    // No need to lock before MkdirAll, it just no-ops if the directory already exists.
+    err = os.MkdirAll(project_dir, 0755)
 
-    locks.LockPath(project_dir)
+    globals.Locks.LockPath(project_dir, 1000 * time.Second)
     if err != nil {
-        return nil, fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer locks.UnlockPath(project_dir)
+    defer globals.Locks.UnlockPath(project_dir)
 
-    // Adding permissions.
     perms := permissionsMetadata{}
-    if permissions != nil && permissions.Owners != nil {
-        perms.Owners = permissions.Owners
+    if inperms != nil && inperms.Owners != nil {
+        perms.Owners = inperms.Owners
     } else {
-        perms.Owners = []string{ username }
+        perms.Owners = []string{ req_user }
     }
-    if permissions != nil && permissions.Uploaders != nil {
-        san, err := sanitizeUploaders(permissions.Uploaders)
+    if inperms != nil && inperms.Uploaders != nil {
+        san, err := sanitizeUploaders(inperms.Uploaders)
         if err != nil {
             return fmt.Errorf("invalid 'permissions.uploaders' in the request details; %w", err)
         }
@@ -53,24 +79,22 @@ func createProject(registry string, username string, project string, locks *path
         perms.Uploaders = []uploaderEntry{}
     }
 
-    err := dumpJson(filepath.Join(dir, permissionsFileName), &perms)
+    err = dumpJson(filepath.Join(project_dir, permissionsFileName), &perms)
     if err != nil {
-        return fmt.Errorf("failed to write permissions for %q; %w", dir, err)
+        return fmt.Errorf("failed to write permissions for %q; %w", project_dir, err)
     }
 
     // Dumping a mock quota and usage file for consistency with gypsum.
     // Note that the quota isn't actually enforced yet.
-    err = os.WriteFile(filepath.Join(dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0755)
+    err = os.WriteFile(filepath.Join(project_dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0755)
     if err != nil {
-        return fmt.Errorf("failed to write quota for '" + dir + "'; %w", err)
+        return fmt.Errorf("failed to write quota for '" + project_dir + "'; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(dir, usageFileName), []byte("{ \"total\": 0 }"), 0755)
+    err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte("{ \"total\": 0 }"), 0755)
     if err != nil {
-        return fmt.Errorf("failed to write usage for '" + dir + "'; %w", err)
+        return fmt.Errorf("failed to write usage for '" + project_dir + "'; %w", err)
     }
 
-    return project_str, false, nil
+    return nil
 }
-
-
