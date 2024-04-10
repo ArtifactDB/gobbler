@@ -26,12 +26,21 @@ func newGlobalConfiguration(registry string) globalConfiguration {
     }
 }
 
-type readRequestError struct {
-    Cause error
+type httpError struct {
+    Status int
+    Reason error
 }
 
-func (r *readRequestError) Error() string {
-    return r.Cause.Error()
+func (r *httpError) Error() string {
+    return r.Reason.Error()
+}
+
+func (r *httpError) Unwrap() error {
+    return r.Reason
+}
+
+func newHttpError(status int, reason error) *httpError {
+    return &httpError{ Status: status, Reason: reason }
 }
 
 func dumpJson(path string, content interface{}) error {
@@ -104,8 +113,4 @@ const logDirName = "..logs"
 func dumpLog(registry string, content interface{}) error {
     path := time.Now().Format(time.RFC3339) + "_" + strconv.Itoa(100000 + rand.Intn(900000))
     return dumpJson(filepath.Join(registry, logDirName, path), content)
-}
-
-func dumpResponse(response_dir, reqname string, content interface{}) error {
-    return dumpJson(filepath.Join(response_dir, reqname), content)
 }

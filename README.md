@@ -9,7 +9,6 @@
 The Gobbler implements [**gypsum**](https://github.com/ArtifactDB/gypsum-worker)-like storage of ArtifactDB-managed files on a shared filesystem.
 This replaces cloud storage with a world-readable local directory, reducing costs and improving efficiency by avoiding network traffic for uploads/downloads.
 We simplify authentication by using Unix file permissions to determine ownership, avoiding the need for a separate identity provider like GitHub.
-In fact, no HTTP requests are required at all, as the user and Gobbler communicate solely through filesystem events.
 
 This document is intended for system administrators who want to spin up their own instance or developers of new clients to the Gobbler service.
 Users should never have to interact with the Gobbler directly, as this should be mediated by client packages in relevant frameworks like R or Python.
@@ -135,22 +134,13 @@ Each project's current usage is tracked in `{project}/..usage`, which contains a
 
 ### General instructions 
 
-Gobbler uses filesystem events to watch a "staging directory", a world-writeable directory on the shared filesystem.
-Users submit requests to the Gobbler by simply writing a JSON file with the request parameters inside the staging directory.
+The Gobbler requires a "staging directory", a world-writeable directory on the shared filesystem.
+Users submit requests to the Gobbler by writing a JSON file with the request parameters inside the staging directory.
 Each request file's name should have a prefix of `request-<ACTION>-` where `ACTION` specifies the action to be performed.
-Upon creation of a request file, the Gobbler will parse it and execute the request with the specified parameters.
-
-After completing the request, the Gobbler will write a JSON response to the `responses` subdirectory of the staging directory.
-This has the same name as the initial request file, so users can easily poll the subdirectory for the existence of this file.
-Each response will have at least the `status` property (either `SUCCESS` or `FAILED`).
+Once this file is written, users should perform a POST request to the Gobbler API to trigger execution;
+this will return a JSON response that has at least the `status` property (either `SUCCESS` or `FAILED`).
 For failures, this will be an additional `reason` string property to specify the reason;
-for successes, additional proeprties may be present depending on the request action.
-
-When writing the request file, it is recommended to use the write-and-rename paradigm.
-Specifically, users should write the JSON request body to a file inside the staging directory that does _not_ have the `request-<ACTION>-` prefix.
-Once the write is complete, this file can be renamed to a file with said prefix.
-This ensures that the Gobbler does not read a partially-written file.
-(That said, a direct write to the final file can still be performed, in which case the Gobbler will perform a few retries to avoid errors from parsing an incomplete file.)
+for successes, additional properties may be present depending on the request action.
 
 ### Creating projects (admin)
 
@@ -318,27 +308,30 @@ cd gobbler && go build
 ```
 
 Then, set up a staging directory with global read/write permissions.
-
-- The staging directory should be on a filesystem supported by the [`fsnotify`](httsp://github.com/fsnotify/fsnotify) package.
-- All parent directories of the staging directory should be at least globally executable.
+ll parent directories of the staging directory should be at least globally executable.
 
 ```sh
 mkdir STAGING
 chmod 777 STAGING
 ```
 
-Then, set up a registry directory with global read-only permissions.
-
-- The registry and staging directories do not need to be on the same filesystem (e.g., for mounted shares), as long as both are accessible to users. 
+Next, set up a registry directory with global read-only permissions.
+Note that the registry and staging directories do not need to be on the same filesystem (e.g., for mounted shares), as long as both are accessible to users. 
 
 ```sh
 mkdir REGISTRY
 chmod 755 REGISTRY
 ```
 
-The Gobbler can then be started by running the binary with a few arguments, including the UIDs of administrators:
+Finally, start the Gobbler by running the binary with a few arguments, including the UIDs of administrators:
 
 ```sh
-./gobbler -staging STAGING -registry REGISTRY -admin ADMIN1,ADMIN2
+./gobbler \
+    -staging STAGING \
+    -registry REGISTRY \
+    -admin ADMIN1,ADMIN2 \
+    -port PORT
 ```
 
+For requests, clients should write to `STAGING` and hit the API at `PORT` (or any equivalent alias).
+All registered files can be read from `REGISTRY`.

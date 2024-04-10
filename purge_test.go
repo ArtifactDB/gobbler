@@ -49,7 +49,7 @@ func TestPurgeOldFiles (t *testing.T) {
     }
 
     // Deleting with a 1-hour expiry.
-    err = purgeOldFiles(dir, 1 * time.Hour, nil)
+    err = purgeOldFiles(dir, 1 * time.Hour)
     if (err != nil) {
         t.Fatal(err)
     }
@@ -63,27 +63,8 @@ func TestPurgeOldFiles (t *testing.T) {
         t.Error("should not have deleted this file")
     }
 
-    // Deleting with an immediate expiry but also protection.
-    err = purgeOldFiles(dir, 0 * time.Hour, map[string]bool{ "A": true, "sub": true })
-    if (err != nil) {
-        t.Fatal(err)
-    }
-    if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-        t.Error("should not have deleted this file")
-    }
-    if _, err := os.Stat(subdir); errors.Is(err, os.ErrNotExist) {
-        t.Error("should not have deleted this directory")
-    }
-
-    if _, err := os.Stat(sympath); !errors.Is(err, os.ErrNotExist) { // Symlink can be deleted, but not its target.
-        t.Error("should have deleted the symlink")
-    }
-    if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
-        t.Error("should not have deleted the symlink target")
-    }
-
     // Deleting with an immediate expiry.
-    err = purgeOldFiles(dir, 0 * time.Hour, nil)
+    err = purgeOldFiles(dir, 0 * time.Hour)
     if (err != nil) {
         t.Fatal(err)
     }
@@ -95,5 +76,12 @@ func TestPurgeOldFiles (t *testing.T) {
     }
     if _, err := os.Stat(subdir); !errors.Is(err, os.ErrNotExist) {
         t.Error("should have deleted this directory")
+    }
+
+    if _, err := os.Stat(sympath); !errors.Is(err, os.ErrNotExist) { // Symlink can be deleted, but not its target.
+        t.Error("should have deleted the symlink")
+    }
+    if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
+        t.Error("should not have deleted the symlink target")
     }
 }

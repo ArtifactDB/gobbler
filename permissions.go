@@ -10,6 +10,7 @@ import (
     "path/filepath"
     "encoding/json"
     "time"
+    "net/http"
 )
 
 type uploaderEntry struct {
@@ -169,17 +170,17 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
     }
 
@@ -202,7 +203,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if !isAuthorizedToMaintain(source_user, globals.Administrators, existing.Owners) {
-        return fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project)
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
     }
 
     if incoming.Permissions.Owners != nil {
@@ -211,7 +212,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     if incoming.Permissions.Uploaders != nil {
         san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
         if err != nil {
-            return fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
         }
         existing.Uploaders = san
     }

@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "time"
     "strings"
+    "net/http"
 )
 
 type latestMetadata struct {
@@ -90,7 +91,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     }
 
     if !isAuthorizedToAdmin(source_user, globals.Administrators) {
-        return nil, fmt.Errorf("user %q is not authorized to refresh the latest version (%q)", source_user, reqpath)
+        return nil, newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to refresh the latest version (%q)", source_user, reqpath))
     }
 
     incoming := struct {
@@ -100,22 +101,22 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return nil, &readRequestError{ fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return nil, &readRequestError{ fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project) 
         if err != nil {
-            return nil, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Asset) 
         if err != nil {
-            return nil, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
         }
     }
 

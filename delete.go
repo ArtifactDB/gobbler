@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "time"
     "errors"
+    "net/http"
 )
 
 func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
@@ -15,7 +16,7 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
     if !isAuthorizedToAdmin(req_user, globals.Administrators) {
-        return fmt.Errorf("user %q is not authorized to delete a project", req_user)
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to delete a project", req_user))
     }
 
     incoming := struct {
@@ -24,17 +25,17 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
     }
 
@@ -65,7 +66,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
     if !isAuthorizedToAdmin(req_user, globals.Administrators) {
-        return fmt.Errorf("user %q is not authorized to delete a project", req_user)
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to delete a project", req_user))
     }
 
     incoming := struct {
@@ -75,22 +76,22 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
-            return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
         }
     }
 
@@ -150,7 +151,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
     if !isAuthorizedToAdmin(req_user, globals.Administrators) {
-        return fmt.Errorf("user %q is not authorized to delete a project", req_user)
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to delete a project", req_user))
     }
 
     incoming := struct {
@@ -161,25 +162,25 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
-            return fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
         }
         err = isMissingOrBadName(incoming.Version)
         if err != nil {
-            return fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err)
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
         }
     }
 
