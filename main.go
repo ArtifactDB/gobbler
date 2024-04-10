@@ -54,21 +54,6 @@ func main() {
         globals.Administrators = strings.Split(*mstr, ",")
     }
 
-    // Setting up special subdirectories.
-    response_name := "responses"
-    response_dir := filepath.Join(staging, response_name)
-    if _, err := os.Stat(response_dir); errors.Is(err, os.ErrNotExist) {
-        err := os.Mkdir(response_dir, 0755)
-        if err != nil {
-            log.Fatalf("failed to create a 'responses' subdirectory in %q; %v", staging, err)
-        }
-    } else {
-        err := os.Chmod(response_dir, 0755)
-        if err != nil {
-            log.Fatalf("failed to validate permissions for the 'responses' subdirectory in %q; %v", staging, err)
-        }
-    }
-
     log_dir := filepath.Join(globals.Registry, logDirName)
     if _, err := os.Stat(log_dir); errors.Is(err, os.ErrNotExist) {
         err := os.Mkdir(log_dir, 0755)
@@ -78,9 +63,15 @@ func main() {
     }
 
     // Launching a watcher to pick up changes and launch jobs.
-    http.HandleFunc("POST /new/{path}", func(w http.ResponseWriter, r *http.Request) {
-        reqpath := r.PathValue("path")
-        log.Println("processing " + reqpath)
+    http.HandleFunc("/new/{path}", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != "POST" {
+            dumpErrorResponse(w, http.StatusMethodNotAllowed, "expected a POST request", "???")
+            return 
+        }
+
+        path := filepath.Base(r.PathValue("path"))
+        log.Println("processing " + path)
+        reqpath := filepath.Join(staging, path)
 
         info, err := os.Stat(reqpath)
         if err != nil {
@@ -159,23 +150,16 @@ func main() {
     // Adding a per-day job that purges various old files.
 	ticker := time.NewTicker(time.Hour * 24)
 	defer ticker.Stop()
-    protected := map[string]bool{}
-    protected[response_name] = true
 
     go func() {
         for {
             <-ticker.C
-            err := purgeOldFiles(staging, time.Hour * 24 * 7, protected)
+            err := purgeOldFiles(staging, time.Hour * 24 * 7)
             if err != nil {
                 log.Println(err)
             }
 
-            err = purgeOldFiles(response_dir, time.Hour * 24 * 7, nil)
-            if err != nil {
-                log.Println(err)
-            }
-
-            err = purgeOldFiles(log_dir, time.Hour * 24 * 7, nil)
+            err = purgeOldFiles(log_dir, time.Hour * 24 * 7)
             if err != nil {
                 log.Println(err)
             }
