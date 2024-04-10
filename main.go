@@ -2,7 +2,6 @@ package main
 
 import (
     "log"
-    "github.com/fsnotify/fsnotify"
     "flag"
     "path/filepath"
     "time"
@@ -10,12 +9,38 @@ import (
     "errors"
     "strings"
     "fmt"
+    "encoding/json"
+    "net/http"
+    "strconv"
 )
 
+func dumpJsonResponse(w http.ResponseWriter, status int, v interface{}, path string) {
+    contents, err := json.Marshal(v)
+    if err != nil {
+        log.Printf("failed to convert response to JSON for %q; %v", path, err)
+        contents = []byte("unknown")
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.WriteHeader(status)
+    _, err = w.Write(contents)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        log.Printf("failed to write JSON response for %q; %v", path, err)
+    }
+}
+
+func dumpErrorResponse(w http.ResponseWriter, status int, message string, path string) {
+    log.Printf("failed to process %q; %s\n", path, message)
+    dumpJsonResponse(w, status, map[string]interface{}{ "status": "ERROR", "reason": message }, path)
+}
+
 func main() {
-    spath := flag.String("staging", "", "Path to the staging directory to be watched")
-    rpath := flag.String("registry", "", "Path to the registry")
+    spath := flag.String("staging", "", "Path to the staging directory.")
+    rpath := flag.String("registry", "", "Path to the registry.")
     mstr := flag.String("admin", "", "Comma-separated list of administrators.")
+    port := flag.Int("port", 8080, "Port to listen to API requests.")
     flag.Parse()
 
     if *spath == "" || *rpath == "" {
@@ -53,138 +78,77 @@ func main() {
     }
 
     // Launching a watcher to pick up changes and launch jobs.
-    watcher, err := fsnotify.NewWatcher()
-    if err != nil {
-        log.Fatal("failed to start the watcher on the staging directory; ", err)
-    }
-    defer watcher.Close()
+    http.HandleFunc("GET /new/{path}", func(w http.ResponseWriter, r *http.Request) {
+        reqpath := r.PathValue("path")
+        log.Println("processing " + reqpath)
 
-    go func() {
-        for {
-            select {
-            case event, ok := <-watcher.Events:
-                if !ok {
-                    return
-                }
-                log.Println("triggered filesystem event:", event)
-
-                // It is recommended that request bodies should be initially
-                // written to some other file (e.g., `.tmpXXXX`) inside the
-                // staging directory, and then moved to the actual file name
-                // (`request-<action>-YYY`). The rename should be atomic and
-                // thus we avoid problems with the code below triggering before
-                // the requester has completed the write of the body. Under
-                // this logic, we only have to watch the Create events as no
-                // Writes are being performed on a renamed file.
-                if event.Has(fsnotify.Create) {
-                    info, err := os.Stat(event.Name)
-                    if errors.Is(err, os.ErrNotExist) {
-                        continue
-                    } else if err != nil {
-                        log.Println("failed to stat;", err)
-                        continue
-                    }
-
-                    if info.IsDir() {
-                        continue
-                    }
-
-                    basename := filepath.Base(event.Name)
-                    if strings.HasPrefix(basename, "request-") {
-                        reqtype := strings.TrimPrefix(basename, "request-")
-
-                        go func(reqpath, basename string) {
-                            var reportable_err error
-                            payload := map[string]interface{}{}
-
-                            // We prefer an atomic write, but nonetheless, if a request is directly written to the final
-                            // file name, we will continuously retry (for up to 1 second) if there is any error during 
-                            // the reading of the request body. This takes advantage of the fact that an incompletely
-                            // written JSON object must be invalid as it's missing the closing brace.
-                            for i := 0; i < 4; i++ {
-                                if strings.HasPrefix(reqtype, "upload-") {
-                                    reportable_err = uploadHandler(reqpath, &globals)
-
-                                } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-                                    res, err0 := refreshLatestHandler(reqpath, &globals)
-                                    if err0 == nil {
-                                        if res != nil {
-                                            payload["version"] = res.Version
-                                        }
-                                    } else {
-                                        reportable_err = err0
-                                    }
-
-                                } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-                                    res, err0 := refreshUsageHandler(reqpath, &globals)
-                                    if err0 == nil {
-                                        payload["total"] = res.Total
-                                    } else {
-                                        reportable_err = err0
-                                    }
-
-                                } else if strings.HasPrefix(reqtype, "set_permissions-") {
-                                    reportable_err = setPermissionsHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "approve_probation-") {
-                                    reportable_err = approveProbationHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "reject_probation-") {
-                                    reportable_err = rejectProbationHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "create_project-") {
-                                    reportable_err = createProjectHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "delete_project-") {
-                                    reportable_err = deleteProjectHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "delete_asset-") {
-                                    reportable_err = deleteAssetHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "delete_version-") {
-                                    reportable_err = deleteVersionHandler(reqpath, &globals)
-                                } else if strings.HasPrefix(reqtype, "health_check-") {
-                                    reportable_err = nil
-                                } else {
-                                    reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
-                                }
-
-                                // If there's no error, or if the error is not a readRequestError, we quit 
-                                // and report the results. If the error is an RRE, we might be reading an 
-                                // incompletely written file, so we wait for a bit and try again.
-                                if reportable_err == nil {
-                                    break
-                                } else if _, ok := reportable_err.(*readRequestError); !ok {
-                                    break
-                                }
-                                time.Sleep(time.Second / 4.0)
-                            }
-
-                            if reportable_err == nil {
-                                payload["status"] = "SUCCESS"
-                            } else {
-                                log.Println(reportable_err.Error())
-                                payload = map[string]interface{}{
-                                    "status": "FAILED",
-                                    "reason": reportable_err.Error(),
-                                }
-                            }
-
-                            err := dumpResponse(response_dir, basename, &payload)
-                            if err != nil {
-                                log.Println(err.Error())
-                            }
-                        }(event.Name, basename)
-                    }
-                }
-
-            case err, ok := <-watcher.Errors:
-                if !ok {
-                    return
-                }
-                log.Println("watcher error;", err)
-            }
+        info, err := os.Stat(reqpath)
+        if err != nil {
+            dumpErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("failed to stat; %v", err), reqpath)
+            return 
         }
-    }()
+        if info.IsDir() {
+            dumpErrorResponse(w, http.StatusBadRequest, "path is a directory", reqpath)
+            return 
+        }
 
-    err = watcher.Add(staging)
-    if err != nil {
-        log.Fatal(err)
-    }
+        if !strings.HasPrefix(reqpath, "request-") {
+            dumpErrorResponse(w, http.StatusBadRequest, "file name should start with \"request-\"", reqpath)
+            return 
+        }
+        reqtype := strings.TrimPrefix(reqpath, "request-")
+
+        var reportable_err error
+        payload := map[string]interface{}{}
+
+        if strings.HasPrefix(reqtype, "upload-") {
+            reportable_err = uploadHandler(reqpath, &globals)
+
+        } else if strings.HasPrefix(reqtype, "refresh_latest-") {
+            res, err0 := refreshLatestHandler(reqpath, &globals)
+            if err0 == nil {
+                if res != nil {
+                    payload["version"] = res.Version
+                }
+            } else {
+                reportable_err = err0
+            }
+
+        } else if strings.HasPrefix(reqtype, "refresh_usage-") {
+            res, err0 := refreshUsageHandler(reqpath, &globals)
+            if err0 == nil {
+                payload["total"] = res.Total
+            } else {
+                reportable_err = err0
+            }
+
+        } else if strings.HasPrefix(reqtype, "set_permissions-") {
+            reportable_err = setPermissionsHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "approve_probation-") {
+            reportable_err = approveProbationHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "reject_probation-") {
+            reportable_err = rejectProbationHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "create_project-") {
+            reportable_err = createProjectHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "delete_project-") {
+            reportable_err = deleteProjectHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "delete_asset-") {
+            reportable_err = deleteAssetHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "delete_version-") {
+            reportable_err = deleteVersionHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "health_check-") {
+            reportable_err = nil
+        } else {
+            reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
+        }
+
+        if reportable_err == nil {
+            payload["status"] = "SUCCESS"
+            dumpJsonResponse(w, http.StatusOK, &payload, reqpath)
+        } else {
+            dumpErrorResponse(w, http.StatusBadRequest, reportable_err.Error(), reqpath)
+        }
+    })
 
     // Adding a per-day job that purges various old files.
 	ticker := time.NewTicker(time.Hour * 24)
@@ -212,6 +176,6 @@ func main() {
         }
     }()
 
-    // Block main goroutine forever.
-    <-make(chan struct{})
+    // Setting up the API.
+    http.ListenAndServe("0.0.0.0:" + strconv.Itoa(*port), nil)
 }

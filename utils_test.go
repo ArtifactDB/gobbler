@@ -109,31 +109,3 @@ func TestIsBadName(t *testing.T) {
         t.Fatal("failed to stop in the presence of a backslash")
     }
 }
-
-func TestDumpResponse(t *testing.T) {
-    response_dir, err := os.MkdirTemp("", "")
-    if err != nil {
-        t.Fatalf("failed to create a temporary directory; %v", err)
-    }
-
-    basename := "FOO"
-    payload := map[string]string { "A": "B", "C": "D" }
-    err = dumpResponse(response_dir, basename, &payload)
-    if err != nil {
-        t.Fatalf("failed to dump a response; %v", err)
-    }
-
-    as_str, err := os.ReadFile(filepath.Join(response_dir, basename))
-    if err != nil {
-        t.Fatalf("failed to read the response; %v", err)
-    }
-
-    var roundtrip map[string]string
-    err = json.Unmarshal(as_str, &roundtrip)
-    if err != nil {
-        t.Fatalf("failed to parse the response; %v", err)
-    }
-    if roundtrip["A"] != payload["A"] || roundtrip["C"] != payload["C"] {
-        t.Fatalf("unexpected contents from roundtrip of the response")
-    }
-}

@@ -105,7 +105,3 @@ func dumpLog(registry string, content interface{}) error {
     path := time.Now().Format(time.RFC3339) + "_" + strconv.Itoa(100000 + rand.Intn(900000))
     return dumpJson(filepath.Join(registry, logDirName, path), content)
 }
-
-func dumpResponse(response_dir, reqname string, content interface{}) error {
-    return dumpJson(filepath.Join(response_dir, reqname), content)
-}
