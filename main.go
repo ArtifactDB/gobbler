@@ -71,23 +71,23 @@ func main() {
 
         path := filepath.Base(r.PathValue("path"))
         log.Println("processing " + path)
-        reqpath := filepath.Join(staging, path)
 
+        if !strings.HasPrefix(path, "request-") {
+            dumpErrorResponse(w, http.StatusBadRequest, "file name should start with \"request-\"", path)
+            return 
+        }
+        reqtype := strings.TrimPrefix(path, "request-")
+
+        reqpath := filepath.Join(staging, path)
         info, err := os.Stat(reqpath)
         if err != nil {
-            dumpErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("failed to stat; %v", err), reqpath)
+            dumpErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("failed to stat; %v", err), path)
             return 
         }
         if info.IsDir() {
-            dumpErrorResponse(w, http.StatusBadRequest, "path is a directory", reqpath)
+            dumpErrorResponse(w, http.StatusBadRequest, "path is a directory", path)
             return 
         }
-
-        if !strings.HasPrefix(reqpath, "request-") {
-            dumpErrorResponse(w, http.StatusBadRequest, "file name should start with \"request-\"", reqpath)
-            return 
-        }
-        reqtype := strings.TrimPrefix(reqpath, "request-")
 
         var reportable_err error
         payload := map[string]interface{}{}
@@ -136,14 +136,14 @@ func main() {
 
         if reportable_err == nil {
             payload["status"] = "SUCCESS"
-            dumpJsonResponse(w, http.StatusOK, &payload, reqpath)
+            dumpJsonResponse(w, http.StatusOK, &payload, path)
         } else {
             status_code := http.StatusInternalServerError
             var http_err *httpError
             if errors.As(reportable_err, &http_err) {
                 status_code = http_err.Status
             }
-            dumpErrorResponse(w, status_code, reportable_err.Error(), reqpath)
+            dumpErrorResponse(w, status_code, reportable_err.Error(), path)
         }
     })
 
