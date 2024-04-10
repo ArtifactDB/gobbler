@@ -78,7 +78,7 @@ func main() {
     }
 
     // Launching a watcher to pick up changes and launch jobs.
-    http.HandleFunc("GET /new/{path}", func(w http.ResponseWriter, r *http.Request) {
+    http.HandleFunc("POST /new/{path}", func(w http.ResponseWriter, r *http.Request) {
         reqpath := r.PathValue("path")
         log.Println("processing " + reqpath)
 
