@@ -26,12 +26,21 @@ func newGlobalConfiguration(registry string) globalConfiguration {
     }
 }
 
-type readRequestError struct {
-    Cause error
+type httpError struct {
+    Status int
+    Reason error
 }
 
-func (r *readRequestError) Error() string {
-    return r.Cause.Error()
+func (r *httpError) Error() string {
+    return r.Reason.Error()
+}
+
+func (r *httpError) Unwrap() error {
+    return r.Reason
+}
+
+func newHttpError(status int, reason error) *httpError {
+    return &httpError{ Status: status, Reason: reason }
 }
 
 func dumpJson(path string, content interface{}) error {
