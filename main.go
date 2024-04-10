@@ -63,12 +63,7 @@ func main() {
     }
 
     // Launching a watcher to pick up changes and launch jobs.
-    http.HandleFunc("/new/{path}", func(w http.ResponseWriter, r *http.Request) {
-        if r.Method != "POST" {
-            dumpErrorResponse(w, http.StatusMethodNotAllowed, "expected a POST request", "???")
-            return 
-        }
-
+    http.HandleFunc("POST /new/{path}", func(w http.ResponseWriter, r *http.Request) {
         path := filepath.Base(r.PathValue("path"))
         log.Println("processing " + path)
 
