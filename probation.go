@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "time"
     "errors"
+    "net/http"
 )
 
 func baseProbationHandler(reqpath string, globals *globalConfiguration, approve bool) error {
@@ -18,27 +19,27 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     {
         handle, err := os.ReadFile(reqpath)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to read %q; %w", reqpath, err) }
+            return fmt.Errorf("failed to read %q; %w", reqpath, err)
         }
 
         err = json.Unmarshal(handle, &incoming)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
         }
 
         err = isMissingOrBadName(incoming.Version)
         if err != nil {
-            return &readRequestError{ Cause: fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err) }
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
         }
     }
 
@@ -60,7 +61,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return fmt.Errorf("failed to read permissions for %q; %w", project_dir, err)
     }
     if !isAuthorizedToMaintain(username, globals.Administrators, existing.Owners) {
-        return fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir)
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir))
     }
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))

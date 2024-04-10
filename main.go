@@ -139,14 +139,20 @@ func main() {
         } else if strings.HasPrefix(reqtype, "health_check-") {
             reportable_err = nil
         } else {
-            reportable_err = fmt.Errorf("cannot determine request type for %q", reqpath)
+            dumpErrorResponse(w, http.StatusBadRequest, "invalid request type", reqpath)
+            return 
         }
 
         if reportable_err == nil {
             payload["status"] = "SUCCESS"
             dumpJsonResponse(w, http.StatusOK, &payload, reqpath)
         } else {
-            dumpErrorResponse(w, http.StatusBadRequest, reportable_err.Error(), reqpath)
+            status_code := http.StatusInternalServerError
+            var http_err *httpError
+            if errors.As(reportable_err, &http_err) {
+                status_code = http_err.Status
+            }
+            dumpErrorResponse(w, status_code, reportable_err.Error(), reqpath)
         }
     })
 
