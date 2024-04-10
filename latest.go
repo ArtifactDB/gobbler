@@ -123,11 +123,11 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     // Technically we only need a lock on the asset directory, but all
     // mutating operations will lock the project directory, so we respect that.
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
-    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     output, err := refreshLatest(asset_dir)

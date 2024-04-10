@@ -109,11 +109,11 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
     }
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
-    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     new_usage, err := computeUsage(project_dir, true)
     if err != nil {

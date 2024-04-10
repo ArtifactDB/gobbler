@@ -102,11 +102,11 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     project := *(request.Project)
 
     project_dir := filepath.Join(globals.Registry, project)
-    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     perms, err := readPermissions(project_dir)
     if err != nil {

@@ -58,11 +58,11 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
     // No need to lock before MkdirAll, it just no-ops if the directory already exists.
     err = os.MkdirAll(project_dir, 0755)
 
-    globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     perms := permissionsMetadata{}
     if inperms != nil && inperms.Owners != nil {

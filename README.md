@@ -308,7 +308,7 @@ cd gobbler && go build
 ```
 
 Then, set up a staging directory with global read/write permissions.
-ll parent directories of the staging directory should be at least globally executable.
+All parent directories of the staging directory should be at least globally executable.
 
 ```sh
 mkdir STAGING
@@ -333,5 +333,10 @@ Finally, start the Gobbler by running the binary with a few arguments, including
     -port PORT
 ```
 
-For requests, clients should write to `STAGING` and hit the API at `PORT` (or any equivalent alias).
-All registered files can be read from `REGISTRY`.
+Multiple Gobbler instances can target the same `REGISTRY` with different `STAGING`.
+This is useful for complex configurations where the same filesystem is mounted in multiple compute environments,
+whereby a separate Gobbler instance can be set up in each environment to enable uploads. 
+
+Clients need to know `STAGING`, `REGISTRY` and the URL of the REST API.
+The location of the staging directory and the URL will be used to make requests as described [above](#general-instructions).
+The contents of the registry can be directly read from the filesystem.

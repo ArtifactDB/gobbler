@@ -99,11 +99,11 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
@@ -191,11 +191,11 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = globals.Locks.LockPath(project_dir, 1000 * time.Second)
+    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.UnlockPath(project_dir)
+    defer globals.Locks.Unlock(project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
