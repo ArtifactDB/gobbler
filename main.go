@@ -11,6 +11,7 @@ import (
     "fmt"
     "encoding/json"
     "net/http"
+    "net/url"
     "strconv"
 )
 
@@ -62,7 +63,7 @@ func main() {
         }
     }
 
-    // Launching a watcher to pick up changes and launch jobs.
+    // Creating an endpoint to trigger jobs.
     http.HandleFunc("POST /new/{path}", func(w http.ResponseWriter, r *http.Request) {
         path := filepath.Base(r.PathValue("path"))
         log.Println("processing " + path)
@@ -140,6 +141,36 @@ func main() {
             }
             dumpErrorResponse(w, status_code, reportable_err.Error(), path)
         }
+    })
+
+    // Creating an endpoint to list and serve files, for remote access to the registry.
+    fs := http.FileServer(http.Dir(globals.Registry))
+    http.Handle("GET /fetch/", http.StripPrefix("/fetch/", fs))
+
+    http.HandleFunc("GET /list", func(w http.ResponseWriter, r *http.Request) {
+        qparams := r.URL.Query()
+        recursive := qparams.Get("recursive") == "true"
+        path := qparams.Get("path")
+
+        if path == "" {
+            path = globals.Registry
+        } else {
+            var err error
+            path, err = url.QueryUnescape(path)
+            if err == nil && filepath.IsLocal(path) {
+                path = filepath.Join(globals.Registry, path)
+            } else {
+                dumpErrorResponse(w, http.StatusBadRequest, "invalid 'path'", "list request")
+                return
+            }
+        }
+
+        all, err := listFiles(path, recursive)
+        if err != nil {
+            dumpErrorResponse(w, http.StatusInternalServerError, err.Error(), "list request")
+            return
+        }
+        dumpJsonResponse(w, http.StatusOK, &all, "list request")
     })
 
     // Adding a per-day job that purges various old files.

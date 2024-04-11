@@ -274,6 +274,26 @@ To check if a Gobbler service is active, a user should touch a file with the `re
 The contents of this file are ignored.
 On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
+## Accessing the registry
+
+Most applications on the shared filesystem should be able to directly access the world-readable registry via the usual system calls.
+This is the most efficient access pattern as it avoids any data transfer.
+
+Remote applications can obtain a listing of the registry by performing a GET request to the `/list` endpoint,
+This accepts some optional query parameters:
+
+- `path`, a string specifying a relative path to a subdirectory within the registry.
+  The listing is performed within this subdirectory.
+  If not provided, the entire registry is listed.
+- `recursive`, a boolean indicating whether to list recursively.
+  Defaults to false.
+
+The response is a JSON-encoded array of the relative paths within the registry or one of its requested subdirectories.
+If `recursive=true`, all paths refer to files; otherwise, paths may refer to subdirectories, which are denoted by a `/` suffix.
+
+Any file of interest within the registry can then be obtained via the `/fetch/{path}` endpoint.
+Once downloaded, clients should consider caching the files to reduce future data transfer.
+
 ## Parsing logs
 
 For some actions, the Gobbler creates a log within the `..logs/` subdirectory of the registry.
