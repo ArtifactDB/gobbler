@@ -12,6 +12,8 @@ import (
     "encoding/json"
     "net/http"
     "strconv"
+    "io/fs"
+    "syscall"
 )
 
 func dumpJsonResponse(w http.ResponseWriter, status int, v interface{}, path string) {
@@ -45,6 +47,40 @@ func dumpHttpErrorResponse(w http.ResponseWriter, err error, path string) {
     dumpErrorResponse(w, status_code, err.Error(), path)
 }
 
+func checkRequestFile(path, staging string) (string, error) {
+    if !strings.HasPrefix(path, "request-") {
+        return "", newHttpError(http.StatusBadRequest, errors.New("file name should start with \"request-\""))
+    }
+
+    if !filepath.IsLocal(path) {
+        return "", newHttpError(http.StatusBadRequest, errors.New("path should be local to the staging directory"))
+    }
+    reqpath := filepath.Join(staging, path)
+
+    info, err := os.Lstat(reqpath)
+    if err != nil {
+        return "", newHttpError(http.StatusBadRequest, fmt.Errorf("failed to access path; %v", err))
+    }
+
+    if info.IsDir() {
+        return "", newHttpError(http.StatusBadRequest, errors.New("path is a directory"))
+    }
+
+    if info.Mode() & fs.ModeSymlink != 0 {
+        return "", newHttpError(http.StatusBadRequest, errors.New("path is a symbolic link"))
+    }
+
+    s, ok := info.Sys().(*syscall.Stat_t)
+    if !ok {
+        return "", fmt.Errorf("failed to convert to a syscall.Stat_t; %w", err)
+    }
+    if uint32(s.Nlink) > 1 {
+        return "", newHttpError(http.StatusBadRequest, errors.New("path seems to have multiple hard links"))
+    }
+
+    return reqpath, nil
+}
+
 func main() {
     spath := flag.String("staging", "", "Path to the staging directory.")
     rpath := flag.String("registry", "", "Path to the registry.")
@@ -73,28 +109,18 @@ func main() {
 
     // Creating an endpoint to trigger jobs.
     http.HandleFunc("POST /new/{path}", func(w http.ResponseWriter, r *http.Request) {
-        path := filepath.Base(r.PathValue("path"))
+        path := r.PathValue("path")
         log.Println("processing " + path)
 
-        if !strings.HasPrefix(path, "request-") {
-            dumpErrorResponse(w, http.StatusBadRequest, "file name should start with \"request-\"", path)
-            return 
-        }
-        reqtype := strings.TrimPrefix(path, "request-")
-
-        reqpath := filepath.Join(staging, path)
-        info, err := os.Stat(reqpath)
+        reqpath, err := checkRequestFile(path, staging)
         if err != nil {
-            dumpErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("failed to stat; %v", err), path)
-            return 
-        }
-        if info.IsDir() {
-            dumpErrorResponse(w, http.StatusBadRequest, "path is a directory", path)
+            dumpHttpErrorResponse(w, err, path)
             return 
         }
 
         var reportable_err error
         payload := map[string]interface{}{}
+        reqtype := strings.TrimPrefix(path, "request-")
 
         if strings.HasPrefix(reqtype, "upload-") {
             reportable_err = uploadHandler(reqpath, &globals)
