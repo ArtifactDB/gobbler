@@ -16,7 +16,7 @@ For example, the [**gobbler** R package](https://github.com/ArtifactDB/gobbler-R
 
 ## Concepts
 
-The Gobbler aims to mirror the concepts used by [**gypsum**](https://github.com/ArtifactDB/gypsum).
+The Gobbler implements a REST API that mirrors the concepts used by [**gypsum**](https://github.com/ArtifactDB/gypsum) but on a shared filesystem.
 In particular, the file organization and structure of the `..`-prefixed metadata files should be the same between the Gobbler and **gypsum**.
 This provides a degree of cloud-readiness, as administrators can easily switch from the Gobbler to **gypsum** by just uploading the contents of the local directory to a Cloudflare R2 bucket.
 
@@ -125,28 +125,56 @@ This is useful for testing before committing to the long-term immutability of th
 
 ### Storage quotas
 
-**gypsum**-like storage quotas are not yet implemented.
+🚧🚧🚧 **gypsum**-like storage quotas are not yet implemented. 🚧🚧🚧
 
 Each project's current usage is tracked in `{project}/..usage`, which contains a JSON object with the following properties:
 - `total`: the total number of bytes allocated to user-supplied files (i.e., not including `..`-prefixed internal files).
 
-## Making requests 
+## Reading from the registry
+
+The Gobbler expects to operate on a shared filesystem, so any applications on the same filesystem should be able to directly access the world-readable registry via the usual system calls.
+This is the most efficient access method as it avoids any data transfer.
+
+That said, some support is provided for remote applications.
+We can obtain a listing of the registry by performing a GET request to the `/list` endpoint of the Gobbler API.
+This accepts some optional query parameters:
+
+- `path`, a string specifying a relative path to a subdirectory within the registry.
+  The listing is performed within this subdirectory.
+  If not provided, the entire registry is listed.
+- `recursive`, a boolean indicating whether to list recursively.
+  Defaults to false.
+
+The response is a JSON-encoded array of the relative paths within the registry or one of its requested subdirectories.
+If `recursive=true`, all paths refer to files; otherwise, paths may refer to subdirectories, which are denoted by a `/` suffix.
+
+Any file of interest within the registry can then be obtained via a GET request to the `/fetch/{path}` endpoint,
+where `path` is the relative path to the file inside the registry.
+Once downloaded, clients should consider caching the files to reduce future data transfer.
+
+For a Gobbler instance, the location of its registry can be obtained via a GET request to the `/info` endpoint.
+This can be used to avoid hard-coded paths in the clients. 
+
+## Modifying the registry 
 
 ### General instructions 
 
 The Gobbler requires a "staging directory", a world-writeable directory on the shared filesystem.
 Users submit requests to the Gobbler by writing a JSON file with the request parameters inside the staging directory.
 Each request file's name should have a prefix of `request-<ACTION>-` where `ACTION` specifies the action to be performed.
-Once this file is written, users should perform a POST request to the Gobbler API to trigger execution;
-this will return a JSON response that has at least the `status` property (either `SUCCESS` or `FAILED`).
+
+Once this file is written, users should perform a POST request to the `/new/{request}` endpoint, where `request` is the name of the request file inside the staging directory.
+The endpoint will return a JSON response that has at least the `status` property (either `SUCCESS` or `ERROR`).
 For failures, this will be an additional `reason` string property to specify the reason;
 for successes, additional properties may be present depending on the request action.
+
+For a Gobbler instance, the location of its staging directory can be obtained via a GET request to the `/info` endpoint.
+This can be used to avoid hard-coded paths in the clients. 
 
 ### Creating projects (admin)
 
 Administrators are responsible for creating new projects within the registry.
-This is done using the write-and-rename paradigm to create a file with the `request-create_project-` prefix.
-This file should be JSON-formatted with the following properties:
+This is done by creating a file with the `request-create_project-` prefix, which should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the new project.
   This should not contain `/`, `\`, or `.`.
@@ -167,7 +195,7 @@ Files within this temporary directory will be transferred to the appropriate sub
 - Symbolic links to directories are not allowed.
 - Symbolic links to files only allowed if the symlink target is an existing file within a project-asset-version subdirectory of the registry.
 
-Once this directory is constructed and populated, the user should use the write-and-rename paradigm to create a file with the `request-upload-` prefix.
+Once this directory is constructed and populated, the user should create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of an existing project.
@@ -183,8 +211,7 @@ On success, the files will be transferred to the registry and a JSON formatted f
 
 ### Setting permissions
 
-Users should use the write-and-rename paradigm to create a file with the `request-set_permissions-` prefix.
-This file should be JSON-formatted with the following properties:
+Users should create a file with the `request-set_permissions-` prefix, which should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
 - `permissions`: an object containing either or both of `owners` and `uploaders`.
@@ -195,7 +222,7 @@ On success, the permissions in the registry are modified and a JSON formatted fi
 
 ### Handling probation
 
-To approve probation, a user should use the write-and-rename paradigm to create a file with the `request-approve_probation-` prefix.
+To approve probation, a user should create a file with the `request-approve_probation-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -204,7 +231,7 @@ This file should be JSON-formatted with the following properties:
 
 On success, the probational status is removed and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
-To reject probation, a user should use the write-and-rename paradigm to create a file with the `request-reject_probation-` prefix.
+To reject probation, a user should create a file with the `request-reject_probation-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -219,14 +246,14 @@ On rare occasions involving frequent updates, some of the inter-version statisti
 For example, the latest version in `..latest` may not keep in sync when many probational versions are approved at once.
 Administrators can fix this manually by requesting a refresh of the relevant statistics.
 
-To refresh project usage, use the write-and-rename paradigm to create a file with the `request-refresh_usage-` prefix.
+To refresh project usage, create a file with the `request-refresh_usage-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
 
 On success, the usage is updated and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
-To refresh the latest version of an asset, use the write-and-rename paradigm to create a file with the `request-refresh_latest-` prefix.
+To refresh the latest version of an asset, create a file with the `request-refresh_latest-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -241,7 +268,7 @@ This violates **gypsum**'s immutability contract and should be done sparingly.
 In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated.
 This check involves going through all the manifest files and is currently a manual process.
 
-To delete a project, use the write-and-rename paradigm to create a file with the `request-delete_project-` prefix.
+To delete a project, create a file with the `request-delete_project-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -249,7 +276,7 @@ This file should be JSON-formatted with the following properties:
 On success, the project is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 A success is still reported even if the project is not present, in which case the operation is a no-op.
 
-To delete an asset, use the write-and-rename paradigm to create a file with the `request-delete_asset-` prefix.
+To delete an asset, create a file with the `request-delete_asset-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -258,7 +285,7 @@ This file should be JSON-formatted with the following properties:
 On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 A success is still reported even if the asset or its project is not present, in which case the operation is a no-op.
 
-To delete a version, use the write-and-rename paradigm to create a file with the `request-delete_version-` prefix.
+To delete a version, create a file with the `request-delete_version-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
@@ -267,32 +294,6 @@ This file should be JSON-formatted with the following properties:
 
 On success, the version is deleted and a JSON formatted file will be created in `responses` with the `type` property set to `SUCCESS`.
 A success is still reported even if the version, its asset or its project is not present, in which case the operation is a no-op.
-
-### Health check
-
-To check if a Gobbler service is active, a user should touch a file with the `request-health_check-` prefix.
-The contents of this file are ignored.
-On success, the asset is deleted and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
-
-## Accessing the registry
-
-Most applications on the shared filesystem should be able to directly access the world-readable registry via the usual system calls.
-This is the most efficient access pattern as it avoids any data transfer.
-
-Remote applications can obtain a listing of the registry by performing a GET request to the `/list` endpoint,
-This accepts some optional query parameters:
-
-- `path`, a string specifying a relative path to a subdirectory within the registry.
-  The listing is performed within this subdirectory.
-  If not provided, the entire registry is listed.
-- `recursive`, a boolean indicating whether to list recursively.
-  Defaults to false.
-
-The response is a JSON-encoded array of the relative paths within the registry or one of its requested subdirectories.
-If `recursive=true`, all paths refer to files; otherwise, paths may refer to subdirectories, which are denoted by a `/` suffix.
-
-Any file of interest within the registry can then be obtained via the `/fetch/{path}` endpoint.
-Once downloaded, clients should consider caching the files to reduce future data transfer.
 
 ## Parsing logs
 
@@ -356,7 +357,3 @@ Finally, start the Gobbler by running the binary with a few arguments, including
 Multiple Gobbler instances can target the same `REGISTRY` with different `STAGING`.
 This is useful for complex configurations where the same filesystem is mounted in multiple compute environments,
 whereby a separate Gobbler instance can be set up in each environment to enable uploads. 
-
-Clients need to know `STAGING`, `REGISTRY` and the URL of the REST API.
-The location of the staging directory and the URL will be used to make requests as described [above](#general-instructions).
-The contents of the registry can be directly read from the filesystem.
