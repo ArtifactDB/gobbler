@@ -131,7 +131,7 @@ func main() {
             reportable_err = deleteAssetHandler(reqpath, &globals)
         } else if strings.HasPrefix(reqtype, "delete_version-") {
             reportable_err = deleteVersionHandler(reqpath, &globals)
-        } else if strings.HasPrefix(reqtype, "health_check-") {
+        } else if strings.HasPrefix(reqtype, "health_check-") { // TO-BE-DEPRECATED, see /check below.
             reportable_err = nil
         } else {
             dumpErrorResponse(w, http.StatusBadRequest, "invalid request type", reqpath)
@@ -157,6 +157,11 @@ func main() {
         } else {
             dumpJsonResponse(w, http.StatusOK, &listing, "list request")
         }
+    })
+
+    // Creating a useful health-check endpoint. 
+    http.HandleFunc("GET /info", func(w http.ResponseWriter, r *http.Request) {
+        dumpJsonResponse(w, http.StatusOK, map[string]string{ "staging": staging, "registry": globals.Registry }, "info request")
     })
 
     // Adding a per-day job that purges various old files.
