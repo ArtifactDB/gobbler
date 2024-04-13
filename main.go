@@ -11,7 +11,6 @@ import (
     "fmt"
     "encoding/json"
     "net/http"
-    "net/url"
     "strconv"
 )
 
@@ -35,6 +34,15 @@ func dumpJsonResponse(w http.ResponseWriter, status int, v interface{}, path str
 func dumpErrorResponse(w http.ResponseWriter, status int, message string, path string) {
     log.Printf("failed to process %q; %s\n", path, message)
     dumpJsonResponse(w, status, map[string]interface{}{ "status": "ERROR", "reason": message }, path)
+}
+
+func dumpHttpErrorResponse(w http.ResponseWriter, err error, path string) {
+    status_code := http.StatusInternalServerError
+    var http_err *httpError
+    if errors.As(err, &http_err) {
+        status_code = http_err.Status
+    }
+    dumpErrorResponse(w, status_code, err.Error(), path)
 }
 
 func main() {
@@ -134,12 +142,7 @@ func main() {
             payload["status"] = "SUCCESS"
             dumpJsonResponse(w, http.StatusOK, &payload, path)
         } else {
-            status_code := http.StatusInternalServerError
-            var http_err *httpError
-            if errors.As(reportable_err, &http_err) {
-                status_code = http_err.Status
-            }
-            dumpErrorResponse(w, status_code, reportable_err.Error(), path)
+            dumpHttpErrorResponse(w, reportable_err, path) 
         }
     })
 
@@ -148,29 +151,12 @@ func main() {
     http.Handle("GET /fetch/", http.StripPrefix("/fetch/", fs))
 
     http.HandleFunc("GET /list", func(w http.ResponseWriter, r *http.Request) {
-        qparams := r.URL.Query()
-        recursive := qparams.Get("recursive") == "true"
-        path := qparams.Get("path")
-
-        if path == "" {
-            path = globals.Registry
-        } else {
-            var err error
-            path, err = url.QueryUnescape(path)
-            if err == nil && filepath.IsLocal(path) {
-                path = filepath.Join(globals.Registry, path)
-            } else {
-                dumpErrorResponse(w, http.StatusBadRequest, "invalid 'path'", "list request")
-                return
-            }
-        }
-
-        all, err := listFiles(path, recursive)
+        listing, err := listFilesHandler(r, globals.Registry)
         if err != nil {
-            dumpErrorResponse(w, http.StatusInternalServerError, err.Error(), "list request")
-            return
+            dumpHttpErrorResponse(w, err, "list request") 
+        } else {
+            dumpJsonResponse(w, http.StatusOK, &listing, "list request")
         }
-        dumpJsonResponse(w, http.StatusOK, &all, "list request")
     })
 
     // Adding a per-day job that purges various old files.

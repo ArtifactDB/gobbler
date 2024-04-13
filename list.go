@@ -4,6 +4,9 @@ import (
     "path/filepath"
     "fmt"
     "io/fs"
+    "errors"
+    "net/url"
+    "net/http"
 )
 
 func listFiles(dir string, recursive bool) ([]string, error) {
@@ -40,4 +43,26 @@ func listFiles(dir string, recursive bool) ([]string, error) {
     }
 
     return to_report, nil
+}
+
+func listFilesHandler(r *http.Request, registry string) ([]string, error) {
+    qparams := r.URL.Query()
+    path := qparams.Get("path")
+    recursive := (qparams.Get("recursive") == "true")
+
+    if path == "" {
+        path = registry
+    } else {
+        var err error
+        path, err = url.QueryUnescape(path)
+        if err != nil {
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'path'; %w", err))
+        } else if !filepath.IsLocal(path) {
+            return nil, newHttpError(http.StatusBadRequest, errors.New("'path' is not local to the registry"))
+        }
+        path = filepath.Join(registry, path)
+    }
+
+    all, err := listFiles(path, recursive)
+    return all, err
 }
