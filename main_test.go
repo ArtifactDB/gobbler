@@ -85,3 +85,29 @@ func TestCheckRequestFile(t *testing.T) {
         }
     })
 }
+
+func TestActiveRegistry(t *testing.T) {
+    a := newActiveRegistry(3)
+
+    path := "adasdasdasd"
+    ok := a.Add(path)
+    if !ok {
+        t.Fatal("expected a successful addition")
+    }
+
+    ok = a.Add(path)
+    if ok {
+        t.Fatal("expected a failed addition")
+    }
+
+    a.Remove(path)
+    ok = a.Add(path)
+    if !ok {
+        t.Fatal("expected a successful addition again")
+    }
+
+    ok = a.Add("xyxyxyxyxyx")
+    if !ok {
+        t.Fatal("expected a successful addition again")
+    }
+}
