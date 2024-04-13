@@ -286,7 +286,7 @@ func Transfer(source, registry, project, asset, version string) error {
             }
 
             inside, err := filepath.Rel(registry, target)
-            if err != nil || strings.HasPrefix(inside, "../") {
+            if err != nil || !filepath.IsLocal(inside) {
                 return fmt.Errorf("symbolic links to files outside the registry (%q) are not supported", target)
             }
             if tstat.IsDir() {
