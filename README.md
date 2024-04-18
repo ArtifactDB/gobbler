@@ -344,16 +344,27 @@ mkdir REGISTRY
 chmod 755 REGISTRY
 ```
 
-Finally, start the Gobbler by running the binary with a few arguments, including the UIDs of administrators:
+Finally, start the Gobbler by running the binary:
 
 ```sh
 ./gobbler \
     -staging STAGING \
     -registry REGISTRY \
     -admin ADMIN1,ADMIN2 \
-    -port PORT
+    -port PORT \
+    -prefix PREFIX
 ```
 
-Multiple Gobbler instances can target the same `REGISTRY` with different `STAGING`.
-This is useful for complex configurations where the same filesystem is mounted in multiple compute environments,
-whereby a separate Gobbler instance can be set up in each environment to enable uploads. 
+The following optional arguments can be used to fine-tune the Gobbler's behavior:
+
+- `-admin` contains a comma-separated list of administrator UIDs. 
+  This defaults to an empty strings, i.e., no administrators.
+- `-port` specifies the port for API calls.
+  This defaults to 8080.
+- `-prefix` adds an extra prefix to all endpoints, e.g., to disambiguate between versions.
+  For example, a prefix of `api/v2` would change the list endpoint to `/api/v2/list`.
+  This defaults to an empty string, i.e., no prefix.
+
+Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
+This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;
+a separate Gobbler instance can be set up in each environment to enable uploads.
