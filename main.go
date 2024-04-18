@@ -291,5 +291,5 @@ func main() {
     }()
 
     // Setting up the API.
-    http.ListenAndServe("0.0.0.0:" + strconv.Itoa(*port), nil)
+    log.Fatal(http.ListenAndServe("0.0.0.0:" + strconv.Itoa(*port), nil))
 }
