@@ -45,6 +45,18 @@ func dumpHttpErrorResponse(w http.ResponseWriter, err error, path string) {
     dumpJsonResponse(w, status_code, map[string]interface{}{ "status": "ERROR", "reason": message }, path)
 }
 
+func configureCors(w http.ResponseWriter, r *http.Request) bool {
+    if r.Method == "OPTIONS" {
+        w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        w.Header().Set("Access-Control-Allow-Headers", "*")
+        w.WriteHeader(http.StatusNoContent)
+        return true
+    } else {
+        return false
+    }
+}
+
 /***************************************************/
 
 func checkRequestFile(path, staging string) (string, error) {
@@ -251,9 +263,27 @@ func main() {
     // Creating an endpoint to list and serve files, for remote access to the registry.
     fs := http.FileServer(http.Dir(globals.Registry))
     fetch_endpt := endpt_prefix + "/fetch/"
-    http.Handle("GET " + fetch_endpt, http.StripPrefix(fetch_endpt, fs))
+    fs_stripped := http.StripPrefix(fetch_endpt, fs)
+    http.HandleFunc(fetch_endpt, func(w http.ResponseWriter, r *http.Request) {
+        if configureCors(w, r) {
+            return
+        }
+        if r.Method != "GET" {
+            w.WriteHeader(http.StatusMethodNotAllowed)
+            return
+        }
+        fs_stripped.ServeHTTP(w, r)
+    })
 
-    http.HandleFunc("GET " + endpt_prefix + "/list", func(w http.ResponseWriter, r *http.Request) {
+    http.HandleFunc(endpt_prefix + "/list", func(w http.ResponseWriter, r *http.Request) {
+        if configureCors(w, r) {
+            return
+        }
+        if r.Method != "GET" {
+            w.WriteHeader(http.StatusMethodNotAllowed)
+            return
+        }
+
         listing, err := listFilesHandler(r, globals.Registry)
         if err != nil {
             dumpHttpErrorResponse(w, err, "list request") 
@@ -263,11 +293,25 @@ func main() {
     })
 
     // Creating some useful endpoints. 
-    http.HandleFunc("GET " + endpt_prefix + "/info", func(w http.ResponseWriter, r *http.Request) {
+    http.HandleFunc(endpt_prefix + "/info", func(w http.ResponseWriter, r *http.Request) {
+        if configureCors(w, r) {
+            return
+        }
+        if r.Method != "GET" {
+            w.WriteHeader(http.StatusMethodNotAllowed)
+            return
+        }
         dumpJsonResponse(w, http.StatusOK, map[string]string{ "staging": staging, "registry": globals.Registry }, "info request")
     })
 
-    http.HandleFunc("GET " + endpt_prefix + "/", func(w http.ResponseWriter, r *http.Request) {
+    http.HandleFunc(endpt_prefix + "/", func(w http.ResponseWriter, r *http.Request) {
+        if configureCors(w, r) {
+            return
+        }
+        if r.Method != "GET" {
+            w.WriteHeader(http.StatusMethodNotAllowed)
+            return
+        }
         dumpJsonResponse(w, http.StatusOK, map[string]string{ "name": "gobbler API", "url": "https://github.com/ArtifactDB/gobbler" }, "default request")
     })
 
