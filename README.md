@@ -209,6 +209,9 @@ This file should be JSON-formatted with the following properties:
 
 On success, the files will be transferred to the registry and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
+Users should consider setting the permissions of this temporary directory (and any of its subdirectories) to `777`.
+This ensures that the Gobbler instance is able to free up space by periodically deleting old files.
+
 ### Setting permissions
 
 Users should create a file with the `request-set_permissions-` prefix, which should be JSON-formatted with the following properties:
@@ -368,3 +371,7 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;
 a separate Gobbler instance can be set up in each environment to enable uploads.
+
+The Gobbler will periodically attempt to purge user-owned files in the staging directory that are more than 1 day old.
+However, if the Gobbler is not run as a superuser, the purge will fail for files inside subdirectories that lack appropriate permissions.
+To avoid accumulation of unnecessary files, administrators should consider implementing an automated cron job with elevated privileges to occasionally clean out the staging directory.
