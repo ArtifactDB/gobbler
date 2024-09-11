@@ -63,7 +63,51 @@ func computeChecksum(path string) (string, error) {
     return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func resolveSymlink(
+func createDedupManifest(registry, project, asset string) (map[string]linkMetadata, error) {
+    // Loading the latest version's metadata into a deduplication index.
+    // There's no need to check for probational versions here as only
+    // non-probational versions ever make it into '..latest'.
+    last_dedup := map[string]linkMetadata{}
+    asset_dir := filepath.Join(registry, project, asset)
+    latest_path := filepath.Join(asset_dir, latestFileName)
+
+    _, err := os.Stat(latest_path)
+    if err == nil {
+        latest, err := readLatest(asset_dir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to identify the latest version; %w", err)
+        }
+
+        manifest, err := readManifest(filepath.Join(asset_dir, latest.Version))
+        if err != nil {
+            return nil, fmt.Errorf("failed to read the latest version's manifest; %w", err)
+        }
+
+        for k, v := range manifest {
+            self := linkMetadata{
+                Project: project,
+                Asset: asset,
+                Version: latest.Version,
+                Path: k,
+            }
+            if v.Link != nil {
+                if v.Link.Ancestor != nil {
+                    self.Ancestor = v.Link.Ancestor
+                } else {
+                    self.Ancestor = v.Link
+                }
+            }
+            last_dedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
+        }
+
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return nil, fmt.Errorf("failed to stat '" + latest_path + "; %w", err)
+    }
+
+    return last_dedup, nil
+}
+
+func resolveRegistrySymlink(
     registry string,
     project string,
     asset string,
@@ -180,51 +224,9 @@ func createRelativeSymlink(relative_target, relative_link, full_link string) err
 }
 
 func Transfer(source, registry, project, asset, version string) error {
-    destination := filepath.Join(registry, project, asset, version)
-    manifest := map[string]interface{}{}
-    manifest_cache := map[string]map[string]manifestEntry{}
-    summary_cache := map[string]bool{}
-
-    // Loading the latest version's metadata into a deduplication index.
-    // There's no need to check for probational versions here as only
-    // non-probational versions ever make it into '..latest'.
-    last_dedup := map[string]linkMetadata{}
-    {
-        asset_dir := filepath.Join(registry, project, asset)
-        latest_path := filepath.Join(asset_dir, latestFileName)
-
-        _, err := os.Stat(latest_path)
-        if err == nil {
-            latest, err := readLatest(asset_dir)
-            if err != nil {
-                return fmt.Errorf("failed to identify the latest version; %w", err)
-            }
-
-            manifest, err := readManifest(filepath.Join(asset_dir, latest.Version))
-            if err != nil {
-                return fmt.Errorf("failed to read the latest version's manifest; %w", err)
-            }
-
-            for k, v := range manifest {
-                self := linkMetadata{
-                    Project: project,
-                    Asset: asset,
-                    Version: latest.Version,
-                    Path: k,
-                }
-                if v.Link != nil {
-                    if v.Link.Ancestor != nil {
-                        self.Ancestor = v.Link.Ancestor
-                    } else {
-                        self.Ancestor = v.Link
-                    }
-                }
-                last_dedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
-            }
-
-        } else if !errors.Is(err, os.ErrNotExist) {
-            return fmt.Errorf("failed to stat '" + latest_path + "; %w", err)
-        }
+    last_dedup, err := createDedupManifest(registry, project, asset)
+    if err != nil {
+        return err
     }
 
     // Creating a function to add the links.
@@ -238,6 +240,16 @@ func Transfer(source, registry, project, asset, version string) error {
         }
         sublinks[base] = link_info
     }
+
+    type BasicSymLink struct {
+        Path string
+        Rel string
+    }
+    more_links := []BasicSymLink{}
+
+    // First pass fills the manifest with non-symlink files.
+    destination := filepath.Join(registry, project, asset, version)
+    manifest := map[string]interface{}{}
 
     err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
@@ -275,35 +287,7 @@ func Transfer(source, registry, project, asset, version string) error {
 
         // Symlinks to files inside the registry are preserved.
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            target, err := os.Readlink(path)
-            if err != nil {
-                return fmt.Errorf("failed to read the symlink at '" + path + "'; %w", err)
-            }
-
-            tstat, err := os.Stat(target)
-            if err != nil {
-                return fmt.Errorf("failed to stat link target %q; %w", target, err)
-            }
-
-            inside, err := filepath.Rel(registry, target)
-            if err != nil || !filepath.IsLocal(inside) {
-                return fmt.Errorf("symbolic links to files outside the registry (%q) are not supported", target)
-            }
-            if tstat.IsDir() {
-                return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
-            }
-
-            obj, err := resolveSymlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
-            if err != nil {
-                return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
-            }
-            manifest[rel] = *obj
-
-            err = createRelativeSymlink(inside, rel, final)
-            if err != nil {
-                return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
-            }
-            addLink(rel, obj.Link)
+            more_links = append(more_links, BasicSymLink{ Path: path, Rel: rel })
             return nil
         }
 
@@ -349,6 +333,66 @@ func Transfer(source, registry, project, asset, version string) error {
     if err != nil {
         return err
     }
+
+    // Second pass goes through all the symlinks to existing files in the registry.
+    manifest_cache := map[string]map[string]manifestEntry{}
+    summary_cache := map[string]bool{}
+
+    type BasicSymLink struct {
+        Path string
+        Rel string
+    }
+    more_links := []BasicSymLink{}
+
+
+    for entry := range more_links {
+        path := entry.Path
+        rel := entry.Rel
+
+        target, err := os.Readlink(path)
+        if err != nil {
+            return fmt.Errorf("failed to read the symlink at '" + path + "'; %w", err)
+        }
+
+        if (!filepath.IsAbs(target)) {
+            target = filepath.Clean(filepath.Join(filepath.Dir(path), target))
+        }
+
+        tstat, err := os.Stat(target)
+        if err != nil {
+            return fmt.Errorf("failed to stat link target %q; %w", target, err)
+        }
+        if tstat.IsDir() {
+            return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
+        }
+
+        inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(inside) {
+            local_inside, err := filepath.Rel(source, target)
+            if err == nil && filepath.IsLocal(inside) {
+                local_links = append(local_links, entry)
+                continue
+            }
+            return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
+        }
+
+        obj, err := resolveRegistrySymlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
+        if err != nil {
+            return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
+        }
+        manifest[rel] = *obj
+
+        err = createRelativeSymlink(inside, rel, final)
+        if err != nil {
+            return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
+        }
+        addLink(rel, obj.Link)
+    }
+
+    // Third pass
+
+
+
 
     // Dumping the JSON metadata.
     manifest_path := filepath.Join(destination, manifestFileName)
