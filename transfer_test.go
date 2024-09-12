@@ -186,7 +186,18 @@ func extractSymlinkTarget(path string) (string, error) {
     return target, nil
 }
 
-func verifySymlink(manifest map[string]manifestEntry, version_dir, path, contents, target_project, target_asset, target_version, target_path string, has_ancestor bool) error {
+func verifySymlink(
+    manifest map[string]manifestEntry,
+    version_dir,
+    path,
+    contents,
+    target_project,
+    target_asset,
+    target_version,
+    target_path string,
+    in_registry bool,
+    has_ancestor bool,
+) error {
     info, ok := manifest[path]
     if !ok || 
         int(info.Size) != len(contents) || 
@@ -209,39 +220,81 @@ func verifySymlink(manifest map[string]manifestEntry, version_dir, path, content
     if err != nil {
         return err
     }
-    if !strings.HasPrefix(target, "../") || !strings.HasSuffix(target, "/" + target_project + "/" + target_asset + "/" + target_version + "/" + target_path) {
-        return fmt.Errorf("unexpected symlink target for %q (got %q)", path, target)
+
+    okay := true
+    if in_registry {
+        if !strings.HasPrefix(target, "../") || !strings.HasSuffix(target, "/" + target_project + "/" + target_asset + "/" + target_version + "/" + target_path) {
+            okay = false
+        }
+    } else {
+        if filepath.IsAbs(target) {
+            okay = false
+        } else {
+            candidate := filepath.Clean(filepath.Join(filepath.Dir(path), target))
+            if !filepath.IsLocal(candidate) {
+                okay = false
+            }
+        }
+    }
+    if !okay {
+        return fmt.Errorf("unexpected symlink format for %q (got %q)", path, target)
     }
 
-    {
-        dir, base := filepath.Split(path)
-        linkmeta_path := filepath.Join(version_dir, dir, linksFileName)
-        linkmeta_raw, err := os.ReadFile(linkmeta_path)
-        if err != nil {
-            return fmt.Errorf("failed to read the link metadata; %w", err)
-        }
+    dir, base := filepath.Split(path)
+    linkmeta_path := filepath.Join(version_dir, dir, linksFileName)
+    linkmeta_raw, err := os.ReadFile(linkmeta_path)
+    if err != nil {
+        return fmt.Errorf("failed to read the link metadata; %w", err)
+    }
 
-        var linkmeta map[string]linkMetadata
-        err = json.Unmarshal(linkmeta_raw, &linkmeta)
-        if err != nil {
-            return fmt.Errorf("failed to parse the link metadata; %w", err)
-        }
+    var linkmeta map[string]linkMetadata
+    err = json.Unmarshal(linkmeta_raw, &linkmeta)
+    if err != nil {
+        return fmt.Errorf("failed to parse the link metadata; %w", err)
+    }
 
-        found, ok := linkmeta[base]
-        if !ok {
-            return fmt.Errorf("failed to find %q in the link metadata of %q", base, dir)
-        }
+    found, ok := linkmeta[base]
+    if !ok {
+        return fmt.Errorf("failed to find %q in the link metadata of %q", base, dir)
+    }
 
-        if found.Project != target_project || 
-            found.Asset != target_asset || 
-            found.Version != target_version || 
-            found.Path != target_path ||
-            has_ancestor != (found.Ancestor != nil) {
-            return fmt.Errorf("unexpected link metadata entry for %q", path)
-        }
+    if found.Project != target_project || 
+        found.Asset != target_asset || 
+        found.Version != target_version || 
+        found.Path != target_path ||
+        has_ancestor != (found.Ancestor != nil) {
+        return fmt.Errorf("unexpected link metadata entry for %q", path)
     }
 
     return nil
+}
+
+func verifyRegistrySymlink(
+    manifest map[string]manifestEntry,
+    version_dir,
+    path,
+    contents,
+    target_project,
+    target_asset,
+    target_version,
+    target_path string,
+    has_ancestor bool,
+) error {
+    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, true, has_ancestor)
+}
+
+func verifyLocalSymlink(
+    manifest map[string]manifestEntry,
+    version_dir,
+    path,
+    contents,
+    target_project,
+    target_asset,
+    target_version,
+    target_path string,
+    has_ancestor bool,
+) error {
+    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, false, has_ancestor)
 }
 
 func verifyNotSymlink(manifest map[string]manifestEntry, version_dir, path, contents string) error {
@@ -369,13 +422,13 @@ func TestTransferDeduplication(t *testing.T) {
         }
 
         // Different file name.
-        err = verifySymlink(man, destination, "evolution/next", "raichu", project, asset, version, "evolution/up", false)
+        err = verifyRegistrySymlink(man, destination, "evolution/next", "raichu", project, asset, version, "evolution/up", false)
         if err != nil {
             t.Fatal(err)
         }
 
         // Same file name.
-        err = verifySymlink(man, destination, "moves/electric/thunder", "110", project, asset, version, "moves/electric/thunder", false)
+        err = verifyRegistrySymlink(man, destination, "moves/electric/thunder", "110", project, asset, version, "moves/electric/thunder", false)
         if err != nil {
             t.Fatal(err)
         }
@@ -427,7 +480,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verifySymlink(man, destination, "evolution/final", "raichu", project, asset, "blue", "evolution/next", true)
+        err = verifyRegistrySymlink(man, destination, "evolution/final", "raichu", project, asset, "blue", "evolution/next", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -436,7 +489,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = verifySymlink(man, destination, "moves/electric/thunderbolt", "90", project, asset, "blue", "moves/electric/thunderbolt", true)
+        err = verifyRegistrySymlink(man, destination, "moves/electric/thunderbolt", "90", project, asset, "blue", "moves/electric/thunderbolt", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -455,7 +508,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = verifySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "blue", "moves/steel/iron_tail", false)
+        err = verifyRegistrySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "blue", "moves/steel/iron_tail", false)
         if err != nil {
             t.Fatal(err)
         }
@@ -480,7 +533,7 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verifySymlink(man, destination, "evolution/final", "raichu", project, asset, "green", "evolution/final", true)
+        err = verifyRegistrySymlink(man, destination, "evolution/final", "raichu", project, asset, "green", "evolution/final", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -489,13 +542,13 @@ func TestTransferDeduplication(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = verifySymlink(man, destination, "moves/electric/thunder_shock", "9999", project, asset, "green", "moves/electric/thunder_shock", false)
+        err = verifyRegistrySymlink(man, destination, "moves/electric/thunder_shock", "9999", project, asset, "green", "moves/electric/thunder_shock", false)
         if err != nil {
             t.Fatal(err)
         }
 
         // We can also form new ancestral links.
-        err = verifySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "green", "moves/steel/iron_tail", true)
+        err = verifyRegistrySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "green", "moves/steel/iron_tail", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -506,7 +559,7 @@ func TestTransferDeduplication(t *testing.T) {
     }
 }
 
-func TestTransferLinks(t *testing.T) {
+func TestTransferRegistryLinks(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -610,12 +663,12 @@ func TestTransferLinks(t *testing.T) {
             t.Fatalf("failed to read the manifest; %v", err)
         }
 
-        err = verifySymlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
+        err = verifyRegistrySymlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
         if err != nil {
             t.Fatal(err)
         }
 
-        err = verifySymlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
+        err = verifyRegistrySymlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -624,7 +677,7 @@ func TestTransferLinks(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = verifySymlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
+        err = verifyRegistrySymlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
         if err != nil {
             t.Fatal(err)
         }
@@ -640,7 +693,7 @@ func TestTransferLinks(t *testing.T) {
     }
 }
 
-func TestTransferLinkFailures(t *testing.T) {
+func TestTransferRegistryLinkFailures(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -674,7 +727,7 @@ func TestTransferLinkFailures(t *testing.T) {
         asset := "PIKAPIKA"
         version := "SILVER"
         err = Transfer(src, reg, project, asset, version)
-        if err == nil || !strings.Contains(err.Error(), "outside the registry") {
+        if err == nil || !strings.Contains(err.Error(), "outside the source or registry") {
             t.Fatal("expected transfer failure for files outside the registry")
         }
     }
@@ -817,6 +870,142 @@ func TestTransferLinkFailures(t *testing.T) {
         err = Transfer(src, reg, project, asset, version)
         if err == nil || !strings.Contains(err.Error(), "symbolic links to directories") {
             t.Fatal("expected a failure when a symbolic link to a directory is present")
+        }
+    }
+}
+
+func TestTransferLocalLinks(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForTransferTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    err = os.Symlink(filepath.Join(src, "type"), filepath.Join(src, "type2"))
+    if err != nil {
+        t.Fatalf("failed to create a symlink for 'types2'; %v", err)
+    }
+
+    err = os.Symlink(filepath.Join(src, "type2"), filepath.Join(src, "evolution", "foo")) // symlink to another symlink.
+    if err != nil {
+        t.Fatalf("failed to create a symlink for 'evolution/foo'; %v", err)
+    }
+
+    err = os.Symlink(filepath.Join("..", "type2"), filepath.Join(src, "evolution", "bar")) // same, but as a relative link.
+    if err != nil {
+        t.Fatalf("failed to create a symlink for 'evolution/bar'; %v", err)
+    }
+
+    err = os.Symlink(filepath.Join("evolution", "up"), filepath.Join(src, "WHEE")) // relative symlink to subdirectory.
+    if err != nil {
+        t.Fatalf("failed to create a symlink for 'WHEE'; %v", err)
+    }
+
+    project := "POKEMON"
+    asset := "PIKAPIKA"
+    version := "GOLD"
+
+    err = Transfer(src, reg, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    destination := filepath.Join(reg, project, asset, version)
+    man, err := readManifest(destination)
+    if err != nil {
+        t.Fatalf("failed to read the manifest; %v", err)
+    }
+
+    err = verifyLocalSymlink(man, destination, "type2", "electric", project, asset, version, "type", false)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = verifyLocalSymlink(man, destination, "evolution/foo", "electric", project, asset, version, "type2", true)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = verifyAncestralSymlink(man, destination, "evolution/foo", reg, project, asset, version, "type")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = verifyLocalSymlink(man, destination, "evolution/bar", "electric", project, asset, version, "type2", true)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = verifyAncestralSymlink(man, destination, "evolution/bar", reg, project, asset, version, "type")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = verifyLocalSymlink(man, destination, "WHEE", "raichu", project, asset, version, "evolution/up", false)
+    if err != nil {
+        t.Fatal(err)
+    }
+}
+
+func TestTransferLocalLinkFailures(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    // Cyclic symlinks.
+    {
+        src, err := setupSourceForTransferTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(src, "foo"), filepath.Join(src, "bar"))
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'bar'; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(src, "bar"), filepath.Join(src, "evolution/whee")) 
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'evolution/whee'; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(src, "evolution/whee"), filepath.Join(src, "foo")) 
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'foo'; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "GOLD"
+
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "cyclic") {
+            t.Fatalf("failed to detect cyclic local links")
+        }
+    }
+
+    // Symlink to a directory.
+    {
+        src, err := setupSourceForTransferTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        err = os.Symlink(filepath.Join(src, "evolution"), filepath.Join(src, "FOOBAR")) 
+        if err != nil {
+            t.Fatalf("failed to create a symlink for 'FOOBAR'; %v", err)
+        }
+
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "SILVER"
+
+        err = Transfer(src, reg, project, asset, version)
+        if err == nil || !strings.Contains(err.Error(), "should point") {
+            t.Fatalf("failed to detect links to a directory")
         }
     }
 }
