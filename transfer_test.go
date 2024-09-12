@@ -1009,5 +1009,3 @@ func TestTransferLocalLinkFailures(t *testing.T) {
         }
     }
 }
-
-
