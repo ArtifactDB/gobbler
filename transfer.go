@@ -201,7 +201,7 @@ func resolveRegistrySymlink(
     return &output, nil
 }
 
-func createRelativeSymlink(relative_target, relative_link, full_link string) error {
+func createRegistrySymlink(relative_target, relative_link, full_link string) error {
     // Actually creating the link. We convert it to a relative path
     // within the registry so that the registry is relocatable.
     working := relative_link
@@ -218,7 +218,91 @@ func createRelativeSymlink(relative_target, relative_link, full_link string) err
 
     err := os.Symlink(relative_target, full_link)
     if err != nil {
-        return fmt.Errorf("failed to create a symlink at '" + full_link + "'; %w", err)
+        return fmt.Errorf("failed to create a registry symlink at '" + full_link + "'; %w", err)
+    }
+    return nil
+}
+
+type localLinkInfo struct {
+    Target string
+    Final string
+}
+
+func resolveLocalSymlink(
+    project string,
+    asset string,
+    version string,
+    rel string,
+    details *localLinkInfo,
+    local_links map[string]localLinkInfo,
+    manifest map[string]manifestEntry,
+    traversed map[string]bool,
+    source string,
+) (*manifestEntry, error) {
+    var target_deets *manifestEntry
+    man_deets, man_ok := manifest[details.Target]
+    if man_ok {
+        target_deets = &man_deets
+
+    } else {
+        _, trav_ok := traversed[rel]
+        if trav_ok {
+            return nil, fmt.Errorf("cyclic symlinks detected at '%s'", filepath.Join(source, rel))
+        }
+        traversed[rel] = false
+
+        rel_deets, rel_ok := local_links[details.Target]
+        if !rel_ok {
+            // This should never be reached as the input is already screened for symlinks with valid targets. 
+            return nil, fmt.Errorf("symlink at '%s' should point to a file or another symlink", filepath.Join(source, rel))
+        }
+
+        ancestor, err := resolveLocalSymlink(project, asset, version, details.Target, &rel_deets, local_links, manifest, traversed, source)
+        if err != nil {
+            return nil, err
+        }
+
+        target_deets = ancestor
+    }
+
+    output := manifestEntry{
+        Size: target_deets.Size,
+        Md5sum: target_deets.Md5sum,
+        Link: &linkMetadata{
+            Project: project,
+            Asset: asset,
+            Version: version,
+            Path: details.Target,
+        },
+    }
+
+    if target_deets.Link != nil {
+        if target_deets.Link.Ancestor != nil {
+            output.Link.Ancestor = target_deets.Link.Ancestor
+        } else {
+            output.Link.Ancestor = target_deets.Link
+        }
+    }
+
+    manifest[rel] = output
+    return &output, nil
+}
+
+func createLocalSymlink(relative_target, relative_link, full_link string) error {
+    // Actually creating the link. We convert it to a relative path
+    // within the registry so that the registry is relocatable.
+    working := relative_link
+    for {
+        working = filepath.Dir(working) 
+        if working == "." {
+            break
+        }
+        relative_target = filepath.Join("..", relative_target)
+    }
+
+    err := os.Symlink(relative_target, full_link)
+    if err != nil {
+        return fmt.Errorf("failed to create a local symlink at '" + full_link + "'; %w", err)
     }
     return nil
 }
@@ -241,17 +325,18 @@ func Transfer(source, registry, project, asset, version string) error {
         sublinks[base] = link_info
     }
 
-    type BasicSymLink struct {
+    type basicSymLink struct {
         Path string
         Rel string
+        Final string
     }
-    more_links := []BasicSymLink{}
+    more_links := []basicSymLink{}
 
     // First pass fills the manifest with non-symlink files.
     destination := filepath.Join(registry, project, asset, version)
-    manifest := map[string]interface{}{}
+    manifest := map[string]manifestEntry{}
 
-    err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
+    err = filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + path + "'; %w", err)
         }
@@ -287,7 +372,7 @@ func Transfer(source, registry, project, asset, version string) error {
 
         // Symlinks to files inside the registry are preserved.
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            more_links = append(more_links, BasicSymLink{ Path: path, Rel: rel })
+            more_links = append(more_links, basicSymLink{ Path: path, Rel: rel, Final: final })
             return nil
         }
 
@@ -306,7 +391,7 @@ func Transfer(source, registry, project, asset, version string) error {
         if ok {
             man_entry.Link = &last_entry
             manifest[rel] = man_entry
-            err = createRelativeSymlink(filepath.Join(last_entry.Project, last_entry.Asset, last_entry.Version, last_entry.Path), rel, final)
+            err = createRegistrySymlink(filepath.Join(last_entry.Project, last_entry.Asset, last_entry.Version, last_entry.Path), rel, final)
             if err != nil {
                 return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
             }
@@ -337,17 +422,12 @@ func Transfer(source, registry, project, asset, version string) error {
     // Second pass goes through all the symlinks to existing files in the registry.
     manifest_cache := map[string]map[string]manifestEntry{}
     summary_cache := map[string]bool{}
+    local_links := map[string]localLinkInfo{}
 
-    type BasicSymLink struct {
-        Path string
-        Rel string
-    }
-    more_links := []BasicSymLink{}
-
-
-    for entry := range more_links {
+    for _, entry := range more_links {
         path := entry.Path
         rel := entry.Rel
+        final := entry.Final
 
         target, err := os.Readlink(path)
         if err != nil {
@@ -366,33 +446,43 @@ func Transfer(source, registry, project, asset, version string) error {
             return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
         }
 
-        inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(inside) {
+        registry_inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(registry_inside) {
             local_inside, err := filepath.Rel(source, target)
-            if err == nil && filepath.IsLocal(inside) {
-                local_links = append(local_links, entry)
+            if err == nil && filepath.IsLocal(local_inside) {
+                local_links[rel] = localLinkInfo{ Target: local_inside, Final: final }
                 continue
             }
             return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
         }
 
-        obj, err := resolveRegistrySymlink(registry, project, asset, version, inside, manifest_cache, summary_cache)
+        obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, manifest_cache, summary_cache)
         if err != nil {
             return fmt.Errorf("failed to resolve the symlink at '" + path + "'; %w", err)
         }
         manifest[rel] = *obj
 
-        err = createRelativeSymlink(inside, rel, final)
+        err = createRegistrySymlink(registry_inside, rel, final)
         if err != nil {
             return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
         }
         addLink(rel, obj.Link)
     }
 
-    // Third pass
+    // Third pass to recursively resolve local symlinks.
+    traversed := map[string]bool{}
+    for rel, info := range local_links {
+        man, err := resolveLocalSymlink(project, asset, version, rel, &info, local_links, manifest, traversed, source)
+        if err != nil {
+            return err
+        }
 
-
-
+        err = createLocalSymlink(info.Target, rel, info.Final)
+        if err != nil {
+            return fmt.Errorf("failed to create a symlink for '" + rel + "'; %w", err)
+        }
+        addLink(rel, man.Link)
+    }
 
     // Dumping the JSON metadata.
     manifest_path := filepath.Join(destination, manifestFileName)
