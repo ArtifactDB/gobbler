@@ -202,8 +202,8 @@ func resolveRegistrySymlink(
 }
 
 func createRegistrySymlink(relative_target, relative_link, full_link string) error {
-    // Actually creating the link. We convert it to a relative path
-    // within the registry so that the registry is relocatable.
+    // We convert the link target to a relative path within the registry so
+    // that the registry is easily relocatable.
     working := relative_link
     for {
         working = filepath.Dir(working) 
@@ -253,8 +253,7 @@ func resolveLocalSymlink(
 
         rel_deets, rel_ok := local_links[details.Target]
         if !rel_ok {
-            // This should never be reached as the input is already screened for symlinks with valid targets. 
-            return nil, fmt.Errorf("symlink at '%s' should point to a file or another symlink", filepath.Join(source, rel))
+            return nil, fmt.Errorf("symlink at '%s' should point to a manifest file or another symlink", filepath.Join(source, rel))
         }
 
         ancestor, err := resolveLocalSymlink(project, asset, version, details.Target, &rel_deets, local_links, manifest, traversed, source)
@@ -289,8 +288,6 @@ func resolveLocalSymlink(
 }
 
 func createLocalSymlink(relative_target, relative_link, full_link string) error {
-    // Actually creating the link. We convert it to a relative path
-    // within the registry so that the registry is relocatable.
     working := relative_link
     for {
         working = filepath.Dir(working) 
@@ -438,22 +435,22 @@ func Transfer(source, registry, project, asset, version string) error {
             target = filepath.Clean(filepath.Join(filepath.Dir(path), target))
         }
 
+        registry_inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(registry_inside) {
+            local_inside, err := filepath.Rel(source, target)
+            if err != nil || !filepath.IsLocal(local_inside) {
+                return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
+            }
+            local_links[rel] = localLinkInfo{ Target: local_inside, Final: final }
+            continue
+        }
+
         tstat, err := os.Stat(target)
         if err != nil {
             return fmt.Errorf("failed to stat link target %q; %w", target, err)
         }
         if tstat.IsDir() {
             return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
-        }
-
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            local_inside, err := filepath.Rel(source, target)
-            if err == nil && filepath.IsLocal(local_inside) {
-                local_links[rel] = localLinkInfo{ Target: local_inside, Final: final }
-                continue
-            }
-            return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
         }
 
         obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, manifest_cache, summary_cache)
