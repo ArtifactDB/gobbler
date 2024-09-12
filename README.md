@@ -56,7 +56,8 @@ This contains a JSON object with the following properties:
 When creating a new version of a project's assets, the Gobbler will attempt deduplication based on the file size and MD5 checksum.
 Specifically, it will inspect the immediate previous version of the asset to see if any other files have a matching size/checksum.
 If so, it will create a symbolic link to the file in the previous version rather than wasting disk space with a redundant copy.
-Users can also directly instruct the Gobbler to create links by supplying symlinks to existing files in the registry.
+Users can also directly instruct the Gobbler to create links by supplying symlinks during upload,
+either to existing files in the registry or to other files in the same to-be-uploaded version of the asset.
 
 Any "linked-from" files (i.e., those identified as copies of other existing files) will be present as symbolic links in the registry.
 The existence of linked-from files can also be determined from the `..manifest` file for each project-asset-version;
@@ -188,12 +189,14 @@ On success, a new project is created with the designated permissions and a JSON 
 ### Uploads and updates
 
 To upload a new version of an asset of a project, users should create a temporary directory within the staging directory.
-The directory may have any name but should avoid starting with `request-`.
+The temporary directory may have any name but should avoid starting with `request-`.
 Files within this temporary directory will be transferred to the appropriate subdirectory within the registry, subject to the following rules:
 
 - Hidden files (i.e., prefixed with `.`) are ignored.
 - Symbolic links to directories are not allowed.
-- Symbolic links to files only allowed if the symlink target is an existing file within a project-asset-version subdirectory of the registry.
+- Symbolic links to files are allowed if:
+  - The symlink target is an existing file within a project-asset-version subdirectory of the registry.
+  - The symlink target is a file in the same temporary directory.
 
 Once this directory is constructed and populated, the user should create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
