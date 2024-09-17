@@ -89,6 +89,8 @@ func main() {
         log.Fatalf("failed to prefill active request registry; %v", err)
     }
 
+    upreg := newUploadRequestRegistry(11)
+
     endpt_prefix := *prefix
     if endpt_prefix != "" {
         endpt_prefix = "/" + endpt_prefix
@@ -115,7 +117,12 @@ func main() {
         reqtype := strings.TrimPrefix(path, "request-")
 
         if strings.HasPrefix(reqtype, "upload-") {
-            reportable_err = uploadHandler(reqpath, &globals)
+            token, err0 := uploadPreflightHandler(reqpath, upreg, &globals)
+            if err0 == nil {
+                payload["token"] = token
+            } else {
+                reportable_err = err0
+            }
 
         } else if strings.HasPrefix(reqtype, "refresh_latest-") {
             res, err0 := refreshLatestHandler(reqpath, &globals)
@@ -174,6 +181,18 @@ func main() {
             dumpJsonResponse(w, http.StatusOK, &payload, path)
         } else {
             dumpHttpErrorResponse(w, reportable_err, path) 
+        }
+    })
+
+    http.HandleFunc("POST " + endpt_prefix + "/upload/{path}/{token}", func(w http.ResponseWriter, r *http.Request) {
+        path := r.PathValue("path")
+        token := r.PathValue("token")
+        err := uploadHandler(token, upreg, path, &globals)
+        if err == nil {
+            payload := map[string]string{ "status": "SUCCESS" }
+            dumpJsonResponse(w, http.StatusOK, &payload, path)
+        } else {
+            dumpHttpErrorResponse(w, err, path) 
         }
     })
 
