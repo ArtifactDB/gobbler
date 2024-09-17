@@ -329,7 +329,7 @@ Log files are held for 7 days before deletion.
 First, clone this repository and build the binary. 
 This requires the [Go toolchain](https://go.dev/dl) (version 1.16 or higher).
 
-```sh
+```bash
 git clone https://github.com/ArtifactDB/gobbler
 cd gobbler && go build
 ```
@@ -337,9 +337,9 @@ cd gobbler && go build
 Then, set up a staging directory with global read/write permissions.
 All parent directories of the staging directory should be at least globally executable.
 We also recommend setting up file access control lists if these are available,
-as this ensures that all user-created temporary files and upload directories can be eventually deleted by the Gobbler'.
+as this ensures that all user-created temporary files and upload directories can be eventually deleted by the Gobbler's automatic clean-up.
 
-```sh
+```bash
 mkdir STAGING
 chmod 777 STAGING
 setfacl -Rdm u:SERVICE_NAME:rwx STAGING
@@ -348,14 +348,14 @@ setfacl -Rdm u:SERVICE_NAME:rwx STAGING
 Next, set up a registry directory with global read-only permissions.
 Note that the registry and staging directories do not need to be on the same filesystem (e.g., for mounted shares), as long as both are accessible to users. 
 
-```sh
+```bash
 mkdir REGISTRY
 chmod 755 REGISTRY
 ```
 
 Finally, start the Gobbler by running the binary:
 
-```sh
+```bash
 ./gobbler \
     -staging STAGING \
     -registry REGISTRY \
