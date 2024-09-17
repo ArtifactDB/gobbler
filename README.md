@@ -336,10 +336,13 @@ cd gobbler && go build
 
 Then, set up a staging directory with global read/write permissions.
 All parent directories of the staging directory should be at least globally executable.
+We also recommend setting up file access control lists if these are available,
+as this ensures that all user-created temporary files and upload directories can be eventually deleted by the Gobbler'.
 
 ```sh
 mkdir STAGING
 chmod 777 STAGING
+setfacl -Rdm u:SERVICE_NAME:rwx STAGING
 ```
 
 Next, set up a registry directory with global read-only permissions.
@@ -374,7 +377,3 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;
 a separate Gobbler instance can be set up in each environment to enable uploads.
-
-The Gobbler will periodically attempt to purge user-owned files in the staging directory that are more than 1 day old.
-However, if the Gobbler is not run as a superuser, the purge will fail for files inside subdirectories that lack appropriate permissions.
-To avoid accumulation of unnecessary files, administrators should consider implementing an automated cron job with elevated privileges to occasionally clean out the staging directory.
