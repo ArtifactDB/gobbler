@@ -10,6 +10,7 @@ import (
     "net/http"
     "sync"
     "math/rand"
+    "strings"
 )
 
 type uploadRequest struct {
@@ -65,6 +66,10 @@ func (u *uploadRequestRegistry) Add(req *uploadRequest, user string, start_time 
             u.Locks[pool].Lock()
             defer u.Locks[pool].Unlock()
 
+            if u.Requests[pool] == nil {
+                u.Requests[pool] = make(map[string]uploadRequestPlus)
+            }
+
             _, ok := u.Requests[pool][token]
             if !ok {
                 u.Requests[pool][token] = uploadRequestPlus{ Base: req, User: user, StartTime: start_time }
@@ -113,7 +118,7 @@ func (u *uploadRequestRegistry) Pop(token string) (*uploadRequest, string, time.
     }
 }
 
-func uploadPreflightHandler(reqpath string, upreg *uploadRequestRegistry, globals *globalConfiguration) (string, error) {
+func uploadPreflightHandler(reqpath string, upreg *uploadRequestRegistry) (string, error) {
     upload_start := time.Now()
 
     req_user, err := identifyUser(reqpath)
@@ -136,12 +141,8 @@ func uploadPreflightHandler(reqpath string, upreg *uploadRequestRegistry, global
         return "", newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err))
     }
     source := *(request.Source)
-    if filepath.IsAbs(source) {
+    if !filepath.IsAbs(source) {
         return "", newHttpError(http.StatusBadRequest, errors.New("'source' should be an absolute path"))
-    }
-    _, err = os.ReadDir(source)
-    if err != nil {
-        return "", newHttpError(http.StatusBadRequest, fmt.Errorf("failed to read the contents of the 'source' path; %w", err))
     }
 
     // Now checking through all of the project/asset/version names.
@@ -183,7 +184,7 @@ func uploadHandler(token string, upreg *uploadRequestRegistry, path string, glob
     if path != filepath.Base(path) {
         return newHttpError(http.StatusBadRequest, errors.New("'path' should refer to a file in the 'source' directory"))
     }
-    if strings.HasPrefix(path, ".") {
+    if !strings.HasPrefix(path, ".") {
         return newHttpError(http.StatusBadRequest, errors.New("'path' should refer to a dotfile")) // to avoid inclusion during transfer.
     }
     source := *(request.Source)

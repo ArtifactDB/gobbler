@@ -117,7 +117,7 @@ func main() {
         reqtype := strings.TrimPrefix(path, "request-")
 
         if strings.HasPrefix(reqtype, "upload-") {
-            token, err0 := uploadPreflightHandler(reqpath, upreg, &globals)
+            token, err0 := uploadPreflightHandler(reqpath, upreg)
             if err0 == nil {
                 payload["token"] = token
             } else {
