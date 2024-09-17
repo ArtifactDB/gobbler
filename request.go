@@ -88,8 +88,8 @@ func checkRequestFile(path, staging string, expiry time.Duration) (string, error
         return "", newHttpError(http.StatusBadRequest, errors.New("file name should start with \"request-\""))
     }
 
-    if !filepath.IsLocal(path) {
-        return "", newHttpError(http.StatusBadRequest, errors.New("path should be local to the staging directory"))
+    if path != filepath.Base(path) {
+        return "", newHttpError(http.StatusBadRequest, errors.New("path should be the name of a file in the staging directory"))
     }
     reqpath := filepath.Join(staging, path)
 

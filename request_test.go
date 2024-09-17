@@ -38,7 +38,7 @@ func TestCheckRequestFile(t *testing.T) {
 
     t.Run("locality failure", func(t *testing.T) {
         _, err := checkRequestFile("request-blah/../../foo", staging, time.Minute)
-        if err == nil || !strings.Contains(err.Error(), "local") {
+        if err == nil || !strings.Contains(err.Error(), "name of a file") {
             t.Fatal("should have failed")
         }
     })
