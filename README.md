@@ -336,12 +336,13 @@ cd gobbler && go build
 
 Then, set up a staging directory with global read/write permissions.
 All parent directories of the staging directory should be at least globally executable.
+We enable the sticky bit so that users do not interfere with each other when writing request files or creating upload directories. 
 We also recommend setting up file access control lists if these are available,
-as this ensures that all user-created temporary files and upload directories can be eventually deleted by the Gobbler's automatic clean-up.
+as this ensures that all user-created content in the staging directory can be eventually deleted by the Gobbler.
 
 ```bash
 mkdir STAGING
-chmod 777 STAGING
+chmod 1777 STAGING # 1 for the sticky bit
 setfacl -Rdm u:SERVICE_NAME:rwx STAGING
 ```
 
