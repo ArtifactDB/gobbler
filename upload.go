@@ -10,97 +10,93 @@ import (
     "net/http"
 )
 
-func configureAsset(project_dir string, asset string) error {
-    err := isBadName(asset)
-    if err != nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid asset name %q; %w", asset, err))
-    }
-
-    asset_dir := filepath.Join(project_dir, asset)
-    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
-        err = os.Mkdir(asset_dir, 0755)
-        if err != nil {
-            return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
-        }
-    }
-
-    return nil
+type uploadRequest struct {
+    Source *string `json:"source"`
+    Project *string `json:"project"`
+    Asset *string `json:"asset"`
+    Version *string `json:"version"`
+    OnProbation *bool `json:"on_probation"`
+    User string `json:"-"`
 }
 
-func configureVersion(asset_dir string, version string) error {
-    err := isBadName(version)
+func uploadPreflight(reqpath string) (*uploadRequest, error) {
+    handle, err := os.ReadFile(reqpath)
     if err != nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid version name %q; %w", version, err))
+        return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
     }
-
-    candidate_path := filepath.Join(asset_dir, version)
-    if _, err := os.Stat(candidate_path); err == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("version %q already exists in %q", version, asset_dir))
-    }
-
-    err = os.Mkdir(candidate_path, 0755)
-    if err != nil {
-        return fmt.Errorf("failed to create a new version directory at %q; %w", candidate_path, err)
-    }
-
-    return nil
-}
-
-func uploadHandler(reqpath string, globals *globalConfiguration) error {
-    request := struct {
-        Source *string `json:"source"`
-        Project *string `json:"project"`
-        Asset *string `json:"asset"`
-        Version *string `json:"version"`
-        OnProbation *bool `json:"on_probation"`
-    }{}
-
-    upload_start := time.Now()
 
     req_user, err := identifyUser(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    var source string
-
-    // Reading in the request.
-    {
-        handle, err := os.ReadFile(reqpath)
-        if err != nil {
-            return fmt.Errorf("failed to read %q; %w", reqpath, err)
-        }
-        err = json.Unmarshal(handle, &request)
-        if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
-        }
-
-        if request.Source == nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err))
-        }
-        source = *(request.Source)
-        if source != filepath.Base(source) {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath))
-        }
-        source = filepath.Join(filepath.Dir(reqpath), source)
-
-        source_user, err := identifyUser(source)
-        if err != nil {
-            return fmt.Errorf("failed to find owner of %q; %w", source, err)
-        }
-        if source_user != req_user {
-            return newHttpError(http.StatusForbidden, fmt.Errorf("requesting user must be the same as the owner of the 'source' directory (%s vs %s)", source_user, req_user))
-        }
+    request := uploadRequest{}
+    err = json.Unmarshal(handle, &request)
+    if err != nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
     }
 
+    if request.Source == nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'source' property in %q; %w", reqpath, err))
+    }
+    source := *(request.Source)
+    if source != filepath.Base(source) {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath))
+    }
+    source = filepath.Join(filepath.Dir(reqpath), source)
+    source_user, err := identifyUser(source)
+    if err != nil {
+        return nil, fmt.Errorf("failed to find owner of %q; %w", source, err)
+    }
+    if source_user != req_user {
+        return nil, newHttpError(http.StatusForbidden, fmt.Errorf("requesting user must be the same as the owner of the 'source' directory (%s vs %s)", source_user, req_user))
+    }
+    request.Source = &source
+
+    if request.Project == nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'project' property in %q", reqpath))
+    }
+    project := *(request.Project)
+    err = isBadName(project)
+    if err != nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name %q; %w", project, err))
+    }
+
+    if request.Asset == nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected an 'asset' property in %q", reqpath))
+    }
+    asset := *(request.Asset)
+    err = isBadName(asset)
+    if err != nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid asset name %q; %w", asset, err))
+    }
+
+    if request.Version == nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'version' property in %q", reqpath))
+    }
+    version := *(request.Version)
+    err = isBadName(version)
+    if err != nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid version name %q; %w", version, err))
+    }
+
+    request.User = req_user
+    return &request, nil
+}
+
+func uploadHandler(reqpath string, globals *globalConfiguration) error {
+    upload_start := time.Now()
+
+    request, err := uploadPreflight(reqpath)
+    if err != nil {
+        return err
+    }
+
+    req_user := request.User
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
-    if request.Project == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'project' property in %q", reqpath))
-    }
     project := *(request.Project)
-
     project_dir := filepath.Join(globals.Registry, project)
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
@@ -121,25 +117,24 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // Configuring the asset and version.
-    if request.Asset == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("expected an 'asset' property in %q", reqpath))
-    }
     asset := *(request.Asset)
-
-    err = configureAsset(project_dir, asset)
-    if err != nil {
-        return fmt.Errorf("failed to configure the asset for request %q; %w", reqpath, err)
-    }
     asset_dir := filepath.Join(project_dir, asset)
-
-    if request.Version == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'version' property in %q", reqpath))
+    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+        err = os.Mkdir(asset_dir, 0755)
+        if err != nil {
+            return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
+        }
     }
-    version := *(request.Version)
 
-    err = configureVersion(asset_dir, version)
+    version := *(request.Version)
+    version_dir := filepath.Join(asset_dir, version)
+    if _, err := os.Stat(version_dir); err == nil {
+        return newHttpError(http.StatusBadRequest, fmt.Errorf("version %q already exists in %q", version, asset_dir))
+    }
+
+    err = os.Mkdir(version_dir, 0755)
     if err != nil {
-        return fmt.Errorf("failed to configure the version for request %q; %w", reqpath, err)
+        return fmt.Errorf("failed to create a new version directory at %q; %w", version_dir, err)
     }
 
     // Now transferring all the files. This involves setting up an abort loop
@@ -151,6 +146,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
     }()
 
+    source := *(request.Source)
     err = Transfer(source, globals.Registry, project, asset, version)
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
@@ -158,7 +154,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     // Writing out the various pieces of metadata. This should be, in theory,
     // the 'no-throw' section as no user-supplied values are involved here.
-    version_dir := filepath.Join(asset_dir, version)
     upload_finish := time.Now()
     {
         summary := summaryMetadata {

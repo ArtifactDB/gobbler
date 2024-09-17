@@ -198,7 +198,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
-    {
+    t.Run("bad source", func(t *testing.T) {
         project := "test"
         asset := "gastly"
         version := "lavender"
@@ -213,7 +213,6 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-
         err = uploadHandler(reqname, &globals)
         if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
             t.Fatalf("configuration should have failed without a source")
@@ -224,51 +223,80 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-
         err = uploadHandler(reqname, &globals)
         if err == nil || !strings.Contains(err.Error(), "same directory as") {
             t.Fatalf("configuration should have failed if the source is a path instead of a name")
         }
-    }
+    })
 
-    {
-        project := "foobar"
-        asset := "..gastly"
-        version := "lavender"
-
-        err := setupProjectForUploadTest(project, &globals)
-        if err != nil {
-            t.Fatalf("failed to set up project directory; %v", err)
-        }
-
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+    t.Run("bad project", func(t *testing.T) {
+        req_string := fmt.Sprintf(`{ "source": "%s", "asset": "foo", "version": "bar" }`, filepath.Base(src))
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-
         err = uploadHandler(reqname, &globals)
-        if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
-            t.Fatal("configuration should fail for invalid asset name")
+        if err == nil || !strings.Contains(err.Error(), "expected a 'project'") {
+            t.Fatal("configuration should fail for missing project")
         }
 
-        asset = "gastly"
-        version = "..lavender"
-
-        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "bad/name", "asset": "foo", "version": "bar" }`, filepath.Base(src))
         reqname, err = dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid project name") {
+            t.Fatal("configuration should fail for invalid project name")
+        }
+    })
 
+    t.Run("bad asset", func(t *testing.T) {
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "foo", "version": "bar" }`, filepath.Base(src))
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "expected an 'asset'") {
+            t.Fatal("configuration should fail for missing asset")
+        }
+
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "foo", "asset": "..bar", "version": "bar" }`, filepath.Base(src))
+        reqname, err = dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
+            t.Fatal("configuration should fail for invalid asset name")
+        }
+    })
+
+    t.Run("bad version", func(t *testing.T) {
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "foo", "asset": "bar" }`, filepath.Base(src))
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "expected a 'version'") {
+            t.Fatal("configuration should fail for missing version")
+        }
+
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "foo", "asset": "bar", "version": "" }`, filepath.Base(src))
+        reqname, err = dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
         err = uploadHandler(reqname, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid version name") {
             t.Fatal("configuration should fail for invalid version name")
         }
-    }
+    })
 }
 
-func TestUploadHandlerSimpleUpdate(t *testing.T) {
+func TestUploadHandlerUpdate(t *testing.T) {
     project := "original_series"
     asset := "gastly"
     version := "lavender"
@@ -311,8 +339,8 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
     }
 
     // Executing another transfer on a different version.
-    version = "cerulean"
-    {
+    t.Run("new version", func(t *testing.T) {
+        version := "cerulean"
         req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
@@ -378,62 +406,20 @@ func TestUploadHandlerSimpleUpdate(t *testing.T) {
         if latest.Version != version {
             t.Fatalf("unexpected latest version (expected %q, got %q)", version, latest.Version)
         }
-    }
-}
+    })
 
-func TestUploadHandlerSimpleUpdateFailures(t *testing.T) {
-    reg, err := constructMockRegistry()
-    if err != nil {
-        t.Fatalf("failed to create the registry; %v", err)
-    }
-    globals := newGlobalConfiguration(reg)
+    t.Run("new version", func(t *testing.T) {
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
 
-    src, err := setupSourceForUploadTest()
-    if err != nil {
-        t.Fatalf("failed to set up test directories; %v", err)
-    }
-
-    project := "aaron"
-    err = setupProjectForUploadTest(project, &globals)
-    if err != nil {
-        t.Fatalf("failed to set up project directory; %v", err)
-    }
-
-    // Creating the first version.
-    asset := "BAR"
-    version := "whee"
-
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
-    reqname, err := dumpRequest("upload", req_string)
-    if err != nil {
-        t.Fatalf("failed to create upload request; %v", err)
-    }
-
-    err = uploadHandler(reqname, &globals)
-    if err != nil {
-        t.Fatalf("failed complete configuration; %v", err)
-    }
-    if _, err := os.Stat(filepath.Join(reg, project, asset, version)); err != nil {
-        t.Fatalf("expected creation of the target version directory")
-    }
-
-    // Trying with an existing version.
-    err = uploadHandler(reqname, &globals)
-    if err == nil || !strings.Contains(err.Error(), "already exists") {
-        t.Fatal("configuration should fail for an existing version")
-    }
-
-    // Trying without any version.
-    req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s" }`, filepath.Base(src), project, asset)
-    reqname, err = dumpRequest("upload", req_string)
-    if err != nil {
-        t.Fatalf("failed to create upload request; %v", err)
-    }
-
-    err = uploadHandler(reqname, &globals)
-    if err == nil || !strings.Contains(err.Error(), "expected a 'version'") {
-        t.Fatal("configuration should fail for missing version")
-    }
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "already exists") {
+            t.Fatal("configuration should fail for an existing version")
+        }
+    })
 }
 
 func setupProjectForUploadTestWithPermissions(project string, owners []string, uploaders []unsafeUploaderEntry, globals *globalConfiguration) error {
@@ -450,7 +436,7 @@ func setupProjectForUploadTestWithPermissions(project string, owners []string, u
     return nil
 }
 
-func TestUploadHandlerUpdatePermissions(t *testing.T) {
+func TestUploadHandlerUnauthorized(t *testing.T) {
     reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -484,7 +470,7 @@ func TestUploadHandlerUpdatePermissions(t *testing.T) {
     }
 }
 
-func TestUploadHandlerNewOnProbation(t *testing.T) {
+func TestUploadHandlerProbation(t *testing.T) {
     reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -560,7 +546,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
     self_name := self.Username
 
     // Uploaders are not trusted by default.
-    {
+    t.Run("untrusted uploader", func(t *testing.T) {
         project := "ghost"
         err := setupProjectForUploadTestWithPermissions(project, []string{}, []unsafeUploaderEntry{ unsafeUploaderEntry{ Id: &self_name } }, &globals)
         if err != nil {
@@ -588,10 +574,10 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         if !summ.IsProbational() {
             t.Fatal("expected 'on_probation' to be 'true'")
         }
-    }
+    })
 
     // Checking that trusted uploaders do not get probation.
-    {
+    t.Run("trusted uploader", func(t *testing.T) {
         project := "pokemon_adventures" // changing the project name to get a new project.
         trusted := true
         err := setupProjectForUploadTestWithPermissions(project, []string{}, []unsafeUploaderEntry{ unsafeUploaderEntry{ Id: &self_name, Trusted: &trusted } }, &globals)
@@ -642,10 +628,10 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         if !summ.IsProbational() {
             t.Fatal("expected 'on_probation' to be 'true'")
         }
-    }
+    })
 
     // Owners are free from probation.
-    {
+    t.Run("owner", func(t *testing.T) {
         project := "ss_anne" // changing project name again.
         err := setupProjectForUploadTestWithPermissions(project, []string{ self_name }, nil, &globals)
         if err != nil {
@@ -673,5 +659,5 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         if summ.OnProbation != nil {
             t.Fatal("expected no 'on_probation' entry to be present")
         }
-    }
+    })
 }
