@@ -175,6 +175,12 @@ func TestIsAuthorizedToUpload(t *testing.T) {
     if !ok || !trusted {
         t.Fatalf("unexpected lack of non-probational authorization for an uploader")
     }
+
+    perms.Uploaders = []uploaderEntry{ uploaderEntry{ Id: "*", Trusted: &is_trusted } }
+    ok, trusted = isAuthorizedToUpload("cynthia", nil, &perms, nil, nil)
+    if !ok || !trusted {
+        t.Fatalf("unexpected lack of upload authorization for *")
+    }
 }
 
 func TestSanitizeUploaders(t *testing.T) {
@@ -190,6 +196,13 @@ func TestSanitizeUploaders(t *testing.T) {
     san, err := sanitizeUploaders(uploaders)
     if err != nil || len(san) != 2 || san[0].Id != id1 || san[1].Id != id2 {
         t.Fatalf("validation of uploaders failed for correct uploaders; %v", err)
+    }
+
+    id2 = "*"
+    uploaders[1].Id = &id2
+    san, err = sanitizeUploaders(uploaders)
+    if err != nil || len(san) != 2 || san[0].Id != id1 || san[1].Id != id2 {
+        t.Fatalf("validation of uploaders failed for correct uploaders with a wildcard; %v", err)
     }
 
     mock := "YAAY"

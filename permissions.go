@@ -93,7 +93,8 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
 
     if permissions.Uploaders != nil {
         for _, u := range permissions.Uploaders {
-            if u.Id != username {
+            // Allow the special '*' username to match to any uploader.
+            if u.Id != username && u.Id != "*" {
                 continue
             }
 

@@ -91,10 +91,11 @@ The Gobbler supports three levels of permissions - adminstrators, project owners
 
 The permissions for a project are stored in the `{project}/..permissions` file.
 This is a JSON-formatted file that contains a JSON object with the following properties:
-- `owners`: An array of strings containing the GitHub user names or organizations that own this project.
-- `uploaders`: An array of objects specifying GitHub users or organizations that are authorized to be uploaders.
+- `owners`: An array of strings containing the identities of users who own this project.
+- `uploaders`: An array of objects specifying the users who are authorized to be uploaders.
   Each object has the following properties:
-  - `id`: String containing the identity of the user/organization.
+  - `id`: String containing the identity of the uploading user.
+    This can also be `*` to allow uploads from any user.    
   - `asset` (optional): String containing the name of the asset that the uploader is allowed to upload to.
     If not specified, no restrictions are placed on the asset name.
   - `version` (optional): String containing the name of the version that the uploader is allowed to upload to.
