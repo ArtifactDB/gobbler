@@ -79,6 +79,9 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
     } else {
         perms.Uploaders = []uploaderEntry{}
     }
+    if inperms != nil && inperms.GlobalWrite != nil {
+        perms.GlobalWrite = inperms.GlobalWrite
+    }
 
     err = dumpJson(filepath.Join(project_dir, permissionsFileName), &perms)
     if err != nil {

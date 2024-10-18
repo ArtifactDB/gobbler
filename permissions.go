@@ -24,6 +24,7 @@ type uploaderEntry struct {
 type permissionsMetadata struct {
     Owners []string `json:"owners"`
     Uploaders []uploaderEntry `json:"uploaders"`
+    GlobalWrite *bool `json:"global_write,omitempty"`
 }
 
 const permissionsFileName = "..permissions"
@@ -93,14 +94,12 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
 
     if permissions.Uploaders != nil {
         for _, u := range permissions.Uploaders {
-            // Allow the special '*' username to match to any uploader.
-            if u.Id != username && u.Id != "*" {
+            if u.Id != username {
                 continue
             }
 
             // We accept string pointers because 'version' might not be known
             // at the time of checking permissions for the project as a whole.
-            // ('asset' gets the same treatment for consistency).
             if u.Asset != nil && (asset == nil || *(u.Asset) != *asset) {
                 continue
             }
@@ -123,6 +122,31 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
     }
 
     return false, false
+}
+
+func prepareGlobalWriteNewAsset(username string, permissions *permissionsMetadata, asset string, project_dir string) (bool, error) {
+    if permissions.GlobalWrite == nil || !*(permissions.GlobalWrite) {
+        return false, nil
+    }
+
+    asset_dir := filepath.Join(project_dir, asset)
+    _, err := os.Stat(asset_dir)
+
+    if err == nil || !errors.Is(err, os.ErrNotExist) {
+        return false, nil
+    }
+
+    // Updating the permissions in memory and on disk.
+    is_trusted := true
+    permissions.Uploaders = append(permissions.Uploaders, uploaderEntry{ Id: username, Asset: &asset, Trusted: &is_trusted })
+
+    perm_path := filepath.Join(project_dir, permissionsFileName)
+    err = dumpJson(perm_path, permissions)
+    if err != nil {
+        return false, err
+    }
+
+    return true, nil
 }
 
 func sanitizeUploaders(uploaders []unsafeUploaderEntry) ([]uploaderEntry, error) {
@@ -161,6 +185,7 @@ type unsafeUploaderEntry struct {
 type unsafePermissionsMetadata struct {
     Owners []string `json:"owners"`
     Uploaders []unsafeUploaderEntry `json:"uploaders"`
+    GlobalWrite *bool `json:"global_write"`
 }
 
 func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
@@ -217,9 +242,12 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         }
         existing.Uploaders = san
     }
+    if incoming.Permissions.GlobalWrite != nil {
+        existing.GlobalWrite = incoming.Permissions.GlobalWrite
+    }
 
     perm_path := filepath.Join(project_dir, permissionsFileName)
-    err = dumpJson(perm_path, &existing)
+    err = dumpJson(perm_path, existing)
     if err != nil {
         return fmt.Errorf("failed to write permissions for %q; %w", project, err)
     }

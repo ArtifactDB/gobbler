@@ -175,11 +175,57 @@ func TestIsAuthorizedToUpload(t *testing.T) {
     if !ok || !trusted {
         t.Fatalf("unexpected lack of non-probational authorization for an uploader")
     }
+}
 
-    perms.Uploaders = []uploaderEntry{ uploaderEntry{ Id: "*", Trusted: &is_trusted } }
-    ok, trusted = isAuthorizedToUpload("cynthia", nil, &perms, nil, nil)
-    if !ok || !trusted {
-        t.Fatalf("unexpected lack of upload authorization for *")
+func TestPrepareGlobalWriteNewAsset(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    project := "tentacruel"
+    project_dir := filepath.Join(reg, project)
+    err = os.Mkdir(project_dir, 0755)
+    if err != nil {
+        t.Fatalf("failed to create a project directory; %v", err)
+    }
+
+    perms := permissionsMetadata {
+        Owners: []string{ "erika", "sabrina", "misty" },
+        Uploaders: []uploaderEntry{},
+    }
+
+    can_global_write, err := prepareGlobalWriteNewAsset("foobar", &perms, "FOOBAR", project_dir)
+    if err != nil || can_global_write {
+        t.Fatal("expected no global write support")
+    }
+
+    // Enabling global write.
+    global_write := true
+    perms.GlobalWrite = &global_write
+    can_global_write, err = prepareGlobalWriteNewAsset("foobar", &perms, "FOOBAR", project_dir)
+    if err != nil || !can_global_write {
+        t.Fatal("expected global write support")
+    }
+    if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != "foobar" || *(perms.Uploaders[0].Asset) != "FOOBAR" {
+        t.Fatal("expected user to be added to the uploaders via global write")
+    }
+    reperms, err := readPermissions(project_dir)
+    if err != nil {
+        t.Fatalf("failed to re-read permissions; %v", err)
+    }
+    if len(reperms.Uploaders) != 1 || reperms.Uploaders[0].Id != "foobar" || *(reperms.Uploaders[0].Asset) != "FOOBAR" {
+        t.Fatal("expected global write's updates to the permissions to be saved to file")
+    }
+
+    // Global write switches off if the asset already exists, though.
+    err = os.Mkdir(filepath.Join(project_dir, "FOOBAR"), 0755)
+    if err != nil {
+        t.Fatalf("failed to create the asset directory; %v", err)
+    }
+    can_global_write, err = prepareGlobalWriteNewAsset("foobar", &perms, "FOOBAR", project_dir)
+    if err != nil || can_global_write {
+        t.Fatal("expected no global write support")
     }
 }
 
@@ -355,6 +401,39 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         err = setPermissionsHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("unexpected authorization for a non-owner")
+        }
+    }
+
+    // Global write is recognized.
+    {
+        err = os.WriteFile(
+            filepath.Join(project_dir, permissionsFileName),
+            []byte(fmt.Sprintf(`{ "owners": [ "%s" ] }`, self)),
+            0644,
+        )
+        if err != nil {
+            t.Fatalf("failed to create some mock permissions")
+        }
+
+        reqpath, err := dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "global_write": true } }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = setPermissionsHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to write permissions with global write")
+        }
+
+        perms, err := readPermissions(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read the new permissions; %v", err)
+        }
+        if perms.GlobalWrite == nil || !(*perms.GlobalWrite) {
+            t.Fatal("expected global write to be enabled")
         }
     }
 }

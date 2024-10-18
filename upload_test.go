@@ -470,6 +470,63 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
     }
 }
 
+func TestUploadHandlerGlobalWrite(t *testing.T) {
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg)
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Making a project with global write permissions.
+    project := "hyperbole"
+    self, err := user.Current()
+    if err != nil {
+        t.Fatalf("failed to determine the current user; %v", err)
+    }
+
+    global_write := true
+    err = createProject(project, &unsafePermissionsMetadata{ Owners: []string{}, Uploaders: nil, GlobalWrite: &global_write }, self.Username, &globals) 
+    if err != nil {
+        t.Fatalf("failed to create the project; %v", err)
+    }
+
+    // Now making the request.
+    asset := "BAR"
+    version := "whee"
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    err = uploadHandler(reqname, &globals)
+    if err != nil {
+        t.Fatalf("failed to perform a global write upload; %v", err)
+    }
+
+    // Checking that permissions are set up correctly.
+    perms, err := readPermissions(filepath.Join(globals.Registry, project))
+    if err != nil {
+        t.Fatalf("failed to read the new permissions; %v", err)
+    }
+    if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != self.Username || *(perms.Uploaders[0].Asset) != asset {
+        t.Fatalf("global write upload did not update the uploaders; %v", err)
+    }
+
+    // Check that the upload completed.
+    destination := filepath.Join(reg, project, asset, version)
+    man, err := readManifest(destination)
+    info, ok := man["evolution"]
+    if !ok || int(info.Size) != len("haunter") || info.Link != nil {
+        t.Fatal("unexpected manifest entry for 'evolution'")
+    }
+}
+
 func TestUploadHandlerProbation(t *testing.T) {
     reg, err := constructMockRegistry()
     if err != nil {

@@ -108,12 +108,21 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
-    ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
-    if !ok {
-        return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
+
+    // Check if this upload is authorized via the global write permissions. 
+    global_write_new_asset, err := prepareGlobalWriteNewAsset(req_user, perms, *(request.Asset), project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to update the permissions for a new asset with global write; %w", err)
     }
-    if !trusted {
-        on_probation = true
+
+    if !global_write_new_asset {
+        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
+        if !ok {
+            return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
+        }
+        if !trusted {
+            on_probation = true
+        }
     }
 
     // Configuring the asset and version.
