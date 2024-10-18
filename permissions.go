@@ -208,6 +208,10 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         if err != nil {
             return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
+
+        if incoming.Permissions == nil {
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'permissions' object in %q", reqpath))
+        }
     }
 
     source_user, err := identifyUser(reqpath)

@@ -392,7 +392,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
 
         reqpath, err := dumpRequest(
             "set_permissions",
-            fmt.Sprintf(`{ "project": "%s" }`, project),
+            fmt.Sprintf(`{ "project": "%s", "permissions": {} }`, project),
         )
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
