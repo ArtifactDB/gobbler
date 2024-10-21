@@ -34,9 +34,26 @@ jobs:
       - name: Run tests
         run: go test -v
 
-  build:
+  retag:
     runs-on: ubuntu-latest
     needs: test
+    if: github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Shift tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.updateRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'tags/latest',
+              sha: context.sha
+            });
+
+  build:
+    runs-on: ubuntu-latest
+    needs: retag
     if: github.ref == 'refs/heads/master'
     strategy:
       matrix:
