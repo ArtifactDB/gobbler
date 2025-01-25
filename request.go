@@ -13,74 +13,56 @@ import (
     "syscall"
 )
 
-func chooseLockPool(path string, num_pools int) int {
-    sum := 0
-    for _, r := range path {
-        sum += int(r)
-    }
-    return sum % num_pools
-}
 
 // This tracks the requests that are currently being processed, to prevent the
-// same request being processed multiple times at the same time. We use a
-// multi-pool approach to improve parallelism across requests.
+// same request being processed multiple times at the same time.
 type activeRequestRegistry struct {
-    NumPools int
-    Locks []sync.Mutex
-    Active []map[string]bool
+    Lock sync.Mutex
+    Active map[string]bool
+    Expiry time.Duration
 }
 
-func newActiveRequestRegistry(num_pools int) *activeRequestRegistry {
-    return &activeRequestRegistry {
-        NumPools: num_pools,
-        Locks: make([]sync.Mutex, num_pools),
-        Active: make([]map[string]bool, num_pools),
+func newActiveRequestRegistry(staging string, expiry time.Duration) (*activeRequestRegistry, error) {
+    output := &activeRequestRegistry {
+        Active: map[string]bool{},
+        Expiry: expiry,
     }
-}
 
-func prefillActiveRequestRegistry(a *activeRequestRegistry, staging string, expiry time.Duration) error {
     // Prefilling the registry ensures that a user can't replay requests after a restart of the service.
     entries, err := os.ReadDir(staging)
     if err != nil {
-        return fmt.Errorf("failed to list existing request files in '%s'", staging)
+        return nil, fmt.Errorf("failed to list existing request files in '%s'", staging)
     }
 
-    // This is only necessary until the expiry time is exceeded, after which we can evict those entries.
     // Technically we only need to do this for files that weren't already expired, but this doesn't hurt.
     for _, e := range entries {
         path := e.Name()
-        a.Add(path)
-        go func(p string) {
-            time.Sleep(expiry)
-            a.Remove(p)
-        }(path)
+        output.Add(path)
     }
-    return nil
+    return output, nil
 }
 
 func (a *activeRequestRegistry) Add(path string) bool {
-    i := chooseLockPool(path, a.NumPools)
-    a.Locks[i].Lock()
-    defer a.Locks[i].Unlock()
+    a.Lock.Lock()
+    defer a.Lock.Unlock()
 
-    if a.Active[i] == nil {
-        a.Active[i] = map[string]bool{}
-    } else {
-        _, ok := a.Active[i][path]
-        if ok {
-            return false
-        }
+    _, ok := a.Active[path]
+    if ok {
+        return false
     }
-   
-    a.Active[i][path] = true
-    return true
-}
 
-func (a *activeRequestRegistry) Remove(path string) {
-    i := chooseLockPool(path, a.NumPools)
-    a.Locks[i].Lock()
-    defer a.Locks[i].Unlock()
-    delete(a.Active[i], path)
+    a.Active[path] = true
+
+    // Once the request expires, we no longer need to protect against replay attacks,
+    // so we can delete it from the registry.
+    go func() {
+        time.Sleep(a.Expiry)
+        a.Lock.Lock()
+        defer a.Lock.Unlock()
+        delete(a.Active, path)
+    }()
+
+    return true
 }
 
 func checkRequestFile(path, staging string, expiry time.Duration) (string, error) {

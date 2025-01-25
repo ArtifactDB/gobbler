@@ -70,9 +70,8 @@ func main() {
         }
     }
 
-    actreg := newActiveRequestRegistry(11)
-    const request_expiry = time.Minute
-    err := prefillActiveRequestRegistry(actreg, staging, request_expiry)
+    request_expiry := time.Minute
+    actreg, err := newActiveRequestRegistry(staging, request_expiry)
     if err != nil {
         log.Fatalf("failed to prefill active request registry; %v", err)
     }
@@ -141,20 +140,6 @@ func main() {
             reportable_err = nil
         } else {
             reportable_err = newHttpError(http.StatusBadRequest, errors.New("invalid request type"))
-        }
-
-        // Purge the request file once it's processed, to reduce the potential
-        // for replay attacks. For safety's sake, we only remove it from the
-        // registry if the request file was properly deleted or it expired.
-        err = os.Remove(reqpath)
-        if err != nil {
-            log.Printf("failed to purge the request file at %q; %v", path, err)
-            go func() {
-                time.Sleep(request_expiry)
-                actreg.Remove(path)
-            }()
-        } else {
-            actreg.Remove(path)
         }
 
         if reportable_err == nil {

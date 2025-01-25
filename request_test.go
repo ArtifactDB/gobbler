@@ -101,61 +101,75 @@ func TestCheckRequestFile(t *testing.T) {
 }
 
 func TestActiveRequestRegistry(t *testing.T) {
-    a := newActiveRequestRegistry(3)
-
-    path := "adasdasdasd"
-    ok := a.Add(path)
-    if !ok {
-        t.Fatal("expected a successful addition")
-    }
-
-    ok = a.Add(path)
-    if ok {
-        t.Fatal("expected a failed addition")
-    }
-
-    a.Remove(path)
-    ok = a.Add(path)
-    if !ok {
-        t.Fatal("expected a successful addition again")
-    }
-
-    ok = a.Add("xyxyxyxyxyx")
-    if !ok {
-        t.Fatal("expected a successful addition again")
-    }
-}
-
-func TestPrefillActiveRequestRegistry(t *testing.T) {
-    staging, err := os.MkdirTemp("", "")
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    names := []string{ "foo", "bar", "whee" }
-    for _, f := range names {
-        err = os.WriteFile(filepath.Join(staging, f), []byte{}, 0644)
+    t.Run("basic", func(t *testing.T) {
+        staging, err := os.MkdirTemp("", "")
         if err != nil {
             t.Fatal(err)
         }
-    }
 
-    a := newActiveRequestRegistry(3)
-    err = prefillActiveRequestRegistry(a, staging, time.Millisecond * 100)
-    if err != nil {
-        t.Fatal(err)
-    }
+        a, err := newActiveRequestRegistry(staging, time.Millisecond * 200)
 
-    for _, f := range names {
-        if a.Add(f) {
-            t.Fatalf("%s should already be present in the registry", f)
+        path := "adasdasdasd"
+        ok := a.Add(path)
+        if !ok {
+            t.Fatal("expected a successful addition")
         }
-    }
 
-    time.Sleep(time.Millisecond * 200)
-    for _, f := range names {
-        if !a.Add(f) {
-            t.Fatalf("%s should have been removed from the registry", f)
+        ok = a.Add(path)
+        if ok {
+            t.Fatal("expected a failed addition")
         }
-    }
+
+        time.Sleep(time.Millisecond * 500)
+        ok = a.Add(path)
+        if !ok {
+            t.Fatal("expected a successful addition again")
+        }
+
+        ok = a.Add("xyxyxyxyxyx")
+        if !ok {
+            t.Fatal("expected a successful addition again")
+        }
+    })
+
+    t.Run("preloaded", func(t *testing.T) {
+        staging, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        names := []string{ "foo", "bar", "whee" }
+        for _, f := range names {
+            err = os.WriteFile(filepath.Join(staging, f), []byte{}, 0644)
+            if err != nil {
+                t.Fatal(err)
+            }
+        }
+
+        a, err := newActiveRequestRegistry(staging, time.Millisecond * 200)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        for _, f := range names {
+            if a.Add(f) {
+                t.Fatalf("%s should already be present in the registry", f)
+            }
+        }
+
+        // Adding some more names.
+        if !a.Add("stuff") {
+            t.Fatal("failed to add some new names")
+        }
+        if a.Add("stuff") {
+            t.Fatal("should have failed to add a duplicate name")
+        }
+
+        time.Sleep(time.Millisecond * 500)
+        for _, f := range names {
+            if !a.Add(f) {
+                t.Fatalf("%s should have been removed from the registry", f)
+            }
+        }
+    })
 }
