@@ -289,10 +289,11 @@ This file should be JSON-formatted with the following properties:
 On success, the internal files will be created.
 
 Note that the reindexing process assumes that the `..summary` file is already present for this version directory.
-It will not modify this file so as to respect the original uploader's identity and time of upload.
+It will not modify this file so as to respect the original uploader's identity, time of upload, probational status, etc.
 
-In addition, reindexing will not update the latest version for the asset or the project usage.
-To do so, administrators should request a refresh as described above.
+The reindexing process will not update the project usage as the current usage will likely be incorrect after manual changes to the version directory's contents.
+Similarly, reindexing will not update the latest version for the asset, as the `..summary` files have not changed.
+Administrators should refresh these statistics manually as described above after all modifications to the registry are complete.
 
 ### Deleting content (admin)
 
