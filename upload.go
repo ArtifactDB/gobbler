@@ -156,7 +156,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }()
 
     source := *(request.Source)
-    err = Transfer(source, globals.Registry, project, asset, version)
+    err = transferDirectory(source, globals.Registry, project, asset, version)
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
@@ -216,7 +216,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
         // Adding a log.
         log_info := map[string]interface{} {
-            "type": "add-version",
+            "type": "reindex-version",
             "project": project,
             "asset": asset,
             "version": version,
