@@ -8,70 +8,253 @@ import (
     "strings"
     "errors"
     "encoding/json"
+    "io/fs"
 )
 
-func setupSourceFortransferDirectoryTest() (string, error) {
-    src, err := os.MkdirTemp("", "")
+func setupSourceForTransferDirectoryTest() (string, error) {
+    dir, err := os.MkdirTemp("", "")
     if err != nil {
         return "", fmt.Errorf("failed to create the temporary directory; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(src, "type"), []byte("electric"), 0644)
+    err = os.WriteFile(filepath.Join(dir, "type"), []byte("electric"), 0644)
     if err != nil {
         return "", err
     }
 
-    err = os.Mkdir(filepath.Join(src, "evolution"), 0755)
+    err = os.Mkdir(filepath.Join(dir, "evolution"), 0755)
     if err != nil {
         return "", err
     }
-    err = os.WriteFile(filepath.Join(src, "evolution", "up"), []byte("raichu"), 0644)
+    err = os.WriteFile(filepath.Join(dir, "evolution", "up"), []byte("raichu"), 0644)
     if err != nil {
         return "", err
     }
-    err = os.WriteFile(filepath.Join(src, "evolution", "down"), []byte("pichu"), 0644)
-    if err != nil {
-        return "", err
-    }
-
-    err = os.Mkdir(filepath.Join(src, "moves"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.Mkdir(filepath.Join(src, "moves", "electric"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunder_shock"), []byte("40"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunderbolt"), []byte("90"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(src, "moves", "electric", "thunder"), []byte("110"), 0644)
+    err = os.WriteFile(filepath.Join(dir, "evolution", "down"), []byte("pichu"), 0644)
     if err != nil {
         return "", err
     }
 
-    err = os.Mkdir(filepath.Join(src, "moves", "normal"), 0755)
+    err = os.Mkdir(filepath.Join(dir, "moves"), 0755)
     if err != nil {
         return "", err
     }
-    err = os.WriteFile(filepath.Join(src, "moves", "normal", "quick_attack"), []byte("40"), 0644)
+    err = os.Mkdir(filepath.Join(dir, "moves", "electric"), 0755)
     if err != nil {
         return "", err
     }
-    err = os.WriteFile(filepath.Join(src, "moves", "normal", "double_team"), []byte("0"), 0644)
+    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunder_shock"), []byte("40"), 0644)
+    if err != nil {
+        return "", err
+    }
+    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunderbolt"), []byte("90"), 0644)
+    if err != nil {
+        return "", err
+    }
+    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunder"), []byte("110"), 0644)
     if err != nil {
         return "", err
     }
 
-    return src, nil
+    err = os.Mkdir(filepath.Join(dir, "moves", "normal"), 0755)
+    if err != nil {
+        return "", err
+    }
+    err = os.WriteFile(filepath.Join(dir, "moves", "normal", "quick_attack"), []byte("40"), 0644)
+    if err != nil {
+        return "", err
+    }
+    err = os.WriteFile(filepath.Join(dir, "moves", "normal", "double_team"), []byte("0"), 0644)
+    if err != nil {
+        return "", err
+    }
+
+    return dir, nil
 }
 
-func TesttransferDirectorySimple(t *testing.T) {
+func stripDoubleDotFiles(dir string) error {
+    return filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
+        if !strings.HasPrefix(filepath.Base(path), "..") {
+            return nil
+        }
+        if info.IsDir() {
+            return nil
+        }
+        return os.Remove(path)
+    })
+}
+
+type customDirEntry struct {
+    LinkTarget string 
+    Contents string
+}
+
+func loadDirectoryContents(dir string) (map[string]customDirEntry, error) {
+    contents := map[string]customDirEntry{}
+
+    err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
+        if info.IsDir() {
+            return nil
+        }
+
+        restat, err := info.Info()
+        if err != nil {
+            return fmt.Errorf("failed to stat '" + path + "'; %w", err)
+        }
+
+        rel, err := filepath.Rel(dir, path)
+        if err != nil {
+            return fmt.Errorf("failed to create a relative path from %q; %w", path, err)
+        }
+
+        // Symlinks to files inside the registry are preserved.
+        if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
+            target, err := os.Readlink(path)
+            if err != nil {
+                return fmt.Errorf("failed to read symlink for %q; %w", path, err)
+            }
+            contents[rel] = customDirEntry{ LinkTarget: target }
+            return nil
+        }
+
+        fcontents, err := os.ReadFile(path)
+        if err != nil {
+            return fmt.Errorf("failed to read %q; %w", path, err)
+        }
+        contents[rel] = customDirEntry{ Contents: string(fcontents) }
+        return nil
+    })
+
+    return contents, err
+}
+
+func compareDirectoryContents(ref map[string]customDirEntry, current map[string]customDirEntry) error {
+    if len(ref) != len(current) {
+        r_names := []string{}
+        for k, _ := range ref {
+            r_names = append(r_names, k)
+        }
+        c_names := []string{}
+        for r, _ := range current {
+            c_names = append(c_names, r)
+        }
+        return fmt.Errorf("mismatch in the lengths of the double-dot map after reindexing; %v versus %v", r_names, c_names)
+    }
+
+    for k, entry := range ref {
+        re_entry, found := current[k]
+        if !found {
+            return fmt.Errorf("failed to find %q after reindexing", k)
+        }
+        if re_entry.Contents != entry.Contents {
+            return fmt.Errorf("mismatch in contents of %q after reindexing", k)
+        } else if re_entry.LinkTarget != entry.LinkTarget {
+            return fmt.Errorf("mismatch in link targets of %q after reindexing", k)
+        }
+    }
+
+    return nil
+}
+
+/**********************************************
+ **********************************************/
+
+func TestTransferDirectorySimple(t *testing.T) {
+    project := "pokemon"
+    asset := "pikachu"
+    version := "red"
+
+    t.Run("transfer", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the registry; %v", err)
+        }
+
+        src, err := setupSourceForTransferDirectoryTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        // Executing the transfer.
+        err = transferDirectory(src, reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        // Checking a few manifest entries...
+        destination := filepath.Join(reg, project, asset, version)
+        man, err := readManifest(destination)
+        if err != nil {
+            t.Fatalf("failed to read the manifest; %v", err)
+        }
+        info, ok := man["evolution/up"]
+        if !ok || int(info.Size) != len("raichu") || info.Link != nil {
+            t.Fatalf("unexpected manifest entry for 'evolution/up'")
+        }
+        info, ok = man["moves/electric/thunder"]
+        if !ok || int(info.Size) != len("110") || info.Link != nil {
+            t.Fatalf("unexpected manifest entry for 'moves/electric/thunder'")
+        }
+
+        // Checking some of the actual files.
+        err = verifyFileContents(filepath.Join(destination, "type"), "electric")
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verifyFileContents(filepath.Join(destination, "evolution", "down"), "pichu")
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = verifyFileContents(filepath.Join(destination, "moves", "normal", "double_team"), "0")
+        if err != nil {
+            t.Fatal(err)
+        }
+    })
+
+    t.Run("reindex", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the registry; %v", err)
+        }
+
+        src, err := setupSourceForTransferDirectoryTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+
+        err = stripDoubleDotFiles(v_path)
+        if err != nil {
+            t.Fatalf("failed to strip all double dots; %v", err)
+        }
+
+        err = reindexDirectory(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to reindex directory; %v", err)
+        }
+
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Fatal(err)
+        }
+    })
+}
+
+func TestTransferDirectorySkipHidden(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "red"
@@ -81,58 +264,7 @@ func TesttransferDirectorySimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setupSourceFortransferDirectoryTest()
-    if err != nil {
-        t.Fatalf("failed to set up test directories; %v", err)
-    }
-
-    // Executing the transfer.
-    err = transferDirectory(src, reg, project, asset, version)
-    if err != nil {
-        t.Fatalf("failed to perform the transfer; %v", err)
-    }
-
-    // Checking a few manifest entries...
-    destination := filepath.Join(reg, project, asset, version)
-    man, err := readManifest(destination)
-    if err != nil {
-        t.Fatalf("failed to read the manifest; %v", err)
-    }
-    info, ok := man["evolution/up"]
-    if !ok || int(info.Size) != len("raichu") || info.Link != nil {
-        t.Fatalf("unexpected manifest entry for 'evolution/up'")
-    }
-    info, ok = man["moves/electric/thunder"]
-    if !ok || int(info.Size) != len("110") || info.Link != nil {
-        t.Fatalf("unexpected manifest entry for 'moves/electric/thunder'")
-    }
-
-    // Checking some of the actual files.
-    err = verifyFileContents(filepath.Join(destination, "type"), "electric")
-    if err != nil {
-        t.Fatal(err)
-    }
-    err = verifyFileContents(filepath.Join(destination, "evolution", "down"), "pichu")
-    if err != nil {
-        t.Fatal(err)
-    }
-    err = verifyFileContents(filepath.Join(destination, "moves", "normal", "double_team"), "0")
-    if err != nil {
-        t.Fatal(err)
-    }
-}
-
-func TesttransferDirectorySkipHidden(t *testing.T) {
-    project := "pokemon"
-    asset := "pikachu"
-    version := "red"
-
-    reg, err := os.MkdirTemp("", "")
-    if err != nil {
-        t.Fatalf("failed to create the registry; %v", err)
-    }
-
-    src, err := setupSourceFortransferDirectoryTest()
+    src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -350,7 +482,7 @@ func verifyAncestralSymlink(
     return nil
 }
 
-func TesttransferDirectoryDeduplication(t *testing.T) {
+func TestTransferDirectoryDeduplication(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "red"
@@ -360,7 +492,7 @@ func TesttransferDirectoryDeduplication(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setupSourceFortransferDirectoryTest()
+    src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -559,13 +691,13 @@ func TesttransferDirectoryDeduplication(t *testing.T) {
     }
 }
 
-func TesttransferDirectoryRegistryLinks(t *testing.T) {
+func TestTransferDirectoryRegistryLinks(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setupSourceFortransferDirectoryTest()
+    src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -693,7 +825,7 @@ func TesttransferDirectoryRegistryLinks(t *testing.T) {
     }
 }
 
-func TesttransferDirectoryRegistryLinkFailures(t *testing.T) {
+func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -701,7 +833,7 @@ func TesttransferDirectoryRegistryLinkFailures(t *testing.T) {
 
     // Links to irrelevant files are forbidden.
     {
-        src, err := setupSourceFortransferDirectoryTest()
+        src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -788,7 +920,7 @@ func TesttransferDirectoryRegistryLinkFailures(t *testing.T) {
 
     // Links to probational versions are forbidden.
     {
-        src, err := setupSourceFortransferDirectoryTest()
+        src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -819,7 +951,7 @@ func TesttransferDirectoryRegistryLinkFailures(t *testing.T) {
 
     // Links to internal files are forbidden.
     {
-        src, err := setupSourceFortransferDirectoryTest()
+        src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -874,13 +1006,13 @@ func TesttransferDirectoryRegistryLinkFailures(t *testing.T) {
     }
 }
 
-func TesttransferDirectoryLocalLinks(t *testing.T) {
+func TestTransferDirectoryLocalLinks(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    src, err := setupSourceFortransferDirectoryTest()
+    src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -949,7 +1081,7 @@ func TesttransferDirectoryLocalLinks(t *testing.T) {
     }
 }
 
-func TesttransferDirectoryLocalLinkFailures(t *testing.T) {
+func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -957,7 +1089,7 @@ func TesttransferDirectoryLocalLinkFailures(t *testing.T) {
 
     // Cyclic symlinks.
     {
-        src, err := setupSourceFortransferDirectoryTest()
+        src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -989,7 +1121,7 @@ func TesttransferDirectoryLocalLinkFailures(t *testing.T) {
 
     // Symlink to a directory.
     {
-        src, err := setupSourceFortransferDirectoryTest()
+        src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }

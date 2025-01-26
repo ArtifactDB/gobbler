@@ -127,7 +127,7 @@ func reindexVersionHandler(reqpath string, globals *globalConfiguration) error {
 
         // Adding a log.
         log_info := map[string]interface{} {
-            "type": "add-version",
+            "type": "reindex-version",
             "project": project,
             "asset": asset,
             "version": version,

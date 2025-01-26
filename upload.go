@@ -216,7 +216,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
         // Adding a log.
         log_info := map[string]interface{} {
-            "type": "reindex-version",
+            "type": "add-version",
             "project": project,
             "asset": asset,
             "version": version,
