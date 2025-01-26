@@ -131,7 +131,6 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
             "project": project,
             "asset": asset,
             "version": version,
-            "latest": true,
         }
         err = dumpLog(globals.Registry, log_info)
         if err != nil {

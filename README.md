@@ -272,6 +272,28 @@ This file should be JSON-formatted with the following properties:
 
 On success, the latest version is updated and a JSON formatted file will be created in `responses` with the `status` property set to `SUCCESS`.
 
+### Reindexing a version (admin)
+
+Administrators of a Gobbler instance can directly reindex the contents of a version directory, regenerating the various `..manifest` and `..links` files.
+This is useful for correcting the Gobbler internal files after manual changes to the user-supplied files.
+It also allows for more efficient "uploads" where administrators can write directly to the Gobbler registry and then generate the internal files afterwards,
+thus avoiding an unnecessary copy from the staging directory.
+
+To trigger a reindexing job, create a file with the `request-reindex_version-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+- `asset`: string containing the name of the asset.
+- `version`: string containing the name of the version.
+
+On success, the internal files will be created.
+
+Note that the reindexing process assumes that the `..summary` file is already present for this version directory.
+It will not modify this file so as to respect the original uploader's identity and time of upload.
+
+In addition, reindexing will not update the latest version for the asset or the project usage.
+To do so, administrators should request a refresh as described above.
+
 ### Deleting content (admin)
 
 Administrators have the ability to delete files from the registry.
@@ -322,6 +344,8 @@ The file contains a JSON object that details the type of action in the `type` pr
   This has the `project` and `asset` string property.
 - `delete-project` indicates that a project was deleted.
   This has the `project` string property.
+- `reindex-version` indicates that a non-probational version was reindexed.
+  This has the `project`, `asset`, `version` string properties to describe the version.
 
 Downstream systems can inspect these files to determine what changes have occurred in the registry.
 This is intended for systems that need to maintain a database index on top of the bucket's contents.
