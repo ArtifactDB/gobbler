@@ -592,14 +592,15 @@ func reindexDirectory(registry, project, asset, version string) error {
             return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
         }
 
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            local_inside, err := filepath.Rel(destination, target)
-            if err != nil || !filepath.IsLocal(local_inside) {
-                return fmt.Errorf("symbolic links to files outside the registry directories (%q) are not supported", target)
-            }
+        local_inside, err := filepath.Rel(destination, target)
+        if err == nil && filepath.IsLocal(local_inside) {
             local_links[path] = local_inside
             continue
+        }
+
+        registry_inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(registry_inside) {
+            return fmt.Errorf("symbolic links to files outside the registry directories (%q) are not supported", target)
         }
 
         tstat, err := os.Stat(target)
