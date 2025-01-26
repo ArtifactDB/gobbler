@@ -64,7 +64,7 @@ func reindexPreflight(reqpath string) (*reindexRequest, error) {
     return &request, nil
 }
 
-func reindexVersionHandler(reqpath string, globals *globalConfiguration) error {
+func reindexHandler(reqpath string, globals *globalConfiguration) error {
     request, err := reindexPreflight(reqpath)
     if err != nil {
         return err
@@ -113,7 +113,7 @@ func reindexVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to read the summary file at %q; %w", version_dir, err)
     }
 
-    if !*(summ.OnProbation) {
+    if summ.OnProbation == nil || !*(summ.OnProbation) {
         // Doing this as late as possible to reduce the chances of an error
         // triggering an abort _after_ the latest version has been updated.
         // I suppose we could try to reset to the previous value; but if the
