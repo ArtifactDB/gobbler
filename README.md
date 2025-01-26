@@ -276,7 +276,7 @@ On success, the latest version is updated and a JSON formatted file will be crea
 
 Administrators of a Gobbler instance can directly reindex the contents of a version directory, regenerating the various `..manifest` and `..links` files.
 This is useful for correcting the Gobbler internal files after manual changes to the user-supplied files.
-It also allows for more efficient "uploads" where administrators can write directly to the Gobbler registry and then generate the internal files afterwards,
+It also allows for more efficient bulk uploads where administrators can write directly to the Gobbler registry and then generate the internal files afterwards,
 thus avoiding an unnecessary copy from the staging directory.
 
 To trigger a reindexing job, create a file with the `request-reindex_version-` prefix.
