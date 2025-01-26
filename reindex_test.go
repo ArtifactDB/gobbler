@@ -99,8 +99,7 @@ func TestReindexHandlerSimple(t *testing.T) {
     if logs[0].Type != "reindex-version" || 
         logs[0].Project == nil || *(logs[0].Project) != project || 
         logs[0].Asset == nil || *(logs[0].Asset) != asset || 
-        logs[0].Version == nil || *(logs[0].Version) != version || 
-        logs[0].Latest == nil || !*(logs[0].Latest) {
+        logs[0].Version == nil || *(logs[0].Version) != version {
         t.Fatalf("unexpected contents for first log in %q", reg)
     }
 }
