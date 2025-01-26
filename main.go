@@ -136,6 +136,8 @@ func main() {
             reportable_err = deleteAssetHandler(reqpath, &globals)
         } else if strings.HasPrefix(reqtype, "delete_version-") {
             reportable_err = deleteVersionHandler(reqpath, &globals)
+        } else if strings.HasPrefix(reqtype, "reindex_version-") {
+            reportable_err = reindexHandler(reqpath, &globals)
         } else if strings.HasPrefix(reqtype, "health_check-") { // TO-BE-DEPRECATED, see /check below.
             reportable_err = nil
         } else {
