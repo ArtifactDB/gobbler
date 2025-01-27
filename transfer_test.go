@@ -1156,6 +1156,31 @@ func TestReindexDirectorySimple(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
+
+    // What happens if we inject a ..links file in there?
+    lpath := filepath.Join(v_path, linksFileName)
+    err = os.WriteFile(lpath, []byte{}, 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    lpath2 := filepath.Join(v_path, "moves", "electric", linksFileName)
+    err = os.WriteFile(lpath2, []byte{}, 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = reindexDirectory(reg, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to reindex directory; %v", err)
+    }
+
+    if _, err := os.Stat(lpath); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("expected existing ..links file to be deleted")
+    }
+    if _, err := os.Stat(lpath2); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("expected existing nested ..links file to be deleted")
+    }
 }
 
 func TestReindexDirectorySkipHidden(t *testing.T) {
@@ -1313,6 +1338,17 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     err = compareDirectoryContents(prior, recovered)
     if err != nil {
         t.Fatal(err)
+    }
+
+    // Confirming that we have ..links files.
+    _, found := recovered[linksFileName]
+    if !found {
+        t.Error("missing a top-level ..links file")
+    }
+
+    _, found = recovered[filepath.Join("moves", "electric", linksFileName)]
+    if !found {
+        t.Error("missing a nested ..links file")
     }
 }
 

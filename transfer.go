@@ -541,6 +541,12 @@ func reindexDirectory(registry, project, asset, version string) error {
             if info.IsDir() {
                 return filepath.SkipDir
             } else {
+                if base == linksFileName {
+                    err := os.Remove(src_path)
+                    if err != nil {
+                        return fmt.Errorf("failed to remove old ..links file at %q; %w", src_path, err)
+                    }
+                }
                 return nil
             }
         }
