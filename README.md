@@ -32,6 +32,7 @@ For each project-asset-version combination, the set of all user-supplied files i
 This contains a JSON object where each key/value pair describes a user-supplied file.
 The key is a relative path to the file within the `{project}/{asset}/{version}/` subdirectory.
 The value is another object with the following properties:
+
 - `size`: an integer specifying the size of the file in bytes.
 - `md5sum`: a string containing the hex-encoded MD5 checksum of the file.
 - `link` (optional): an object specifying the link destination for a file (see [below](#link-deduplication) for details).
@@ -39,11 +40,13 @@ The value is another object with the following properties:
 
 **gypsum** keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
+
 - `latest`: String containing the name of the latest version of this asset.
   This is defined as the version with the most recent `upload_finish` time in the `..summary`.
 
 For any given project-asset-version combination, the `{project}/{asset}/{version}/..summary` file records some more details about the upload process.
 This contains a JSON object with the following properties:
+
 - `upload_user_id`, a string containing the identity of the uploading user.
 - `upload_start`, an Internet date/time-formatted string containing the upload start time.
 - `upload_finish`, an Internet date/time-formatted string containing the upload finish time.
@@ -170,9 +173,9 @@ Users submit requests to the Gobbler by writing a JSON file with the request par
 Each request file's name should have a prefix of `request-<ACTION>-` where `ACTION` specifies the action to be performed.
 
 Once this file is written, users should perform a POST request to the `/new/{request}` endpoint, where `request` is the name of the request file inside the staging directory.
-The HTTP response will contain a JSON object that has at least the `status` property (either `SUCCESS` or `ERROR`).
-For failures, this will be an additional `reason` string property to specify the reason;
-for successes, additional properties may be present depending on the request action.
+The HTTP response will contain a JSON object that has at least the `status` property, set to either `SUCCESS` or `ERROR`.
+For failures, there will be an additional `reason` string property to specify the reason.
+For successes, additional properties may be present depending on the request action.
 
 For a Gobbler instance, the location of its staging directory can be obtained via a GET request to the `/info` endpoint.
 This can be used to avoid hard-coded paths in the clients. 
@@ -296,15 +299,18 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
 
-On success, the internal files will be created.
+On success, the internal `..manifest` and `..links` files inside the version directory will be created or updated.
+All other files will not be modified.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
 
-Note that the reindexing process assumes that the `..summary` file is already present for this version directory.
-It will not modify this file so as to respect the original uploader's identity, time of upload, probational status, etc.
+Note that the reindexing process assumes that a `..summary` file is already present in the version directory.
+This file will not be modified in order to preserve the details of the original upload.
+For bulk uploads, administrators should create this file manually before submitting a reindexing request.
 
-The reindexing process will not update the project usage as the current usage will likely be incorrect after manual changes to the version directory's contents.
-Similarly, reindexing will not update the latest version for the asset, as the `..summary` files have not changed.
-Administrators should refresh these statistics manually as described above after all modifications to the registry are complete.
+Reindexing will not update any of the project or asset statistics.
+Specifically, reindexing will not update the latest version for the asset as the `..summary` files have not changed.
+Similarly, the project usage cannot be quickly updated as the Gobbler does not know whether the to-be-reindexed directory was already included in the usage.
+Administrators should refresh these statistics manually as described above after completing all reindexing tasks.
 
 ### Deleting content (admin)
 
@@ -383,12 +389,12 @@ Then, set up a staging directory with global read/write permissions.
 All parent directories of the staging directory should be at least globally executable.
 We enable the sticky bit so that users do not interfere with each other when writing request files or creating upload directories. 
 We also recommend setting up file access control lists if these are available,
-as this ensures that all user-created content in the staging directory can be eventually deleted by the Gobbler.
+as this ensures that all user-created content in the staging directory can be eventually deleted by the Gobbler's service account.
 
 ```bash
 mkdir STAGING
 chmod 1777 STAGING # 1 for the sticky bit
-setfacl -Rdm u:SERVICE_NAME:rwx STAGING
+setfacl -Rdm u:SERVICE_ACCOUNT_NAME:rwx STAGING
 ```
 
 Next, set up a registry directory with global read-only permissions.
@@ -413,7 +419,7 @@ Finally, start the Gobbler by running the binary:
 The following optional arguments can be used to fine-tune the Gobbler's behavior:
 
 - `-admin` contains a comma-separated list of administrator UIDs. 
-  This defaults to an empty strings, i.e., no administrators.
+  This defaults to an empty string, i.e., no administrators.
 - `-port` specifies the port for API calls.
   This defaults to 8080.
 - `-prefix` adds an extra prefix to all endpoints, e.g., to disambiguate between versions.
