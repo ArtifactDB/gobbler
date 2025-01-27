@@ -20,7 +20,9 @@ func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, 
         return err
     }
 
-    dir := filepath.Join(globals.Registry, project, asset, version)
+    project_dir := filepath.Join(globals.Registry, project)
+    asset_dir := filepath.Join(project_dir, asset)
+    dir := filepath.Join(asset_dir, version)
     err = os.MkdirAll(dir, 0755)
     if err != nil {
         return err
@@ -74,7 +76,8 @@ func TestReindexHandlerSimple(t *testing.T) {
     }
 
     // Checking a few manifest entries and files.
-    destination := filepath.Join(reg, project, asset, version)
+    asset_dir := filepath.Join(reg, project, asset)
+    destination := filepath.Join(asset_dir, version)
     man, err := readManifest(destination)
     if err != nil {
         t.Fatalf("failed to read the manifest; %v", err)
@@ -99,8 +102,56 @@ func TestReindexHandlerSimple(t *testing.T) {
     if logs[0].Type != "reindex-version" || 
         logs[0].Project == nil || *(logs[0].Project) != project || 
         logs[0].Asset == nil || *(logs[0].Asset) != asset || 
-        logs[0].Version == nil || *(logs[0].Version) != version {
+        logs[0].Version == nil || *(logs[0].Version) != version ||
+        logs[0].Latest == nil || *(logs[0].Latest) {
         t.Fatalf("unexpected contents for first log in %q", reg)
+    }
+}
+
+func TestReindexHandlerLatest(t *testing.T) {
+    project := "original_series"
+    asset := "gastly"
+    version := "lavender"
+
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg)
+
+    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to set up project directory; %v", err)
+    }
+
+    asset_dir := filepath.Join(reg, project, asset)
+    err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "version": "%s" }`, version)), 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Performing the request.
+    req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+    reqname, err := dumpRequest("reindex", req_string)
+    if err != nil {
+        t.Fatalf("failed to create reindex request; %v", err)
+    }
+
+    err = reindexHandler(reqname, &globals)
+    if err != nil {
+        t.Fatalf("failed to perform the reindexing; %v", err)
+    }
+
+    logs, err := readAllLogs(reg)
+    if err != nil {
+        t.Fatalf("failed to read the logs; %v", err)
+    }
+    if len(logs) != 1 {
+        t.Fatalf("expected exactly two entries in the log directory")
+    }
+    if logs[0].Type != "reindex-version" || 
+        logs[0].Latest == nil || !*(logs[0].Latest) { // this time, we did reindex the latest one.
+        t.Fatalf("unexpected contents for second log in %q", reg)
     }
 }
 

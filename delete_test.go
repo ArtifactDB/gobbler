@@ -210,23 +210,14 @@ func TestDeleteVersion(t *testing.T) {
     project := "foobar"
     asset := "stuff"
 
-    for _, delete_oldest := range []bool{ true, false } {
-        reg, err := mockRegistryForDeletion(project, asset, []string{ "boring_oldies", "hot_newness" })
+    t.Run("basic", func(t *testing.T) {
+        version := "random"
+        reg, err := mockRegistryForDeletion(project, asset, []string{ version })
         if err != nil {
             t.Fatalf("failed to mock up registry; %v", err) 
         }
 
-        var to_delete string
-        var survivor string
-        if delete_oldest {
-            to_delete = "boring_oldies"
-            survivor = "hot_newness"
-        } else {
-            survivor = "hot_newness"
-            to_delete = "boring_oldies"
-        }
-
-        reqpath, err := dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, to_delete))
+        reqpath, err := dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version))
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
@@ -249,7 +240,7 @@ func TestDeleteVersion(t *testing.T) {
 
         project_dir := filepath.Join(reg, project)
         asset_dir := filepath.Join(project_dir, asset)
-        lost_version_dir := filepath.Join(asset_dir, to_delete)
+        lost_version_dir := filepath.Join(asset_dir, version)
         if _, err := os.Stat(lost_version_dir); !errors.Is(err, os.ErrNotExist) {
             t.Fatal("failed to delete the version directory")
         }
@@ -258,26 +249,19 @@ func TestDeleteVersion(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to read usage after deletion; %v", err)
         }
-        expected, err := computeUsage(filepath.Join(asset_dir, survivor), true)
-        if err != nil {
-            t.Fatalf("failed to compute usage for the survivor; %v", err)
-        }
-        if usage.Total != expected {
-            t.Fatal("mismatch in the expected usage after version deletion")
+        if usage.Total != 0 {
+            t.Fatal("expected no usage after version deletion")
         }
 
-        latest, err := readLatest(asset_dir)
-        if err != nil {
-            t.Fatalf("failed to read the latest version after deletion; %v", err)
-        }
-        if latest.Version != survivor {
-            t.Fatal("mismatch in the expected latest version after version deletion")
+        _, err = readLatest(asset_dir)
+        if err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Fatalf("latest version should not be present after deletion; %v", err)
         }
 
         // No-ops if repeated with already-deleted version.
         err = deleteVersionHandler(reqpath, &globals)
         if err != nil {
-            t.Fatalf("failed to delete a project; %v", err)
+            t.Fatalf("failed to no-op for double-deleting a version; %v", err)
         }
 
         // Checking that inputs are valid.
@@ -300,9 +284,158 @@ func TestDeleteVersion(t *testing.T) {
         if len(logs) != 1 || logs[0].Type != "delete-version" ||
             logs[0].Project == nil || *(logs[0].Project) != project ||
             logs[0].Asset == nil || *(logs[0].Asset) != asset ||
-            logs[0].Version == nil || *(logs[0].Version) != to_delete {
-            t.Fatal("logs are not as expected from version deletion")
+            logs[0].Version == nil || *(logs[0].Version) != version || 
+            logs[0].Latest == nil || !*(logs[0].Latest) {
+            t.Fatalf("logs are not as expected from version deletion; %v", logs)
         }
-    }
+    })
+
+    t.Run("multiple versions", func(t *testing.T) {
+        for _, delete_oldest := range []bool{ true, false } {
+            reg, err := mockRegistryForDeletion(project, asset, []string{ "boring_oldies", "hot_newness" })
+            if err != nil {
+                t.Fatalf("failed to mock up registry; %v", err) 
+            }
+
+            var to_delete string
+            var survivor string
+            if delete_oldest {
+                to_delete = "boring_oldies"
+                survivor = "hot_newness"
+            } else {
+                to_delete = "hot_newness"
+                survivor = "boring_oldies"
+            }
+
+            reqpath, err := dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, to_delete))
+            if err != nil {
+                t.Fatalf("failed to dump a request type; %v", err)
+            }
+
+            globals := newGlobalConfiguration(reg)
+            self, err := identifyUser(reg)
+            if err != nil {
+                t.Fatalf("failed to identify self; %v", err)
+            }
+            globals.Administrators = append(globals.Administrators, self)
+            err = deleteVersionHandler(reqpath, &globals)
+            if err != nil {
+                t.Fatalf("failed to delete a version; %v", err)
+            }
+
+            project_dir := filepath.Join(reg, project)
+            asset_dir := filepath.Join(project_dir, asset)
+            lost_version_dir := filepath.Join(asset_dir, to_delete)
+            if _, err := os.Stat(lost_version_dir); !errors.Is(err, os.ErrNotExist) {
+                t.Fatal("failed to delete the version directory")
+            }
+
+            usage, err := readUsage(project_dir)
+            if err != nil {
+                t.Fatalf("failed to read usage after deletion; %v", err)
+            }
+            expected, err := computeUsage(filepath.Join(asset_dir, survivor), true)
+            if err != nil {
+                t.Fatalf("failed to compute usage for the survivor; %v", err)
+            }
+            if usage.Total != expected {
+                t.Fatal("mismatch in the expected usage after version deletion")
+            }
+
+            latest, err := readLatest(asset_dir)
+            if err != nil {
+                t.Fatalf("failed to read the latest version after deletion; %v", err)
+            }
+            if latest.Version != survivor {
+                t.Fatal("mismatch in the expected latest version after version deletion")
+            }
+
+            // Checking that logs were correctly written.
+            logs, err := readAllLogs(reg)
+            if err != nil {
+                t.Fatalf("failed to read all logs; %v", err)
+            }
+
+            if len(logs) != 1 || logs[0].Type != "delete-version" ||
+                logs[0].Project == nil || *(logs[0].Project) != project ||
+                logs[0].Asset == nil || *(logs[0].Asset) != asset ||
+                logs[0].Version == nil || *(logs[0].Version) != to_delete || 
+                logs[0].Latest == nil || *(logs[0].Latest) == delete_oldest {
+                t.Fatalf("logs are not as expected from version deletion; %v", logs)
+            }
+        }
+    })
+
+    t.Run("probational", func(t *testing.T) {
+        version := "ppp"
+        reg, err := mockRegistryForDeletion(project, asset, []string{ version })
+        if err != nil {
+            t.Fatalf("failed to mock up registry; %v", err) 
+        }
+
+        // Turning it into a probational version.
+        project_dir := filepath.Join(reg, project)
+        asset_dir := filepath.Join(project_dir, asset)
+        version_dir := filepath.Join(asset_dir, version)
+        summ_path := filepath.Join(version_dir, summaryFileName)
+        probational := true
+        summary := summaryMetadata {
+            UploadUserId: "urmom",
+            UploadStart: "1999-09-19T19:09:19Z",
+            UploadFinish: "1999-09-19T19:09:19Z",
+            OnProbation: &probational,
+        }
+        err = dumpJson(summ_path, &summary)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = os.Remove(filepath.Join(asset_dir, latestFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        globals := newGlobalConfiguration(reg)
+        self, err := identifyUser(reg)
+        if err != nil {
+            t.Fatalf("failed to identify self; %v", err)
+        }
+        globals.Administrators = append(globals.Administrators, self)
+        err = deleteVersionHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to delete a version; %v", err)
+        }
+
+        if _, err := os.Stat(version_dir); !errors.Is(err, os.ErrNotExist) {
+            t.Fatal("failed to delete the version directory")
+        }
+
+        usage, err := readUsage(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read usage after deletion; %v", err)
+        }
+        if usage.Total != 0 {
+            t.Fatal("expected no usage after version deletion")
+        }
+
+        lat, err := readLatest(asset_dir)
+        if err == nil || !errors.Is(err, os.ErrNotExist) {
+            fmt.Println(lat)
+            t.Fatalf("latest version should not be present after deletion; %v", err)
+        }
+
+        // Checking that no logs were written.
+        logs, err := readAllLogs(reg)
+        if err != nil {
+            t.Fatalf("failed to read all logs; %v", err)
+        }
+        if len(logs) != 0 {
+            t.Fatalf("no logs should be generated after deleting a probational version; %v", logs[0])
+        }
+    })
 }
 

@@ -215,6 +215,11 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
     }
 
+    summ, err := readSummary(version_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read summary for %s; %v", version_dir, err)
+    }
+
     err = os.RemoveAll(version_dir)
     if err != nil {
         return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
@@ -229,20 +234,34 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
     }
 
-    _, err = refreshLatest(asset_dir)
-    if err != nil {
-        return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, err)
-    }
+    if summ.OnProbation == nil || !(*summ.OnProbation) {
+        prev, err := readLatest(asset_dir)
+        was_latest := false
+        if err == nil {
+            was_latest = (prev.Version == *(incoming.Version))
+        } else if !errors.Is(err, os.ErrNotExist) {
+            return fmt.Errorf("failed to read the latest version for %s; %v", asset_dir, err)
+        }
 
-    payload := map[string]string { 
-        "type": "delete-version", 
-        "project": *(incoming.Project),
-        "asset": *(incoming.Asset),
-        "version": *(incoming.Version),
-    }
-    err = dumpLog(globals.Registry, &payload)
-    if err != nil {
-        return fmt.Errorf("failed to create log for version deletion; %w", err)
+        payload := map[string]interface{} { 
+            "type": "delete-version", 
+            "project": *(incoming.Project),
+            "asset": *(incoming.Asset),
+            "version": *(incoming.Version),
+            "latest": was_latest,
+        }
+
+        err = dumpLog(globals.Registry, &payload)
+        if err != nil {
+            return fmt.Errorf("failed to create log for version deletion; %w", err)
+        }
+
+        // Also refreshing the latest version.
+        _, err = refreshLatest(asset_dir)
+        if err != nil {
+            return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, err)
+        }
+
     }
 
     return nil

@@ -7,6 +7,7 @@ import (
     "os"
     "encoding/json"
     "net/http"
+    "errors"
 )
 
 type reindexRequest struct {
@@ -114,23 +115,20 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if summ.OnProbation == nil || !*(summ.OnProbation) {
-        // Doing this as late as possible to reduce the chances of an error
-        // triggering an abort _after_ the latest version has been updated.
-        // I suppose we could try to reset to the previous value; but if the
-        // writes failed there's no guarantee that a reset would work either.
-        latest := latestMetadata { Version: version }
-        latest_path := filepath.Join(asset_dir, latestFileName)
-        err := dumpJson(latest_path, &latest)
-        if err != nil {
-            return fmt.Errorf("failed to save latest version for %q; %w", asset_dir, err)
+        latest, err := readLatest(asset_dir)
+        is_latest := false
+        if err == nil {
+            is_latest = latest.Version == version
+        } else if !errors.Is(err, os.ErrNotExist) {
+            return fmt.Errorf("failed to read latest version for %q; %w", asset_dir, err)
         }
 
-        // Adding a log.
         log_info := map[string]interface{} {
             "type": "reindex-version",
             "project": project,
             "asset": asset,
             "version": version,
+            "latest": is_latest,
         }
         err = dumpLog(globals.Registry, log_info)
         if err != nil {

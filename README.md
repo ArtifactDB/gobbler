@@ -335,10 +335,10 @@ For some actions, the Gobbler creates a log within the `..logs/` subdirectory of
 The file is named after the date/time of the action's completion, followed by an underscore, followed by a random 6-digit integer for disambiguation purposes.
 The file contains a JSON object that details the type of action in the `type` property:
 
-- `add-version` indicates that a new version was added, or a probational version was approved.
+- `add-version` indicates that a new (non-probational) version was added, or a probational version was approved.
   This has the `project`, `asset`, `version` string properties to describe the version.
   It also has the `latest` boolean property to indicate whether the added version is the latest one for its asset.
-- `delete-version` indicates that a version was deleted.
+- `delete-version` indicates that a non-probational version was deleted.
   This has the `project`, `asset`, `version` string properties to describe the version.
   It also has the `latest` boolean property to indicate whether the deleted version was the latest one for its asset.
 - `delete-asset` indicates that an asset was deleted.
@@ -347,6 +347,7 @@ The file contains a JSON object that details the type of action in the `type` pr
   This has the `project` string property.
 - `reindex-version` indicates that a non-probational version was reindexed.
   This has the `project`, `asset`, `version` string properties to describe the version.
+  It also has the `latest` boolean property to indicate whether the reindexed version is the latest one for its asset.
 
 Downstream systems can inspect these files to determine what changes have occurred in the registry.
 This is intended for systems that need to maintain a database index on top of the bucket's contents.
