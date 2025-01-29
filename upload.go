@@ -98,6 +98,10 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
+    if err := checkProjectExists(project_dir, project); err != nil {
+        return err
+    }
+
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)

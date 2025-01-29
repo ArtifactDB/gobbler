@@ -57,6 +57,9 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
 
     // No need to lock before MkdirAll, it just no-ops if the directory already exists.
     err = os.MkdirAll(project_dir, 0755)
+    if err != nil {
+        return fmt.Errorf("failed to create a new project directory for %s; %w", project, err)
+    }
 
     globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {

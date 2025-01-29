@@ -7,6 +7,8 @@ import (
     "fmt"
     "path/filepath"
     "encoding/json"
+    "errors"
+    "net/http"
 )
 
 func dumpRequest(request_type, request_string string) (string, error) {
@@ -107,5 +109,65 @@ func TestIsBadName(t *testing.T) {
     err = isBadName("asda\\asdasd")
     if err == nil || !strings.Contains(err.Error(), "\\") {
         t.Fatal("failed to stop in the presence of a backslash")
+    }
+}
+
+func TestCheckProjectExists(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = checkProjectExists(filepath.Join(reg, "doesnt_exist"), "foo")
+    var http_err *httpError
+    if !errors.As(err, &http_err) {
+        t.Error("expected a HTTP error")
+    } else if http_err.Status != http.StatusNotFound {
+        t.Error("expected a HTTP error with a 404")
+    }
+
+    err = checkProjectExists(reg, "foo")
+    if err != nil {
+        t.Error("no error expected here")
+    }
+}
+
+func TestCheckAssetExists(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = checkAssetExists(filepath.Join(reg, "doesnt_exist"), "bar", "foo")
+    var http_err *httpError
+    if !errors.As(err, &http_err) {
+        t.Error("expected a HTTP error")
+    } else if http_err.Status != http.StatusNotFound {
+        t.Error("expected a HTTP error with a 404")
+    }
+
+    err = checkAssetExists(reg, "bar", "foo")
+    if err != nil {
+        t.Error("no error expected here")
+    }
+}
+
+func TestCheckVersionExists(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = checkVersionExists(filepath.Join(reg, "doesnt_exist"), "whee", "bar", "foo")
+    var http_err *httpError
+    if !errors.As(err, &http_err) {
+        t.Error("expected a HTTP error")
+    } else if http_err.Status != http.StatusNotFound {
+        t.Error("expected a HTTP error with a 404")
+    }
+
+    err = checkVersionExists(reg, "whee", "bar", "foo")
+    if err != nil {
+        t.Error("no error expected here")
     }
 }

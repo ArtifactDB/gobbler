@@ -10,6 +10,7 @@ import (
     "math/rand"
     "strconv"
     "path/filepath"
+    "net/http"
 )
 
 type globalConfiguration struct {
@@ -113,4 +114,37 @@ const logDirName = "..logs"
 func dumpLog(registry string, content interface{}) error {
     path := time.Now().Format(time.RFC3339) + "_" + strconv.Itoa(100000 + rand.Intn(900000))
     return dumpJson(filepath.Join(registry, logDirName, path), content)
+}
+
+func checkProjectExists(project_dir, project string) error {
+    _, err := os.Stat(project_dir) 
+    if errors.Is(err, os.ErrNotExist) {
+        return newHttpError(http.StatusNotFound, fmt.Errorf("project %s does not exist", project))
+    } else if err != nil {
+        return fmt.Errorf("failed to stat %q; %w", project_dir, err)
+    } else {
+        return nil
+    }
+}
+
+func checkAssetExists(asset_dir, asset, project string) error {
+    _, err := os.Stat(asset_dir) 
+    if errors.Is(err, os.ErrNotExist) {
+        return newHttpError(http.StatusNotFound, fmt.Errorf("asset %s does not exist in project %s", asset, project))
+    } else if err != nil {
+        return fmt.Errorf("failed to stat %q; %w", asset_dir, err)
+    } else {
+        return nil
+    }
+}
+
+func checkVersionExists(version_dir, version, asset, project string) error {
+    _, err := os.Stat(version_dir)
+    if errors.Is(err, os.ErrNotExist) {
+        return newHttpError(http.StatusNotFound, fmt.Errorf("version %s does not exist for asset %s of project %s", version, asset, project))
+    } else if err != nil {
+        return fmt.Errorf("failed to stat %q; %w", version_dir, err)
+    } else {
+        return nil
+    }
 }

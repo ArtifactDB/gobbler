@@ -221,6 +221,10 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
+    if err := checkProjectExists(project_dir, project); err != nil {
+        return err
+    }
+
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)

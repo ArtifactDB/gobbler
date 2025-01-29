@@ -74,6 +74,10 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
+    if err := checkProjectExists(project_dir, project); err != nil {
+        return err
+    }
+
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
@@ -94,14 +98,14 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     // Configuring the asset and version.
     asset := *(request.Asset)
     asset_dir := filepath.Join(project_dir, asset)
-    if _, err := os.Stat(asset_dir); err != nil {
-        return newHttpError(http.StatusNotFound, fmt.Errorf("cannot access asset directory at %q; %w", asset_dir, err))
+    if err := checkAssetExists(asset_dir, asset, project); err != nil {
+        return err
     }
 
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)
-    if _, err := os.Stat(version_dir); err != nil {
-        return newHttpError(http.StatusNotFound, fmt.Errorf("cannot access version directory at %q; %w", asset_dir, err))
+    if err := checkVersionExists(version_dir, version, asset, project); err != nil {
+        return err
     }
 
     err = reindexDirectory(globals.Registry, project, asset, version)

@@ -50,6 +50,10 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
+    if err := checkProjectExists(project_dir, project); err != nil {
+        return err
+    }
+
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
@@ -64,8 +68,18 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir))
     }
 
-    asset_dir := filepath.Join(project_dir, *(incoming.Asset))
-    version_dir := filepath.Join(asset_dir, *(incoming.Version))
+    asset := *(incoming.Asset)
+    asset_dir := filepath.Join(project_dir, asset)
+    if err := checkAssetExists(asset_dir, asset, project); err != nil {
+        return err
+    }
+
+    version := *(incoming.Version)
+    version_dir := filepath.Join(asset_dir, version)
+    if err := checkVersionExists(version_dir, version, asset, project); err != nil {
+        return err
+    }
+
     summ, err := readSummary(version_dir)
     if err != nil {
         return fmt.Errorf("failed to read the version summary at %q; %w", version_dir, err)
@@ -120,8 +134,8 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         log_info := map[string]interface{} {
             "type": "add-version",
             "project": project,
-            "asset": *(incoming.Asset),
-            "version": *(incoming.Version),
+            "asset": asset,
+            "version": version,
             "latest": overwrite_latest,
         }
         err = dumpLog(globals.Registry, &log_info)

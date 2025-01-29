@@ -108,7 +108,12 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
-    project_dir := filepath.Join(globals.Registry, *(incoming.Project))
+    project := *(incoming.Project)
+    project_dir := filepath.Join(globals.Registry, project)
+    if err := checkProjectExists(project_dir, project); err != nil {
+        return nil, err
+    }
+
     err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
