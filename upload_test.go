@@ -128,7 +128,7 @@ func TestUploadHandlerSimple(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to read the usage; %v", err)
     }
-    expected_usage, err := computeUsage(project_dir, true)
+    expected_usage, err := computeUsage(project_dir)
     if err != nil {
         t.Fatalf("failed to compute the expected usage; %v", err)
     }
@@ -382,7 +382,7 @@ func TestUploadHandlerUpdate(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to read the usage; %v", err)
         }
-        expected_usage, err := computeUsage(project_dir, true)
+        expected_usage, err := computeUsage(project_dir)
         if err != nil {
             t.Fatalf("failed to compute the expected usage; %v", err)
         }

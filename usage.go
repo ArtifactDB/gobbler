@@ -34,7 +34,7 @@ func readUsage(path string) (*usageMetadata, error) {
     return &output, nil
 }
 
-func computeUsage(dir string, skip_symlinks bool) (int64, error) {
+func computeUsage(dir string) (int64, error) {
     var total int64
     total = 0
 
@@ -43,35 +43,26 @@ func computeUsage(dir string, skip_symlinks bool) (int64, error) {
             return fmt.Errorf("failed to walk into %q; %w", path, err)
         }
 
+        if info.IsDir() {
+            return nil
+        }
+
         // Skipping internal files.
         base := filepath.Base(path)
         if strings.HasPrefix(base, "..") {
             return nil
         }
 
+        // Skipping symlinks.
         restat, err := info.Info()
         if err != nil {
             return fmt.Errorf("failed to stat %q; %w", path, err)
         }
-
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            more_info, err := os.Stat(path)
-            if err != nil {
-                return fmt.Errorf("failed to stat target of link %q; %w", path, err)
-            }
-            if more_info.IsDir() {
-                return fmt.Errorf("symlinks to directories are not supported (%q); %w", path, err)
-            }
-            if skip_symlinks {
-                return nil
-            } 
-            total += more_info.Size()
-        } else {
-            if !info.IsDir() {
-                total += restat.Size()
-            }
+            return nil
         }
 
+        total += restat.Size()
         return nil
     })
 
@@ -120,7 +111,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
     }
     defer globals.Locks.Unlock(project_dir)
 
-    new_usage, err := computeUsage(project_dir, true)
+    new_usage, err := computeUsage(project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to compute usage for %q; %w", *(incoming.Project), err)
     }

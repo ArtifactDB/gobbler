@@ -334,7 +334,7 @@ func TestDeleteVersion(t *testing.T) {
             if err != nil {
                 t.Fatalf("failed to read usage after deletion; %v", err)
             }
-            expected, err := computeUsage(filepath.Join(asset_dir, survivor), true)
+            expected, err := computeUsage(filepath.Join(asset_dir, survivor))
             if err != nil {
                 t.Fatalf("failed to compute usage for the survivor; %v", err)
             }
