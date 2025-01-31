@@ -112,8 +112,13 @@ This is a JSON-formatted file that contains a JSON object with the following pro
     If not specified, the uploader is untrusted by default.
 - `global_write` (optional): a boolean indicating whether "global writes" are enabled.
   With global writes enabled, any user of the filesystem can create a new asset within this project.
-  Once the asset is created, its creating user is added to the `uploaders` array with `asset` set to the name of the new asset and `trusted` set to `true`.
+  Once the asset is created, its creating user is added as a trusted uploader to the `{project}/{asset}/..permissions` file (see below).
   If not specified, global writes are disabled by default.
+
+Additional uploader permissions for a specific asset can be specified in a `{project}/{asset}/..permissions` file. 
+This should be a JSON-formatted file that contains a JSON object with the `uploaders` property as described above.
+Specifying an uploader in this file is equivalent to specifying an uploader in the project-level permissions with the `asset` property set to the name of the relevant asset.
+During [upload requests](#uploads-and-updates), any `uploaders` in this file will be appended to the `uploaders` in `{project}/..permissions` before authorization checks.
 
 User identities are defined by the UIDs on the operating system.
 All users are authenticated by examining the ownership of files provided to the Gobbler.
@@ -230,9 +235,12 @@ This ensures that the Gobbler instance is able to free up space by periodically 
 Users should create a file with the `request-set_permissions-` prefix, which should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
-- `permissions`: an object containing either or both of `owners` and `uploaders`.
+- `asset` (optional): string containing the name of an asset.
+  If provided, asset-level uploader permissions will be modified instead of project-level permissions.
+- `permissions`: an object containing zero, one or more of `owners`, `uploaders` and `global_write`.
   Each of these properties has the same type as described [above](#permissions).
   If any property is missing, the value in the existing permissions is used.
+  If `asset` is provided, only `uploaders` will be used.
 
 On success, the permissions in the registry are modified.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
