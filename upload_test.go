@@ -495,36 +495,71 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
         t.Fatalf("failed to create the project; %v", err)
     }
 
-    // Now making the request.
-    asset := "BAR"
-    version := "whee"
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
-    reqname, err := dumpRequest("upload", req_string)
-    if err != nil {
-        t.Fatalf("failed to create upload request; %v", err)
-    }
+    t.Run("okay", func(t *testing.T) {
+        asset := "BAR"
+        version := "whee"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
 
-    err = uploadHandler(reqname, &globals)
-    if err != nil {
-        t.Fatalf("failed to perform a global write upload; %v", err)
-    }
+        err = uploadHandler(reqname, &globals)
+        if err != nil {
+            t.Fatalf("failed to perform a global write upload; %v", err)
+        }
 
-    // Checking that permissions are set up correctly.
-    perms, err := readPermissions(filepath.Join(globals.Registry, project))
-    if err != nil {
-        t.Fatalf("failed to read the new permissions; %v", err)
-    }
-    if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != self.Username || *(perms.Uploaders[0].Asset) != asset {
-        t.Fatalf("global write upload did not update the uploaders; %v", err)
-    }
+        // Checking that permissions are set up correctly.
+        perms := &permissionsMetadata{}
+        err = addAssetPermissions(perms, filepath.Join(globals.Registry, project, asset), asset)
+        if err != nil {
+            t.Fatalf("failed to read the new permissions; %v", err)
+        }
+        if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != self.Username || *(perms.Uploaders[0].Asset) != asset {
+            t.Fatalf("global write upload did not update the uploaders; %v", err)
+        }
 
-    // Check that the upload completed.
-    destination := filepath.Join(reg, project, asset, version)
-    man, err := readManifest(destination)
-    info, ok := man["evolution"]
-    if !ok || int(info.Size) != len("haunter") || info.Link != nil {
-        t.Fatal("unexpected manifest entry for 'evolution'")
-    }
+        // Check that the upload completed.
+        destination := filepath.Join(reg, project, asset, version)
+        man, err := readManifest(destination)
+        info, ok := man["evolution"]
+        if !ok || int(info.Size) != len("haunter") || info.Link != nil {
+            t.Fatal("unexpected manifest entry for 'evolution'")
+        }
+
+        // Checking that the new permissions are acknowledged so that we can add another version of the same asset.
+        version = "whee2"
+        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err = dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals)
+        if err != nil {
+            t.Fatalf("failed to perform another upload to the same asset; %v", err)
+        }
+    })
+
+    t.Run("already there", func(t *testing.T) {
+        asset := "FOO"
+        err := os.Mkdir(filepath.Join(reg, project, asset), 0755)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        version := "whee"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatal("global write should have failed if asset already exists")
+        }
+    })
 }
 
 func TestUploadHandlerProbation(t *testing.T) {

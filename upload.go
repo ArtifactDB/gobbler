@@ -113,13 +113,18 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
 
-    // Check if this upload is authorized via the global write permissions. 
-    global_write_new_asset, err := prepareGlobalWriteNewAsset(req_user, perms, *(request.Asset), project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to update the permissions for a new asset with global write; %w", err)
-    }
+    asset := *(request.Asset)
+    asset_dir := filepath.Join(project_dir, asset)
+    _, err = os.Stat(asset_dir)
+    asset_exists := !(err != nil && errors.Is(err, os.ErrNotExist))
 
-    if !global_write_new_asset {
+    use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
+    if !use_global_write {
+        err := addAssetPermissions(perms, asset_dir, asset)
+        if err != nil {
+            return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
+        }
+
         ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
         if !ok {
             return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
@@ -130,12 +135,20 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // Configuring the asset and version.
-    asset := *(request.Asset)
-    asset_dir := filepath.Join(project_dir, asset)
-    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+    if !asset_exists {
         err = os.Mkdir(asset_dir, 0755)
         if err != nil {
             return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
+        }
+    }
+
+    if use_global_write { // adding asset-level permissions.
+        is_trusted := true
+        asset_permissions := &permissionsMetadata{ Uploaders: []uploaderEntry{ uploaderEntry{ Id: req_user, Trusted: &is_trusted } } }
+        perm_path := filepath.Join(asset_dir, permissionsFileName)
+        err := dumpJson(perm_path, asset_permissions)
+        if err != nil {
+            return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
         }
     }
 

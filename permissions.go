@@ -48,18 +48,43 @@ func identifyUser(path string) (string, error) {
 }
 
 func readPermissions(path string) (*permissionsMetadata, error) {
-    handle, err := os.ReadFile(filepath.Join(path, permissionsFileName))
+    contents, err := os.ReadFile(filepath.Join(path, permissionsFileName))
     if err != nil {
         return nil, fmt.Errorf("failed to read %q; %w", path, err)
     }
 
     var output permissionsMetadata
-    err = json.Unmarshal(handle, &output)
+    err = json.Unmarshal(contents, &output)
     if err != nil {
         return nil, fmt.Errorf("failed to parse JSON from %q; %w", path, err)
     }
 
     return &output, nil
+}
+
+func addAssetPermissions(existing *permissionsMetadata, asset_dir, asset string) error {
+    path := filepath.Join(asset_dir, permissionsFileName)
+    contents, err := os.ReadFile(path)
+
+    if err != nil {
+        if errors.Is(err, os.ErrNotExist) {
+            return nil
+        } else {
+            return fmt.Errorf("failed to read %q; %w", path, err)
+        }
+    }
+
+    var loaded permissionsMetadata
+    err = json.Unmarshal(contents, &loaded)
+    if err != nil {
+        return fmt.Errorf("failed to parse JSON from %q; %w", path, err)
+    }
+
+    for _, up := range loaded.Uploaders {
+        up.Asset = &asset
+        existing.Uploaders = append(existing.Uploaders, up)
+    }
+    return nil
 }
 
 func isAuthorizedToAdmin(username string, administrators []string) bool {
@@ -124,31 +149,6 @@ func isAuthorizedToUpload(username string, administrators []string, permissions 
     return false, false
 }
 
-func prepareGlobalWriteNewAsset(username string, permissions *permissionsMetadata, asset string, project_dir string) (bool, error) {
-    if permissions.GlobalWrite == nil || !*(permissions.GlobalWrite) {
-        return false, nil
-    }
-
-    asset_dir := filepath.Join(project_dir, asset)
-    _, err := os.Stat(asset_dir)
-
-    if err == nil || !errors.Is(err, os.ErrNotExist) {
-        return false, nil
-    }
-
-    // Updating the permissions in memory and on disk.
-    is_trusted := true
-    permissions.Uploaders = append(permissions.Uploaders, uploaderEntry{ Id: username, Asset: &asset, Trusted: &is_trusted })
-
-    perm_path := filepath.Join(project_dir, permissionsFileName)
-    err = dumpJson(perm_path, permissions)
-    if err != nil {
-        return false, err
-    }
-
-    return true, nil
-}
-
 func sanitizeUploaders(uploaders []unsafeUploaderEntry) ([]uploaderEntry, error) {
     output := make([]uploaderEntry, len(uploaders))
 
@@ -168,7 +168,7 @@ func sanitizeUploaders(uploaders []unsafeUploaderEntry) ([]uploaderEntry, error)
         output[i].Asset = u.Asset
         output[i].Version = u.Version
         output[i].Until = u.Until
-        output[i]. Trusted = u.Trusted
+        output[i].Trusted = u.Trusted
     }
 
     return output, nil
@@ -191,6 +191,7 @@ type unsafePermissionsMetadata struct {
 func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     incoming := struct {
         Project *string `json:"project"`
+        Asset *string `json:"asset"`
         Permissions *unsafePermissionsMetadata `json:"permissions"`
     }{}
     {
@@ -206,7 +207,14 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
 
         err = isMissingOrBadName(incoming.Project)
         if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
+            return newHttpError(http.StatusBadRequest, fmt.Errorf("missing or invalid 'project' property in %q; %w", reqpath, err))
+        }
+
+        if incoming.Asset != nil {
+            err := isBadName(*(incoming.Asset))
+            if err != nil {
+                return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
+            }
         }
 
         if incoming.Permissions == nil {
@@ -240,24 +248,52 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
     }
 
-    if incoming.Permissions.Owners != nil {
-        existing.Owners = incoming.Permissions.Owners
-    }
-    if incoming.Permissions.Uploaders != nil {
-        san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
-        if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
+    if incoming.Asset == nil {
+        if incoming.Permissions.Owners != nil {
+            existing.Owners = incoming.Permissions.Owners
         }
-        existing.Uploaders = san
-    }
-    if incoming.Permissions.GlobalWrite != nil {
-        existing.GlobalWrite = incoming.Permissions.GlobalWrite
-    }
+        if incoming.Permissions.Uploaders != nil {
+            san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
+            if err != nil {
+                return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
+            }
+            existing.Uploaders = san
+        }
+        if incoming.Permissions.GlobalWrite != nil {
+            existing.GlobalWrite = incoming.Permissions.GlobalWrite
+        }
 
-    perm_path := filepath.Join(project_dir, permissionsFileName)
-    err = dumpJson(perm_path, existing)
-    if err != nil {
-        return fmt.Errorf("failed to write permissions for %q; %w", project, err)
+        perm_path := filepath.Join(project_dir, permissionsFileName)
+        err = dumpJson(perm_path, existing)
+        if err != nil {
+            return fmt.Errorf("failed to write permissions for %q; %w", project, err)
+        }
+
+    } else {
+        asset_dir := filepath.Join(project_dir, *(incoming.Asset))
+        if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+            err = os.Mkdir(asset_dir, 0755)
+            if err != nil {
+                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
+            }
+        }
+
+        if incoming.Permissions.Uploaders != nil { 
+            san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
+            if err != nil {
+                return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
+            }
+            for i, _ := range san {
+                san[i].Asset = nil
+            }
+
+            aperms := &permissionsMetadata{ Uploaders: san }
+            perm_path := filepath.Join(asset_dir, permissionsFileName)
+            err = dumpJson(perm_path, aperms)
+            if err != nil {
+                return fmt.Errorf("failed to write asset-level permissions for %q; %w", asset_dir, err)
+            }
+        }
     }
 
     return nil
