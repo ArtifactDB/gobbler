@@ -82,15 +82,16 @@ This guarantee does not apply recursively, i.e., linked-from files may still be 
 
 ### Permissions
 
-The Gobbler supports three levels of permissions - adminstrators, project owners and uploaders.
+The Gobbler supports several levels of permissions:
 
 - Uploaders can upload new assets or versions to an existing project.
-  Upload authorization is provided by the project's owners, and can be limited to particular asset/version names, or within a certain time frame.
-  Project owners can also specify whether an uploader is untrusted (and thus whether their uploads should be probational, see below).
-- Project owners can modify the permissions of their project, including the addition/removal of new owners or changes to uploader authorizations.
-  They can also do anything that uploaders can do.
-- Adminstrators can create projects and projects (or particular assets/versions thereof).
-  They can also do anything that project owners can do.
+  Upload authorization is provided by the project/asset owners and can be limited to a asset, version or time frame.
+  Project/asset owners can also specify whether an uploader is untrusted (and thus whether their uploads should be probational, see below).
+- Asset owners can modify the permissions of their asset within a project, including the addition/removal of new asset owners or changes to uploader authorizations for their asset.
+  They can also upload new versions to their asset.
+- Project owners can modify the permissions of their project, including the addition/removal of new project/asset owners or changes to any uploader authorizations.
+  They can also upload new versions of new or existing assets to their project.
+- Adminstrators can create new projects; change permissions of any project or asset; delete projects, assets and versions; and upload new versions of new or existing assets in any project.
 
 The permissions for a project are stored in the `{project}/..permissions` file.
 This is a JSON-formatted file that contains a JSON object with the following properties:
@@ -115,10 +116,13 @@ This is a JSON-formatted file that contains a JSON object with the following pro
   Once the asset is created, its creating user is added as a trusted uploader to the `{project}/{asset}/..permissions` file (see below).
   If not specified, global writes are disabled by default.
 
-Additional uploader permissions for a specific asset can be specified in a `{project}/{asset}/..permissions` file. 
-This should be a JSON-formatted file that contains a JSON object with the `uploaders` property as described above.
-Specifying an uploader in this file is equivalent to specifying an uploader in the project-level permissions with the `asset` property set to the name of the relevant asset.
-During [upload requests](#uploads-and-updates), any `uploaders` in this file will be appended to the `uploaders` in `{project}/..permissions` before authorization checks.
+Additional permissions for a specific asset may be specified in an optional `{project}/{asset}/..permissions` file. 
+This should be a JSON-formatted file that contains a JSON object with the following properties:
+
+- `owners`: An array of strings containing the identities of users who own this asset.
+- `uploaders`: An array of objects specifying the users who are authorized to be uploaders for this asset.
+  Each object has the same properties as described in the project-level permissions, except that any `asset` is ignored as it will be replaced by the name of the asset.
+  During [upload requests](#uploads-and-updates), these `uploaders` will be appended to the `uploaders` in `{project}/..permissions` before authorization checks.
 
 User identities are defined by the UIDs on the operating system.
 All users are authenticated by examining the ownership of files provided to the Gobbler.

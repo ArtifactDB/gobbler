@@ -9,7 +9,6 @@ import (
     "time"
     "fmt"
     "strings"
-    "encoding/json"
 )
 
 func TestIdentifyUser(t *testing.T) {
@@ -58,7 +57,7 @@ func TestReadPermissions(t *testing.T) {
     }
 }
 
-func TestAddAssetPermissions(t *testing.T) {
+func TestAddAssetPermissionsForUpload(t *testing.T) {
     f, err := os.MkdirTemp("", "test-")
     if err != nil {
         t.Fatalf("failed to create tempdir; %v", err)
@@ -72,36 +71,33 @@ func TestAddAssetPermissions(t *testing.T) {
     }
 
     // Existing attributes are not affected if the asset-level permissions file does not exist.
-    err = addAssetPermissions(existing, f, "some_asset")
+    aperms, err := addAssetPermissionsForUpload(existing, f, "some_asset")
     if err != nil {
         t.Fatal(err)
     }
 
-    if len(existing.Owners) != 2 || !*(existing.GlobalWrite) || len(existing.Uploaders) != 1 || existing.Uploaders[0].Id != "blah" {
+    if len(aperms.Owners) != 2 || len(aperms.Uploaders) != 1 || aperms.Uploaders[0].Id != "blah" {
         t.Fatalf("permissions were changed in ways they should not have been; %v", existing)
     }
 
     // Alright, trying again.
-    err = os.WriteFile(filepath.Join(f, permissionsFileName), []byte(`{ "uploaders": [ { "id": "excel" }, { "id": "foo", "version": "bar" } ] }`), 0644)
+    err = os.WriteFile(filepath.Join(f, permissionsFileName), []byte(`{ "owners": ["akari"], "uploaders": [ { "id": "excel" }, { "id": "foo", "version": "bar" } ] }`), 0644)
     if err != nil {
         t.Fatalf("failed to create test ..permissions; %v", err)
     }
 
-    err = addAssetPermissions(existing, f, "some_asset")
+    aperms, err = addAssetPermissionsForUpload(existing, f, "some_asset")
     if err != nil {
         t.Fatal(err)
     }
 
-    if len(existing.Owners) != 2 || !*(existing.GlobalWrite) {
-        t.Fatal("permissions were changed in ways they should not have been")
-    }
-
-    if existing.Uploaders == nil || 
-        len(existing.Uploaders) != 3 || 
-        existing.Uploaders[0].Id != "blah" || existing.Uploaders[0].Asset != nil ||
-        existing.Uploaders[1].Id != "excel" || *(existing.Uploaders[1].Asset) != "some_asset" ||
-        existing.Uploaders[2].Id != "foo" || *(existing.Uploaders[2].Asset) != "some_asset" || *(existing.Uploaders[2].Version) != "bar" {
-        t.Fatalf("unexpected 'uploaders' value; %v", existing.Uploaders)
+    if len(aperms.Owners) != 3 || aperms.Owners[2] != "akari" ||
+        aperms.Uploaders == nil || 
+        len(aperms.Uploaders) != 3 || 
+        aperms.Uploaders[0].Id != "blah" || aperms.Uploaders[0].Asset != nil ||
+        aperms.Uploaders[1].Id != "excel" || *(aperms.Uploaders[1].Asset) != "some_asset" ||
+        aperms.Uploaders[2].Id != "foo" || *(aperms.Uploaders[2].Asset) != "some_asset" || *(aperms.Uploaders[2].Version) != "bar" {
+        t.Fatalf("unexpected 'uploaders' value; %v", aperms.Uploaders)
     }
 }
 
@@ -458,7 +454,14 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
 
         reqpath, err := dumpRequest(
             "set_permissions",
-            fmt.Sprintf(`{ "project": "%s", "asset": "BLAH", "permissions": { "uploaders": [ { "id": "YAY", "trusted": true }, { "id": "foo", "asset": "bar", "version": "stuff" } ] } }`, project),
+            fmt.Sprintf(`{ 
+                "project": "%s",
+                "asset": "BLAH",
+                "permissions": {
+                    "owners": ["me"], 
+                    "uploaders": [ { "id": "YAY", "trusted": true }, { "id": "foo", "asset": "bar", "version": "stuff" } ]
+                } 
+            }`, project),
         )
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
@@ -469,14 +472,12 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to write asset-level permissions; %v", err)
         }
 
-        perms := &permissionsMetadata{}    
-        content, err := os.ReadFile(filepath.Join(project_dir, "BLAH", permissionsFileName))
+        perms, err := readPermissions(filepath.Join(project_dir, "BLAH"))
         if err != nil {
             t.Fatal(err)
         }
-        err = json.Unmarshal(content, perms)
-        if err != nil {
-            t.Fatal(err)
+        if len(perms.Owners) != 1 || perms.Owners[0] != "me" {
+            t.Errorf("unexpected owners after asset-level permissions setting; %v", perms.Uploaders)
         }
         if len(perms.Uploaders) != 2 ||
             perms.Uploaders[0].Id != "YAY" || perms.Uploaders[0].Asset != nil || !*(perms.Uploaders[0].Trusted) ||
@@ -484,10 +485,87 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Errorf("unexpected uploaders after asset-level permissions setting; %v", perms.Uploaders)
         }
 
-        // Still works when directory already exists.
+        // Still works and re-uses existing values when directory already exists with asset-level permissions.
+        reqpath, err = dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ 
+                "project": "%s",
+                "asset": "BLAH",
+                "permissions": {}
+            }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
         err = setPermissionsHandler(reqpath, &globals)
         if err != nil {
             t.Fatalf("failed to rewrite asset-level permissions; %v", err)
+        }
+
+        perms, err = readPermissions(filepath.Join(project_dir, "BLAH"))
+        if err != nil {
+            t.Fatal(err)
+        }
+        if len(perms.Owners) != 1 || len(perms.Uploaders) != 2 {
+            t.Errorf("unexpected asset-level permissions after re-setting; %v", perms)
+        }
+    })
+
+    t.Run("asset level not-authorized", func(t *testing.T) {
+        err := os.WriteFile(
+            filepath.Join(project_dir, permissionsFileName),
+            []byte(`{ "owners": [ ] }`),
+            0644,
+        )
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ 
+                "project": "%s",
+                "asset": "NOTAUTHORIZED",
+                "permissions": {
+                    "uploaders": [ { "id": "urmom", "trusted": true } ]
+                }
+            }`, project),
+        )
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = setPermissionsHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatal("changes to asset-level permissions should be forbidden")
+        }
+
+        // Trying again now that we added an asset-level permissions.
+        err = os.Mkdir(filepath.Join(project_dir, "NOTAUTHORIZED"), 0755) 
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = os.WriteFile(
+            filepath.Join(project_dir, "NOTAUTHORIZED", permissionsFileName),
+            []byte(fmt.Sprintf(`{ "owners": [ "%s" ], "uploaders": [] }`, self)),
+            0644,
+        )
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = setPermissionsHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        perms, err := readPermissions(filepath.Join(project_dir, "NOTAUTHORIZED"))
+        if err != nil {
+            t.Fatal(err)
+        }
+        if len(perms.Owners) != 1 || len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != "urmom" {
+            t.Errorf("unexpected asset-level permissions after re-setting; %v", perms)
         }
     })
 }

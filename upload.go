@@ -120,12 +120,12 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
     if !use_global_write {
-        err := addAssetPermissions(perms, asset_dir, asset)
+        asset_perms, err := addAssetPermissionsForUpload(perms, asset_dir, asset)
         if err != nil {
             return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
         }
 
-        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
+        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, asset_perms, request.Asset, request.Version)
         if !ok {
             return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
         }
@@ -143,8 +143,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if use_global_write { // adding asset-level permissions.
-        is_trusted := true
-        asset_permissions := &permissionsMetadata{ Uploaders: []uploaderEntry{ uploaderEntry{ Id: req_user, Trusted: &is_trusted } } }
+        asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
         perm_path := filepath.Join(asset_dir, permissionsFileName)
         err := dumpJson(perm_path, asset_permissions)
         if err != nil {

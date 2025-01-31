@@ -62,29 +62,35 @@ func readPermissions(path string) (*permissionsMetadata, error) {
     return &output, nil
 }
 
-func addAssetPermissions(existing *permissionsMetadata, asset_dir, asset string) error {
+func addAssetPermissionsForUpload(existing *permissionsMetadata, asset_dir, asset string) (*permissionsMetadata, error) {
     path := filepath.Join(asset_dir, permissionsFileName)
     contents, err := os.ReadFile(path)
 
     if err != nil {
         if errors.Is(err, os.ErrNotExist) {
-            return nil
+            return existing, nil
         } else {
-            return fmt.Errorf("failed to read %q; %w", path, err)
+            return nil, fmt.Errorf("failed to read %q; %w", path, err)
         }
     }
 
+    // If we need to modify the permissions, we return a new object to avoid mutating the input object.
     var loaded permissionsMetadata
     err = json.Unmarshal(contents, &loaded)
     if err != nil {
-        return fmt.Errorf("failed to parse JSON from %q; %w", path, err)
+        return nil, fmt.Errorf("failed to parse JSON from %q; %w", path, err)
     }
 
+    loaded.Owners = append(existing.Owners, (loaded.Owners)...)
+
+    new_uploaders := existing.Uploaders
     for _, up := range loaded.Uploaders {
         up.Asset = &asset
-        existing.Uploaders = append(existing.Uploaders, up)
+        new_uploaders = append(new_uploaders, up)
     }
-    return nil
+    loaded.Uploaders = new_uploaders
+
+    return &loaded, nil
 }
 
 func isAuthorizedToAdmin(username string, administrators []string) bool {
@@ -239,46 +245,61 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     }
     defer globals.Locks.Unlock(project_dir)
 
-    existing, err := readPermissions(project_dir)
+    project_perms, err := readPermissions(project_dir)
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
     }
 
-    if !isAuthorizedToMaintain(source_user, globals.Administrators, existing.Owners) {
-        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
-    }
-
     if incoming.Asset == nil {
+        if !isAuthorizedToMaintain(source_user, globals.Administrators, project_perms.Owners) {
+            return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
+        }
+
         if incoming.Permissions.Owners != nil {
-            existing.Owners = incoming.Permissions.Owners
+            project_perms.Owners = incoming.Permissions.Owners
         }
         if incoming.Permissions.Uploaders != nil {
             san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
             if err != nil {
                 return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
             }
-            existing.Uploaders = san
+            project_perms.Uploaders = san
         }
         if incoming.Permissions.GlobalWrite != nil {
-            existing.GlobalWrite = incoming.Permissions.GlobalWrite
+            project_perms.GlobalWrite = incoming.Permissions.GlobalWrite
         }
 
         perm_path := filepath.Join(project_dir, permissionsFileName)
-        err = dumpJson(perm_path, existing)
+        err = dumpJson(perm_path, project_perms)
         if err != nil {
             return fmt.Errorf("failed to write permissions for %q; %w", project, err)
         }
 
     } else {
-        asset_dir := filepath.Join(project_dir, *(incoming.Asset))
-        if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
-            err = os.Mkdir(asset_dir, 0755)
+        asset := *(incoming.Asset)
+        asset_dir := filepath.Join(project_dir, asset)
+
+        var asset_perms *permissionsMetadata
+        perm_path := filepath.Join(asset_dir, permissionsFileName)
+        if _, err = os.Stat(perm_path); err != nil && errors.Is(err, os.ErrNotExist) {
+            asset_perms = &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
+        } else {
+            existing, err := readPermissions(asset_dir)
             if err != nil {
-                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
+                return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
             }
+            asset_perms = existing
         }
 
-        if incoming.Permissions.Uploaders != nil { 
+        combined_owners := append(project_perms.Owners, (asset_perms.Owners)...)
+        if !isAuthorizedToMaintain(source_user, globals.Administrators, combined_owners) {
+            return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for asset %q in %q", source_user, asset, project))
+        }
+
+        if incoming.Permissions.Owners != nil {
+            asset_perms.Owners = incoming.Permissions.Owners
+        }
+        if incoming.Permissions.Uploaders != nil {
             san, err := sanitizeUploaders(incoming.Permissions.Uploaders)
             if err != nil {
                 return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'permissions.uploaders' in request; %w", err))
@@ -286,13 +307,18 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
             for i, _ := range san {
                 san[i].Asset = nil
             }
+            asset_perms.Uploaders = san
+        }
 
-            aperms := &permissionsMetadata{ Uploaders: san }
-            perm_path := filepath.Join(asset_dir, permissionsFileName)
-            err = dumpJson(perm_path, aperms)
+        if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
+            err = os.Mkdir(asset_dir, 0755)
             if err != nil {
-                return fmt.Errorf("failed to write asset-level permissions for %q; %w", asset_dir, err)
+                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
             }
+        }
+        err = dumpJson(perm_path, asset_perms)
+        if err != nil {
+            return fmt.Errorf("failed to write asset-level permissions for %q; %w", asset_dir, err)
         }
     }
 

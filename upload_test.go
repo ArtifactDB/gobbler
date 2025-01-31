@@ -510,12 +510,11 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
         }
 
         // Checking that permissions are set up correctly.
-        perms := &permissionsMetadata{}
-        err = addAssetPermissions(perms, filepath.Join(globals.Registry, project, asset), asset)
+        perms, err := addAssetPermissionsForUpload(&permissionsMetadata{}, filepath.Join(globals.Registry, project, asset), asset)
         if err != nil {
             t.Fatalf("failed to read the new permissions; %v", err)
         }
-        if len(perms.Uploaders) != 1 || perms.Uploaders[0].Id != self.Username || *(perms.Uploaders[0].Asset) != asset {
+        if len(perms.Owners) != 1 || perms.Owners[0] != self.Username {
             t.Fatalf("global write upload did not update the uploaders; %v", err)
         }
 
