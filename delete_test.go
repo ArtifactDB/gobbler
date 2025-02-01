@@ -53,6 +53,11 @@ func mockRegistryForDeletion(project, asset string, versions []string) (string, 
             return "", fmt.Errorf("failed to write a placeholder file; %w", err)
         }
         expected_size += len(message)
+
+        err = reindexDirectory(reg, project, asset, v)
+        if err != nil {
+            return "", fmt.Errorf("failed to reindex the directory; %w", err)
+        }
     }
 
     err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte(fmt.Sprintf(`{ "total": %d }`, expected_size)), 0644)
@@ -334,7 +339,7 @@ func TestDeleteVersion(t *testing.T) {
             if err != nil {
                 t.Fatalf("failed to read usage after deletion; %v", err)
             }
-            expected, err := computeUsage(filepath.Join(asset_dir, survivor))
+            expected, err := computeVersionUsage(filepath.Join(asset_dir, survivor))
             if err != nil {
                 t.Fatalf("failed to compute usage for the survivor; %v", err)
             }

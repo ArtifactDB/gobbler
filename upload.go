@@ -198,7 +198,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     {
-        extra, err := computeUsage(version_dir)
+        extra, err := computeVersionUsage(version_dir)
         if err != nil {
             return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
         }

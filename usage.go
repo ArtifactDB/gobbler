@@ -4,8 +4,6 @@ import (
     "os"
     "encoding/json"
     "fmt"
-    "io/fs"
-    "strings"
     "path/filepath"
     "time"
     "net/http"
@@ -34,37 +32,72 @@ func readUsage(path string) (*usageMetadata, error) {
     return &output, nil
 }
 
-func computeUsage(dir string) (int64, error) {
+func computeProjectUsage(path string) (int64, error) {
     var total int64
     total = 0
 
-    err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
+    assets, err := os.ReadDir(path)
+    if err != nil {
+        return total, fmt.Errorf("failed to list assets; %w", err)
+    }
+
+    for _, aentry := range assets {
+        if !aentry.IsDir() {
+            continue
+        }
+
+        asset := aentry.Name()
+        asize, err := computeAssetUsage(filepath.Join(path, asset))
         if err != nil {
-            return fmt.Errorf("failed to walk into %q; %w", path, err)
+            return total, fmt.Errorf("failed to get usage for asset %q; %w", asset, err) 
         }
 
-        if info.IsDir() {
-            return nil
+        total += asize
+    }
+
+    return total, nil
+}
+
+func computeAssetUsage(path string) (int64, error) {
+    var total int64
+    total = 0
+
+    versions, err := os.ReadDir(path)
+    if err != nil {
+        return total, fmt.Errorf("failed to list versions; %w", err)
+    }
+
+    for _, ventry := range versions {
+        if !ventry.IsDir() {
+            continue
         }
 
-        // Skipping internal files.
-        base := filepath.Base(path)
-        if strings.HasPrefix(base, "..") {
-            return nil
-        }
-
-        // Skipping symlinks.
-        restat, err := info.Info()
+        version := ventry.Name()
+        vsize, err := computeVersionUsage(filepath.Join(path, version))
         if err != nil {
-            return fmt.Errorf("failed to stat %q; %w", path, err)
-        }
-        if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            return nil
+            return total, fmt.Errorf("failed to get usage for version %q; %w", version, err) 
         }
 
-        total += restat.Size()
-        return nil
-    })
+        total += vsize
+    }
+
+    return total, nil
+}
+
+func computeVersionUsage(path string) (int64, error) {
+    var total int64
+    total = 0
+
+    man, err := readManifest(path)
+    if err != nil {
+        return total, fmt.Errorf("failed to open manifest; %w", err)
+    }
+
+    for _, mm := range man {
+        if mm.Link == nil {
+            total += mm.Size
+        }
+    }
 
     return total, err
 }
@@ -111,7 +144,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
     }
     defer globals.Locks.Unlock(project_dir)
 
-    new_usage, err := computeUsage(project_dir)
+    new_usage, err := computeProjectUsage(project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to compute usage for %q; %w", *(incoming.Project), err)
     }

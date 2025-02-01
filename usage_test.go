@@ -82,8 +82,21 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("failed to create mock file; %v", err)
     }
 
-    // Actually running some tests.
-    total, err := computeUsage(src)
+    // Executing the transfer and computing the size.
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    project := "pokemon"
+    asset := "pikachu"
+    version := "yellow"
+    err = transferDirectory(src, reg, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    total, err := computeProjectUsage(filepath.Join(reg, project))
     if err != nil {
         t.Fatalf("failed to create compute usage; %v", err)
     }
@@ -91,6 +104,7 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("sum of file sizes is different from expected (%d, got %d)", expected_size, total)
     }
 
+    // Symlinks are ignored.
     err = os.Symlink(
         filepath.Join(src, "moves", "grass", "razor_leaf"), 
         filepath.Join(src, "moves", "grass", "vine_whip"),
@@ -99,12 +113,19 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("failed to create mock file; %v", err)
     }
 
-    total, err = computeUsage(src)
+    version = "green"
+    err = transferDirectory(src, reg, project, asset, version)
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    combined_total, err := computeProjectUsage(filepath.Join(reg, project))
     if err != nil {
         t.Fatalf("failed to create compute usage; %v", err)
     }
-    if total != int64(expected_size) {
-        t.Fatalf("sum of file sizes is different from expected (%d, got %d) when ignoring soft links", expected_size, total)
+    total_added := combined_total - total
+    if total_added != int64(expected_size) {
+        t.Fatalf("sum of file sizes is different from expected (%d, got %d)", expected_size, total_added)
     }
 }
 
@@ -125,16 +146,20 @@ func TestRefreshUsageHandler(t *testing.T) {
 
     expected_size := int64(0)
     for _, asset := range []string{ "WHEE", "STUFF", "BLAH" } {
-        version_dir := filepath.Join(project_dir, asset)
-        err := os.Mkdir(version_dir, 0755)
+        src, err := os.MkdirTemp("", "test-")
         if err != nil {
-            t.Fatalf("failed to create asset directory; %v", err)
+            t.Fatalf("failed to create tempdir; %v", err)
         }
 
         message := "I am " + asset
-        err = os.WriteFile(filepath.Join(version_dir, "thingy"), []byte(message), 0644)
+        err = os.WriteFile(filepath.Join(src, "thingy"), []byte(message), 0644)
         if err != nil {
             t.Fatalf("failed to write a mock file; %v", err)
+        }
+
+        err = transferDirectory(src, reg, project_name, asset, "v1")
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
         }
 
         expected_size += int64(len(message))

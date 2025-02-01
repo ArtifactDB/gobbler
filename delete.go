@@ -109,7 +109,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    to_free, err := computeUsage(asset_dir)
+    to_free, err := computeAssetUsage(asset_dir)
     if err != nil {
         return fmt.Errorf("failed to compute usage for %s; %v", asset_dir, err)
     }
@@ -206,7 +206,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    to_free, err := computeUsage(version_dir)
+    to_free, err := computeVersionUsage(version_dir)
     if err != nil {
         return fmt.Errorf("failed to compute usage for %s; %v", version_dir, err)
     }

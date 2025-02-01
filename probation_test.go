@@ -58,6 +58,11 @@ func mockProbationVersion(reg, project, asset, version string) error {
         return fmt.Errorf("failed to create some mock files; %w", err)
     }
 
+    err = reindexDirectory(reg, project, asset, version)
+    if err != nil {
+        return fmt.Errorf("failed to reindex the directory; %w", err)
+    }
+
     err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte(fmt.Sprintf(`{ "total": %d }`, len(contents))), 0644)
     if err != nil {
         return fmt.Errorf("failed to create mock usage; %w", err)

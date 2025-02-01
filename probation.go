@@ -144,7 +144,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         }
 
     } else {
-        freed, err := computeUsage(version_dir)
+        freed, err := computeVersionUsage(version_dir)
         if err != nil {
             return fmt.Errorf("failed to compute usage for %q; %w", version_dir, err)
         }
