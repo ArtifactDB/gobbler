@@ -141,74 +141,117 @@ func TestDeleteProject(t *testing.T) {
 func TestDeleteAsset(t *testing.T) {
     project := "foobar"
     asset := "stuff"
-    reg, err := mockRegistryForDeletion(project, asset, []string{ "1", "2" })
-    if err != nil {
-        t.Fatalf("failed to mock up registry; %v", err) 
-    }
 
-    reqpath, err := dumpRequest("delete_asset", fmt.Sprintf(`{ "project": "%s", "asset": "%s" }`, project, asset))
-    if err != nil {
-        t.Fatalf("failed to dump a request type; %v", err)
-    }
+    t.Run("simple", func(t *testing.T) {
+        reg, err := mockRegistryForDeletion(project, asset, []string{ "1", "2" })
+        if err != nil {
+            t.Fatalf("failed to mock up registry; %v", err) 
+        }
+        globals := newGlobalConfiguration(reg)
 
-    globals := newGlobalConfiguration(reg)
-    err = deleteAssetHandler(reqpath, &globals)
-    if err == nil || !strings.Contains(err.Error(), "not authorized") {
-        t.Fatal("unexpected authorization for non-admin")
-    }
+        reqpath, err := dumpRequest("delete_asset", fmt.Sprintf(`{ "project": "%s", "asset": "%s" }`, project, asset))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteAssetHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatal("unexpected authorization for non-admin")
+        }
 
-    self, err := identifyUser(reg)
-    if err != nil {
-        t.Fatalf("failed to identify self; %v", err)
-    }
-    globals.Administrators = append(globals.Administrators, self)
-    err = deleteAssetHandler(reqpath, &globals)
-    if err != nil {
-        t.Fatalf("failed to delete an asset; %v", err)
-    }
+        self, err := identifyUser(reg)
+        if err != nil {
+            t.Fatalf("failed to identify self; %v", err)
+        }
+        globals.Administrators = append(globals.Administrators, self)
+        err = deleteAssetHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to delete an asset; %v", err)
+        }
 
-    project_dir := filepath.Join(reg, project)
-    asset_dir := filepath.Join(project_dir, asset)
-    if _, err := os.Stat(asset_dir); !errors.Is(err, os.ErrNotExist) {
-        t.Fatal("failed to delete the asset directory")
-    }
+        project_dir := filepath.Join(reg, project)
+        asset_dir := filepath.Join(project_dir, asset)
+        if _, err := os.Stat(asset_dir); !errors.Is(err, os.ErrNotExist) {
+            t.Fatal("failed to delete the asset directory")
+        }
 
-    usage, err := readUsage(project_dir)
-    if err != nil {
-        t.Fatalf("failed to read usage after deletion; %v", err)
-    }
-    if usage.Total != 0 {
-        t.Fatal("expected zero usage after asset deletion")
-    }
+        usage, err := readUsage(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read usage after deletion; %v", err)
+        }
+        if usage.Total != 0 {
+            t.Fatal("expected zero usage after asset deletion")
+        }
 
-    // No-ops if repeated with already-deleted asset.
-    err = deleteAssetHandler(reqpath, &globals)
-    if err != nil {
-        t.Fatalf("failed to delete a project; %v", err)
-    }
+        // No-ops if repeated with already-deleted asset.
+        err = deleteAssetHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to delete a project; %v", err)
+        }
 
-    // Checking that inputs are valid.
-    reqpath, err = dumpRequest("delete_asset", `{ "project": "foo" }`)
-    if err != nil {
-        t.Fatalf("failed to dump a request type; %v", err)
-    }
+        // Checking that inputs are valid.
+        reqpath, err = dumpRequest("delete_asset", `{ "project": "foo" }`)
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
 
-    err = deleteAssetHandler(reqpath, &globals)
-    if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
-        t.Fatal("fail to throw for invalid request")
-    }
+        err = deleteAssetHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
+            t.Fatal("fail to throw for invalid request")
+        }
 
-    // Checking that logs were correctly written.
-    logs, err := readAllLogs(reg)
-    if err != nil {
-        t.Fatalf("failed to read all logs; %v", err)
-    }
+        // Checking that logs were correctly written.
+        logs, err := readAllLogs(reg)
+        if err != nil {
+            t.Fatalf("failed to read all logs; %v", err)
+        }
 
-    if len(logs) != 1 || logs[0].Type != "delete-asset" ||
-        logs[0].Project == nil || *(logs[0].Project) != project ||
-        logs[0].Asset == nil || *(logs[0].Asset) != asset {
-        t.Fatal("logs are not as expected from asset deletion")
-    }
+        if len(logs) != 1 || logs[0].Type != "delete-asset" ||
+            logs[0].Project == nil || *(logs[0].Project) != project ||
+            logs[0].Asset == nil || *(logs[0].Asset) != asset {
+            t.Fatal("logs are not as expected from asset deletion")
+        }
+    })
+
+    t.Run("forced", func(t *testing.T) {
+        reg, err := mockRegistryForDeletion(project, asset, []string{ "1", "2" })
+        if err != nil {
+            t.Fatalf("failed to mock up registry; %v", err) 
+        }
+
+        // Nuke the manifest files.
+        err = os.Remove(filepath.Join(reg, project, asset, "1", manifestFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        globals := newGlobalConfiguration(reg)
+        self, err := identifyUser(reg)
+        if err != nil {
+            t.Fatalf("failed to identify self; %v", err)
+        }
+        globals.Administrators = append(globals.Administrators, self)
+
+        reqpath, err := dumpRequest("delete_asset", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "force": false }`, project, asset))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteAssetHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "manifest") {
+            t.Errorf("expected the deletion to fail in the absence of a manifest; %v", err)
+        }
+
+        reqpath, err = dumpRequest("delete_asset", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "force": true }`, project, asset))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteAssetHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatal(err)
+        }
+        if _, err := os.Stat(filepath.Join(reg, project, asset)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Error("expected the asset deletion to work correctly")
+        }
+    })
 }
 
 func TestDeleteVersion(t *testing.T) {
@@ -440,6 +483,75 @@ func TestDeleteVersion(t *testing.T) {
         }
         if len(logs) != 0 {
             t.Fatalf("no logs should be generated after deleting a probational version; %v", logs[0])
+        }
+    })
+
+    t.Run("forced", func(t *testing.T) {
+        version1 := "no_manifest"
+        version2 := "no_summary"
+        reg, err := mockRegistryForDeletion(project, asset, []string{ version1, version2 })
+        if err != nil {
+            t.Fatalf("failed to mock up registry; %v", err) 
+        }
+        globals := newGlobalConfiguration(reg)
+
+        self, err := identifyUser(reg)
+        if err != nil {
+            t.Fatalf("failed to identify self; %v", err)
+        }
+        globals.Administrators = append(globals.Administrators, self)
+
+        err = os.Remove(filepath.Join(reg, project, asset, version1, manifestFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = os.Remove(filepath.Join(reg, project, asset, version2, summaryFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        // Checking we can force our way through without a manifest.
+        reqpath, err := dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": false }`, project, asset, version1))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteVersionHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "manifest") {
+            t.Error("deletion should have failed without a manifest file")
+        }
+
+        reqpath, err = dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": true }`, project, asset, version1))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteVersionHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatal(err)
+        }
+        if _, err := os.Stat(filepath.Join(reg, project, asset, version1)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Error("expected the version deletion to work correctly")
+        }
+
+        // Checking we can force our way through without a summary.
+        reqpath, err = dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": false }`, project, asset, version2))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteVersionHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "summary") {
+            t.Error("deletion should have failed without a summary file")
+        }
+
+        reqpath, err = dumpRequest("delete_version", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": true }`, project, asset, version2))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = deleteVersionHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatal(err)
+        }
+        if _, err := os.Stat(filepath.Join(reg, project, asset, version2)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Error("expected the version deletion to work correctly")
         }
     })
 }

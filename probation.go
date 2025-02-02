@@ -15,6 +15,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Version *string `json:"version"`
+        Force *bool `json:"force"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -144,30 +145,34 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         }
 
     } else {
-        freed, err := computeVersionUsage(version_dir)
-        if err != nil {
-            return fmt.Errorf("failed to compute usage for %q; %w", version_dir, err)
+        force_deletion := incoming.Force != nil && *(incoming.Force)
+
+        version_usage, version_usage_err := computeVersionUsage(version_dir)
+        if version_usage_err != nil && !force_deletion {
+            return fmt.Errorf("failed to compute usage for %q; %w", version_dir, version_usage_err)
         }
 
-        err = os.RemoveAll(version_dir)
+        err := os.RemoveAll(version_dir)
         if err != nil {
             return fmt.Errorf("failed to delete %q; %w", version_dir, err)
         }
 
-        usage, err := readUsage(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
-        }
+        if version_usage_err == nil {
+            project_usage, err := readUsage(project_dir)
+            if err != nil {
+                return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
+            }
 
-        usage.Total -= freed
-        if usage.Total < 0 { // just in case.
-            usage.Total = 0
-        }
+            project_usage.Total -= version_usage
+            if project_usage.Total < 0 { // just in case.
+                project_usage.Total = 0
+            }
 
-        usage_path := filepath.Join(project_dir, usageFileName)
-        err = dumpJson(usage_path, &usage)
-        if err != nil {
-            return fmt.Errorf("failed to update project usage at %q; %w", usage_path, err)
+            usage_path := filepath.Join(project_dir, usageFileName)
+            err = dumpJson(usage_path, &project_usage)
+            if err != nil {
+                return fmt.Errorf("failed to update project usage at %q; %w", usage_path, err)
+            }
         }
     }
 

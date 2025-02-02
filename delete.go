@@ -72,6 +72,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     incoming := struct {
         Project *string `json:"project"`
         Asset *string `json:"asset"`
+        Force *bool `json:"force"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -95,6 +96,8 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
+    force_deletion := incoming.Force != nil && *(incoming.Force)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
@@ -109,13 +112,9 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    to_free, err := computeAssetUsage(asset_dir)
-    if err != nil {
-        return fmt.Errorf("failed to compute usage for %s; %v", asset_dir, err)
-    }
-    usage, err := readUsage(project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+    asset_usage, asset_usage_err := computeAssetUsage(asset_dir)
+    if asset_usage_err != nil && !force_deletion {
+        return fmt.Errorf("failed to compute usage for %s; %v", asset_dir, asset_usage_err)
     }
 
     err = os.RemoveAll(asset_dir)
@@ -123,13 +122,19 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
     }
 
-    usage.Total -= to_free
-    if usage.Total < 0 {
-        usage.Total = 0
-    }
-    err = dumpJson(filepath.Join(project_dir, usageFileName), &usage)
-    if err != nil {
-        return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
+    if asset_usage_err == nil {
+        project_usage, err := readUsage(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+        }
+        project_usage.Total -= asset_usage 
+        if project_usage.Total < 0 {
+            project_usage.Total = 0
+        }
+        err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
+        if err != nil {
+            return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
+        }
     }
 
     payload := map[string]string { 
@@ -158,6 +163,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Version *string `json:"version"`
+        Force *bool `json:"force"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -184,6 +190,8 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
+    force_deletion := incoming.Force != nil && *(incoming.Force)
+
     // We lock the project directory as (i) it's convention to lock the entire
     // project even if we're mutating a single asset and (ii) we need to update
     // the usage anyway so we'd have to obtain this lock eventually.
@@ -206,18 +214,15 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    to_free, err := computeVersionUsage(version_dir)
-    if err != nil {
-        return fmt.Errorf("failed to compute usage for %s; %v", version_dir, err)
-    }
-    usage, err := readUsage(project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+
+    version_usage, version_usage_err := computeVersionUsage(version_dir)
+    if version_usage_err != nil && !force_deletion {
+        return fmt.Errorf("failed to compute usage for %s; %v", version_dir, version_usage_err)
     }
 
-    summ, err := readSummary(version_dir)
-    if err != nil {
-        return fmt.Errorf("failed to read summary for %s; %v", version_dir, err)
+    summ, summ_err := readSummary(version_dir)
+    if summ_err != nil && !force_deletion {
+        return fmt.Errorf("failed to read summary for %s; %v", version_dir, summ_err)
     }
 
     err = os.RemoveAll(version_dir)
@@ -225,16 +230,24 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
     }
 
-    usage.Total -= to_free
-    if usage.Total < 0 {
-        usage.Total = 0
-    }
-    err = dumpJson(filepath.Join(project_dir, usageFileName), &usage)
-    if err != nil {
-        return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
+    if version_usage_err == nil {
+        project_usage, err := readUsage(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+        }
+
+        project_usage.Total -= version_usage
+        if project_usage.Total < 0 {
+            project_usage.Total = 0
+        }
+        err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
+        if err != nil {
+            return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
+        }
     }
 
-    if summ.OnProbation == nil || !(*summ.OnProbation) {
+    if summ_err == nil && (summ.OnProbation == nil || !(*summ.OnProbation)) {
+        // Only need to make a log if the version is non-probational.
         prev, err := readLatest(asset_dir)
         was_latest := false
         if err == nil {
@@ -257,11 +270,10 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         }
 
         // Also refreshing the latest version.
-        _, err = refreshLatest(asset_dir)
-        if err != nil {
-            return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, err)
+        _, latest_err := refreshLatest(asset_dir)
+        if latest_err != nil && !force_deletion {
+            return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, latest_err)
         }
-
     }
 
     return nil

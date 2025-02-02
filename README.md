@@ -267,6 +267,9 @@ This file should be JSON-formatted with the following properties:
 - `project`: string containing the name of the project.
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
+- `force` (optional): boolean indicating whether a probational version should be forcibly deleted.
+  Occasionally necessary if the version contains corrupted summary or manifest files,
+  in which case they will be deleted but the project usage will need to be refreshed manually.
 
 On success, the relevant version is removed from the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -345,6 +348,9 @@ This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
 - `asset`: string containing the name of the asset.
+- `force` (optional): boolean indicating whether the asset should be forcibly deleted.
+  Occasionally necessary if the asset contains corrupted manifest files,
+  in which case they will be deleted but the project usage will need to be refreshed manually.
 
 On success, the asset is deleted.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -356,6 +362,9 @@ This file should be JSON-formatted with the following properties:
 - `project`: string containing the name of the project.
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
+- `force` (optional): boolean indicating whether the version should be forcibly deleted.
+  Occasionally necessary if the version contains corrupted summary or manifest files,
+  in which case they will be deleted but the project usage will need to be refreshed manually.
 
 On success, the version is deleted.
 The HTTP response will contain a JSON object with the `type` property set to `SUCCESS`.

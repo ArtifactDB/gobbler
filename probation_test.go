@@ -251,39 +251,78 @@ func TestRejectProbationHandler(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg)
 
-    project := "dawn"
-    asset := "sinnoh"
-    version := "foo"
-    err = mockProbationVersion(reg, project, asset, version)
-    if err != nil {
-        t.Fatalf("failed to create a mock version; %v", err)
-    }
-
-    reqpath, err := dumpRequest("reject_probation", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version))
-    if err != nil {
-        t.Fatalf("failed to dump a request type; %v", err)
-    }
-
     self, err := identifyUser(reg)
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
     }
     globals.Administrators = append(globals.Administrators, self)
-    err = rejectProbationHandler(reqpath, &globals)
-    if err != nil {
-        t.Fatalf("failed to reject probation; %v", err)
-    }
 
-    project_dir := filepath.Join(reg, project)
-    if _, err := os.Stat(filepath.Join(project_dir, asset, version)); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Fatal("failed to delete the probational directory")
-    }
+    t.Run("simple", func(t *testing.T) {
+        project := "dawn"
+        asset := "sinnoh"
+        version := "foo"
+        err := mockProbationVersion(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to create a mock version; %v", err)
+        }
 
-    usage, err := readUsage(project_dir)
-    if err != nil {
-        t.Fatalf("failed to read the project usage; %v", err)
-    }
-    if usage.Total != 0 {
-        t.Fatalf("expected the project usage to be zero, not %d", usage.Total)
-    }
+        reqpath, err := dumpRequest("reject_probation", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = rejectProbationHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatalf("failed to reject probation; %v", err)
+        }
+
+        project_dir := filepath.Join(reg, project)
+        if _, err := os.Stat(filepath.Join(project_dir, asset, version)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Fatal("failed to delete the probational directory")
+        }
+
+        usage, err := readUsage(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read the project usage; %v", err)
+        }
+        if usage.Total != 0 {
+            t.Fatalf("expected the project usage to be zero, not %d", usage.Total)
+        }
+    })
+
+    t.Run("forced", func(t *testing.T) {
+        project := "serena"
+        asset := "kalos"
+        version := "bar"
+        err := mockProbationVersion(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to create a mock version; %v", err)
+        }
+
+        err = os.Remove(filepath.Join(reg, project, asset, version, manifestFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest("reject_probation", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": false }`, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = rejectProbationHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "manifest") {
+            t.Error("expected request to fail when manifest is removed")
+        }
+
+        reqpath, err = dumpRequest("reject_probation", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "force": true }`, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = rejectProbationHandler(reqpath, &globals)
+        if err != nil {
+            t.Error(err)
+        }
+        if _, err := os.Stat(filepath.Join(project, asset, version)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Error("expected probational version directory to be deleted")
+        }
+    })
 }
