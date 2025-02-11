@@ -73,7 +73,7 @@ To illustrate, consider a hypothetical `..links` file at the following path:
 ```
 
 This contains a JSON object where each key/value pair describes a linked-from path with the same subdirectory.
-The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full path of the linked-from file.
+The key is a file name to be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full path of the linked-from file.
 The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
 If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
 
