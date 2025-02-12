@@ -26,6 +26,10 @@ func loadLinkWhitelist(path string) ([]string, error) {
     output := []string{}
     scanner := bufio.NewScanner(whandle)
     for scanner.Scan() {
+        line := scanner.Text()
+        if !strings.HasSuffix(line, string(os.PathSeparator)) {
+            return nil, fmt.Errorf("all whitelisted directories should end with a path separator")
+        }
         output = append(output, scanner.Text())
     }
 
