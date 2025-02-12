@@ -806,7 +806,8 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create a random temporary file; %v", err)
         }
-        if _, err := other.WriteString("gotta catch em all"); err != nil {
+        message := "gotta catch em all"
+        if _, err := other.WriteString(message); err != nil {
             t.Fatalf("failed to write a random temporary file; %v", err)
         }
         other_name := other.Name()
@@ -823,8 +824,24 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         asset := "PIKAPIKA"
         version := "SILVER"
         err = transferDirectory(src, reg, project, asset, version, []string{})
-        if err == nil || !strings.Contains(err.Error(), "outside the source or registry") {
-            t.Fatal("expected transfer failure for files outside the registry")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        dest := filepath.Join(reg, project, asset, version)
+        target_info, err := os.Stat(filepath.Join(dest, "asdasd"))
+        if target_info.Mode() & os.ModeSymlink != 0 {
+            t.Fatal("non-whitelisted symlink should trigger a file copy")
+        }
+
+        man, err := readManifest(dest)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        contents, found := man["asdasd"]
+        if !found || contents.Link != nil || contents.Size != int64(len(message)) {
+            t.Error("unexpected manifest entry for non-whitelisted symlink")
         }
     }
 
@@ -965,8 +982,8 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         asset := "VILEPLUME"
         version := "green"
         err = transferDirectory(src, reg, project, asset, version, []string{})
-        if err == nil || !strings.Contains(err.Error(), "symbolic link to directory") {
-            t.Fatal("expected a failure when a symbolic link to a directory is present")
+        if err == nil || !strings.Contains(err.Error(), "is a directory") {
+            t.Fatalf("expected a failure when a symbolic link to a directory is present; %v", err)
         }
     }
 }
@@ -1101,9 +1118,66 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
         version := "SILVER"
 
         err = transferDirectory(src, reg, project, asset, version, []string{})
-        if err == nil || !strings.Contains(err.Error(), "refers to a directory") {
+        if err == nil || !strings.Contains(err.Error(), "is a directory") {
             t.Fatalf("failed to detect links to a directory; %v", err)
         }
+    }
+}
+
+func TestTransferDirectoryLinkWhitelist(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForTransferDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    other, err := os.CreateTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create a random temporary file; %v", err)
+    }
+    message := "gotta catch em all"
+    if _, err := other.WriteString(message); err != nil {
+        t.Fatalf("failed to write a random temporary file; %v", err)
+    }
+    other_name := other.Name()
+    if err := other.Close(); err != nil {
+        t.Fatalf("failed to close a random temporary file; %v", err)
+    }
+
+    err = os.Symlink(other_name, filepath.Join(src, "asdasd"))
+    if err != nil {
+        t.Fatalf("failed to create a test link to a random file")
+    }
+
+    project := "POKEMON"
+    asset := "PIKAPIKA"
+    version := "SILVER"
+    err = transferDirectory(src, reg, project, asset, version, []string{ filepath.Dir(other_name) })
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    dest := filepath.Join(reg, project, asset, version)
+    target, err := os.Readlink(filepath.Join(dest, "asdasd"))
+    if err != nil {
+        t.Fatal(err)
+    }
+    if target != other_name {
+        t.Error("unexpected target of the whitelisted symlink")
+    }
+
+    man, err := readManifest(dest)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    contents, found := man["asdasd"]
+    if !found || contents.Link != nil || contents.Size != int64(len(message)) {
+        t.Error("unexpected manifest entry for whitelisted symlink")
     }
 }
 
@@ -1403,7 +1477,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
 
         err = reindexDirectory(reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "outside the registry") {
-            t.Fatalf("expected transfer failure for files outside the registry; %f", err)
+            t.Fatalf("expected reindexing failure for files outside the registry; %f", err)
         }
 
         err = os.Remove(filepath.Join(v_path, "asdasd"))
@@ -1430,7 +1504,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
         }
 
         err = reindexDirectory(reg, project, asset, version, []string{})
-        if err == nil || !strings.Contains(err.Error(), "refers to a directory") {
+        if err == nil || !strings.Contains(err.Error(), "is a directory") {
             t.Fatal("expected a failure when a symbolic link to a directory is present")
         }
     })
@@ -1493,4 +1567,64 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
 
     // All failures are handled by resolveLocalSymlink and are common to
     // both transfer and reindex functions, so we won't test them again here.
+}
+
+func TestReindexDirectoryLinkWhitelist(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    src, err := setupSourceForTransferDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Mocking up a directory structure. 
+    project := "pokemon"
+    asset := "lugia"
+    version := "silver"
+    err = transferDirectory(src, reg, project, asset, version, []string{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    other, err := os.CreateTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create a random temporary file; %v", err)
+    }
+    message := "gotta catch em all"
+    if _, err := other.WriteString(message); err != nil {
+        t.Fatalf("failed to write a random temporary file; %v", err)
+    }
+    other_name := other.Name()
+    if err := other.Close(); err != nil {
+        t.Fatalf("failed to close a random temporary file; %v", err)
+    }
+
+    v_path := filepath.Join(reg, project, asset, version)
+    err = os.Symlink(other_name, filepath.Join(v_path, "asdasd"))
+    if err != nil {
+        t.Fatalf("failed to create a test link to a random file")
+    }
+
+    err = stripDoubleDotFiles(v_path)
+    if err != nil {
+        t.Fatalf("failed to strip all double dots; %v", err)
+    }
+
+    err = reindexDirectory(reg, project, asset, version, []string{ filepath.Dir(other_name) })
+    if err != nil { 
+        t.Fatal(err)
+    }
+
+    man, err := readManifest(v_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    contents, found := man["asdasd"]
+    if !found || contents.Link != nil || contents.Size != int64(len(message)) {
+        t.Error("unexpected manifest entry for whitelisted symlink")
+    }
 }

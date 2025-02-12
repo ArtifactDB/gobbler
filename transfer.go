@@ -432,7 +432,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
                 return fmt.Errorf("failed to stat target of link %q; %w", src_path, err)
             }
             if target_stat.IsDir() {
-                return fmt.Errorf("target of link %q refers to a directory", src_path)
+                return fmt.Errorf("target of link %q is a directory", src_path)
             }
 
             local_inside, err := filepath.Rel(source, target)
@@ -481,7 +481,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
             Md5sum: insum,
         }
 
-        if !do_transfer {
+        if do_transfer {
             // Seeing if we can create a link to the last version of the file with the same md5sum.
             last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
             if ok {
