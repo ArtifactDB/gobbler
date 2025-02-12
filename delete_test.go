@@ -54,7 +54,7 @@ func mockRegistryForDeletion(project, asset string, versions []string) (string, 
         }
         expected_size += len(message)
 
-        err = reindexDirectory(reg, project, asset, v)
+        err = reindexDirectory(reg, project, asset, v, []string{})
         if err != nil {
             return "", fmt.Errorf("failed to reindex the directory; %w", err)
         }

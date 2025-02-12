@@ -91,7 +91,7 @@ func TestComputeUsage(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "yellow"
-    err = transferDirectory(src, reg, project, asset, version)
+    err = transferDirectory(src, reg, project, asset, version, []string{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -114,7 +114,7 @@ func TestComputeUsage(t *testing.T) {
     }
 
     version = "green"
-    err = transferDirectory(src, reg, project, asset, version)
+    err = transferDirectory(src, reg, project, asset, version, []string{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -157,7 +157,7 @@ func TestRefreshUsageHandler(t *testing.T) {
             t.Fatalf("failed to write a mock file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project_name, asset, "v1")
+        err = transferDirectory(src, reg, project_name, asset, "v1", []string{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
