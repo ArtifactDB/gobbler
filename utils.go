@@ -25,6 +25,7 @@ func newGlobalConfiguration(registry string) globalConfiguration {
         Registry: registry, 
         Administrators: []string{},
         Locks: newPathLocks(),
+        LinkWhitelist: []string{},
     }
 }
 
@@ -148,13 +149,4 @@ func checkVersionExists(version_dir, version, asset, project string) error {
     } else {
         return nil
     }
-}
-
-func isLinkWhitelisted(path string, whitelist []string) bool {
-    for _, w := range whitelist {
-        if strings.HasPrefix(path, w) {
-            return true
-        }
-    }
-    return false
 }

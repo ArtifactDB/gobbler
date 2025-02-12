@@ -49,6 +49,7 @@ func main() {
     mstr := flag.String("admin", "", "Comma-separated list of administrators (default \"\")")
     port := flag.Int("port", 8080, "Port to listen to API requests")
     prefix := flag.String("prefix", "", "Prefix to add to each endpoint, excluding the first and last slashes (default \"\")")
+    whitelist := flag.String("whitelist", "", "Whitelist of directories in which linked-to files are to be treated as real files (default none)")
     flag.Parse()
 
     if *spath == "" || *rpath == "" {
@@ -60,6 +61,13 @@ func main() {
     globals := newGlobalConfiguration(*rpath)
     if *mstr != "" {
         globals.Administrators = strings.Split(*mstr, ",")
+    }
+    if *whitelist != "" {
+        whitelist, err := loadLinkWhitelist(*whitelist)
+        if err != nil {
+            log.Fatal(err)
+        }
+        globals.LinkWhitelist = whitelist
     }
 
     log_dir := filepath.Join(globals.Registry, logDirName)
