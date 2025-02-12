@@ -358,7 +358,7 @@ func saveLinkMetadataStore(destination string, store linkMetadataStore) error {
  ***** Transfer contents of a non-registry directory *****
  *********************************************************/
 
-func transferDirectory(source, registry, project, asset, version string) error {
+func transferDirectory(source, registry, project, asset, version string, link_whitelist []string) error {
     last_dedup, err := createDedupManifest(registry, project, asset)
     if err != nil {
         return err
@@ -465,22 +465,38 @@ func transferDirectory(source, registry, project, asset, version string) error {
             return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
         }
 
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            local_inside, err := filepath.Rel(source, target)
-            if err != nil || !filepath.IsLocal(local_inside) {
-                return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
-            }
-            local_links[path] = local_inside
-            continue
-        }
-
         tstat, err := os.Stat(target)
         if err != nil {
             return fmt.Errorf("failed to stat link target %q; %w", target, err)
         }
         if tstat.IsDir() {
-            return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
+            return fmt.Errorf("symbolic link to directory %q is not supported", target)
+        }
+
+        registry_inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(registry_inside) {
+            local_inside, err := filepath.Rel(source, target)
+            if err != nil || !filepath.IsLocal(local_inside) {
+                if isLinkWhitelisted(target, link_whitelist) { // Links to files inside whitelisted directories are treated as if the files were right there.
+                    target_sum, err := computeChecksum(target)
+                    if err != nil {
+                        return fmt.Errorf("failed to hash %q; %w", path, err)
+                    }
+                    manifest[path] = manifestEntry{
+                        Size: tstat.Size(), 
+                        Md5sum: target_sum,
+                    }
+                    err = os.Symlink(target, filepath.Join(destination, path))
+                    if err != nil {
+                        return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, target, err)
+                    }
+                } else {
+                    return fmt.Errorf("symbolic link to file outside the source or registry directory %q is not supported", target)
+                }
+            } else {
+                local_links[path] = local_inside
+            }
+            continue
         }
 
         obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, reglink_cache)
@@ -524,7 +540,7 @@ func transferDirectory(source, registry, project, asset, version string) error {
  ***** Reindex an existing registry directory *****
  **************************************************/
 
-func reindexDirectory(registry, project, asset, version string) error {
+func reindexDirectory(registry, project, asset, version string, link_whitelist []string) error {
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
     more_links := []string{}
@@ -604,17 +620,29 @@ func reindexDirectory(registry, project, asset, version string) error {
             continue
         }
 
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            return fmt.Errorf("symbolic links to files outside the registry directories (%q) are not supported", target)
-        }
-
         tstat, err := os.Stat(target)
         if err != nil {
             return fmt.Errorf("failed to stat link target %q; %w", target, err)
         }
         if tstat.IsDir() {
-            return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
+            return fmt.Errorf("symbolic link to directory %q is not supported", target)
+        }
+
+        registry_inside, err := filepath.Rel(registry, target)
+        if err != nil || !filepath.IsLocal(registry_inside) {
+            if isLinkWhitelisted(target, link_whitelist) { // Links to files inside whitelisted directories are treated as if the files were right there.
+                target_sum, err := computeChecksum(target)
+                if err != nil {
+                    return fmt.Errorf("failed to hash %q; %w", path, err)
+                }
+                manifest[path] = manifestEntry{
+                    Size: tstat.Size(), 
+                    Md5sum: target_sum,
+                }
+                continue
+            } else {
+                return fmt.Errorf("symbolic link to file %q outside the registry directory is not supported", target)
+            }
         }
 
         obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, reglink_cache)
