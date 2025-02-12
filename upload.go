@@ -172,7 +172,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }()
 
     source := *(request.Source)
-    err = transferDirectory(source, globals.Registry, project, asset, version)
+    err = transferDirectory(source, globals.Registry, project, asset, version, globals.LinkWhitelist)
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }

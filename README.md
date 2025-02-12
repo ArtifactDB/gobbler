@@ -431,10 +431,7 @@ Finally, start the Gobbler by running the binary:
 ```bash
 ./gobbler \
     -staging STAGING \
-    -registry REGISTRY \
-    -admin ADMIN1,ADMIN2 \
-    -port PORT \
-    -prefix PREFIX
+    -registry REGISTRY
 ```
 
 The following optional arguments can be used to fine-tune the Gobbler's behavior:
@@ -446,6 +443,10 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
 - `-prefix` adds an extra prefix to all endpoints, e.g., to disambiguate between versions.
   For example, a prefix of `api/v2` would change the list endpoint to `/api/v2/list`.
   This defaults to an empty string, i.e., no prefix.
+- `-whitelist` contains a path to a text file where each line contains a `/`-terminated path to a directory.
+  Any symbolic link that targets a file in a whitelisted directory is treated as the file itself during upload and reindexing.
+  This is useful for avoiding unnecessary copies from data archives.
+  By default, no directories are whitelisted.
 
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;

@@ -17,6 +17,7 @@ type globalConfiguration struct {
     Registry string
     Administrators []string
     Locks pathLocks
+    LinkWhitelist []string
 }
 
 func newGlobalConfiguration(registry string) globalConfiguration {
@@ -24,6 +25,7 @@ func newGlobalConfiguration(registry string) globalConfiguration {
         Registry: registry, 
         Administrators: []string{},
         Locks: newPathLocks(),
+        LinkWhitelist: []string{},
     }
 }
 

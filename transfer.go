@@ -268,7 +268,7 @@ func resolveLocalSymlink(
     } else {
         if traversed != nil {
             _, trav_ok := traversed[path]
-            if trav_ok {
+            if trav_ok { // just a second line of defense; normally, cyclic links would have already been detected by a Stat().
                 return nil, fmt.Errorf("cyclic symlinks detected at %q", path)
             }
             traversed[path] = false
@@ -331,6 +331,11 @@ func createLocalSymlink(destination, path, target string) error {
  ***** Link metadata store *****
  *******************************/
 
+type linkInfo struct {
+    From string
+    To string
+}
+
 type linkMetadataStore = map[string]map[string]*linkMetadata
 
 func addLinkMetadataStore(path string, link_info *linkMetadata, store linkMetadataStore) {
@@ -358,15 +363,20 @@ func saveLinkMetadataStore(destination string, store linkMetadataStore) error {
  ***** Transfer contents of a non-registry directory *****
  *********************************************************/
 
-func transferDirectory(source, registry, project, asset, version string) error {
-    last_dedup, err := createDedupManifest(registry, project, asset)
-    if err != nil {
-        return err
+func processDirectory(do_transfer bool, source, registry, project, asset, version string, link_whitelist []string) error {
+    var last_dedup map[string]linkMetadata 
+    var err error
+    if do_transfer {
+        last_dedup, err = createDedupManifest(registry, project, asset)
+        if err != nil {
+            return err
+        }
     }
 
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
-    more_links := []string{}
+    registry_links := map[string]string{}
+    local_links := map[string]string{}
     all_links := linkMetadataStore{}
 
     // First pass fills the manifest with non-symlink files.
@@ -380,6 +390,12 @@ func transferDirectory(source, registry, project, asset, version string) error {
             if info.IsDir() {
                 return filepath.SkipDir
             } else {
+                if !do_transfer && base == linksFileName {
+                    err := os.Remove(src_path)
+                    if err != nil {
+                        return fmt.Errorf("failed to remove old ..links file at %q; %w", src_path, err)
+                    }
+                }
                 return nil
             }
         }
@@ -390,9 +406,11 @@ func transferDirectory(source, registry, project, asset, version string) error {
         }
 
         if info.IsDir() {
-            err := os.MkdirAll(filepath.Join(destination, path), 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
+            if do_transfer {
+                err := os.MkdirAll(filepath.Join(destination, path), 0755)
+                if err != nil {
+                    return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
+                }
             }
             return nil
         }
@@ -401,12 +419,56 @@ func transferDirectory(source, registry, project, asset, version string) error {
         if err != nil {
             return fmt.Errorf("failed to stat '" + path + "'; %w", err)
         }
-        insize := restat.Size()
 
-        // Symlinks to files inside the registry are preserved.
+        // Preserving links to targets within the registry, within the 'src' directory, or inside whitelisted directories.
         if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            more_links = append(more_links, path)
-            return nil
+            target, err := readSymlink(src_path)
+            if err != nil {
+                return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
+            }
+
+            target_stat, err := os.Stat(target)
+            if err != nil {
+                return fmt.Errorf("failed to stat target of link %q; %w", src_path, err)
+            }
+            if target_stat.IsDir() {
+                return fmt.Errorf("target of link %q is a directory", src_path)
+            }
+
+            local_inside, err := filepath.Rel(source, target)
+            if err == nil && filepath.IsLocal(local_inside) {
+                local_links[path] = local_inside
+                return nil
+            }
+
+            registry_inside, err := filepath.Rel(registry, target)
+            if err == nil && filepath.IsLocal(registry_inside) {
+                registry_links[path] = registry_inside
+                return nil
+            }
+
+            if isLinkWhitelisted(target, link_whitelist) { // Symlinks to files in whitelisted directories are preserved, but manifest pretends as if they were the files themselves.
+                target_sum, err := computeChecksum(target)
+                if err != nil {
+                    return fmt.Errorf("failed to hash the link target %q; %w", target, err)
+                }
+                manifest[path] = manifestEntry{
+                    Size: target_stat.Size(), 
+                    Md5sum: target_sum,
+                }
+                if do_transfer {
+                    final := filepath.Join(destination, path)
+                    err := os.Symlink(target, final)
+                    if err != nil {
+                        return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, target, err)
+                    }
+                }
+                return nil
+            } else if !do_transfer {
+                return fmt.Errorf("symbolic link %q to file %q outside the registry directory is not allowed", path, target)
+            }
+
+            restat = target_stat
         }
 
         insum, err := computeChecksum(src_path)
@@ -415,36 +477,38 @@ func transferDirectory(source, registry, project, asset, version string) error {
         }
 
         man_entry := manifestEntry{
-            Size: insize,
+            Size: restat.Size(),
             Md5sum: insum,
         }
 
-        // Seeing if we can create a link to the last version of the file with the same md5sum.
-        last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
-        if ok {
-            man_entry.Link = &last_entry
-            manifest[path] = man_entry
-            registry_target := filepath.Join(last_entry.Project, last_entry.Asset, last_entry.Version, last_entry.Path)
-            err = createRegistrySymlink(destination, path, registry_target)
-            if err != nil {
-                return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, registry_target, err)
+        if do_transfer {
+            // Seeing if we can create a link to the last version of the file with the same md5sum.
+            last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
+            if ok {
+                man_entry.Link = &last_entry
+                manifest[path] = man_entry
+                registry_target := filepath.Join(last_entry.Project, last_entry.Asset, last_entry.Version, last_entry.Path)
+                err = createRegistrySymlink(destination, path, registry_target)
+                if err != nil {
+                    return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, registry_target, err)
+                }
+                addLinkMetadataStore(path, man_entry.Link, all_links)
+                return nil
             }
-            addLinkMetadataStore(path, man_entry.Link, all_links)
-            return nil
-        }
 
-        final := filepath.Join(destination, path)
-        err = copyFile(src_path, final)
-        if err != nil {
-            return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
-        }
-
-        finalsum, err := computeChecksum(final)
-        if err != nil {
-            return fmt.Errorf("failed to hash the file at %q; %w", final, err)
-        }
-        if finalsum != insum {
-            return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+            // Otherwise we just copy the file.
+            final := filepath.Join(destination, path)
+            err := copyFile(src_path, final)
+            if err != nil {
+                return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
+            }
+            finalsum, err := computeChecksum(final)
+            if err != nil {
+                return fmt.Errorf("failed to hash the file at %q; %w", final, err)
+            }
+            if finalsum != insum {
+                return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+            }
         }
 
         manifest[path] = man_entry
@@ -454,59 +518,49 @@ func transferDirectory(source, registry, project, asset, version string) error {
         return err
     }
 
-    // Second pass goes through all the symlinks to existing files in the registry.
+    // Second pass to resolve links to other files in the registry.
     reglink_cache := newResolveRegistrySymlinkCache()
-    local_links := map[string]string{}
 
-    for _, path := range more_links {
-        src_path := filepath.Join(source, path)
-        target, err := readSymlink(src_path)
+    for path, target := range registry_links {
+        tstat, err := os.Stat(filepath.Join(registry, target))
         if err != nil {
-            return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
-        }
-
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            local_inside, err := filepath.Rel(source, target)
-            if err != nil || !filepath.IsLocal(local_inside) {
-                return fmt.Errorf("symbolic links to files outside the source or registry directories (%q) are not supported", target)
-            }
-            local_links[path] = local_inside
-            continue
-        }
-
-        tstat, err := os.Stat(target)
-        if err != nil {
-            return fmt.Errorf("failed to stat link target %q; %w", target, err)
+            return fmt.Errorf("failed to stat link target %q inside registry; %w", target, err)
         }
         if tstat.IsDir() {
-            return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
+            return fmt.Errorf("symbolic link to registry directory %q is not supported", target)
         }
 
-        obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, reglink_cache)
+        obj, err := resolveRegistrySymlink(registry, project, asset, version, target, reglink_cache)
         if err != nil {
-            return fmt.Errorf("failed to resolve the symlink at %q; %w", src_path, err)
+            return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", path, target, err)
         }
         manifest[path] = *obj
-
-        err = createRegistrySymlink(destination, path, registry_inside)
-        if err != nil {
-            return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, registry_inside, err)
-        }
         addLinkMetadataStore(path, obj.Link, all_links)
+
+        if do_transfer {
+            err := createRegistrySymlink(destination, path, target)
+            if err != nil {
+                return fmt.Errorf("failed to create a symlink for %q to registry path %q; %w", path, target, err)
+            }
+        }
     }
 
-    // Third pass to recursively resolve local symlinks.
+    // Final pass to resolve local links within the newly uploaded directory.
+    // We do this last when 'do_transfer = true' to ensure that the link
+    // targets actually exist.
     for path, target := range local_links {
         man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
         if err != nil {
             return err
         }
-        err = createLocalSymlink(destination, path, target)
-        if err != nil {
-            return fmt.Errorf("failed to create a local symlink from %q to %q; %w", path, target, err)
-        }
         addLinkMetadataStore(path, man.Link, all_links)
+
+        if do_transfer {
+            err := createLocalSymlink(destination, path, target)
+            if err != nil {
+                return fmt.Errorf("failed to create a local symlink from %q to %q; %w", path, target, err)
+            }
+        }
     }
 
     // Dumping the JSON metadata.
@@ -520,128 +574,11 @@ func transferDirectory(source, registry, project, asset, version string) error {
     return err
 }
 
-/**************************************************
- ***** Reindex an existing registry directory *****
- **************************************************/
-
-func reindexDirectory(registry, project, asset, version string) error {
-    destination := filepath.Join(registry, project, asset, version)
-    manifest := map[string]manifestEntry{}
-    more_links := []string{}
-    all_links := linkMetadataStore{}
-
-    // First pass fills the manifest with non-symlink files.
-    err := filepath.WalkDir(destination, func(src_path string, info fs.DirEntry, err error) error {
-        if err != nil {
-            return fmt.Errorf("failed to walk into %q; %w", src_path, err)
-        }
-
-        base := filepath.Base(src_path)
-        if strings.HasPrefix(base, ".") {
-            if info.IsDir() {
-                return filepath.SkipDir
-            } else {
-                if base == linksFileName {
-                    err := os.Remove(src_path)
-                    if err != nil {
-                        return fmt.Errorf("failed to remove old ..links file at %q; %w", src_path, err)
-                    }
-                }
-                return nil
-            }
-        }
-
-        path, err := filepath.Rel(destination, src_path)
-        if err != nil {
-            return fmt.Errorf("failed to convert %q into a relative path; %w", src_path, err);
-        }
-
-        if info.IsDir() {
-            return nil
-        }
-
-        restat, err := info.Info()
-        if err != nil {
-            return fmt.Errorf("failed to stat %q; %w", path, err)
-        }
-        insize := restat.Size()
-
-        // Symlinks to files inside the registry are preserved.
-        if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            more_links = append(more_links, path)
-            return nil
-        }
-
-        insum, err := computeChecksum(src_path)
-        if err != nil {
-            return fmt.Errorf("failed to hash %q; %w", path, err)
-        }
-
-        manifest[path] = manifestEntry{
-            Size: insize,
-            Md5sum: insum,
-        }
-        return nil
-    })
-    if err != nil {
-        return err
-    }
-
-    // Second pass goes through all the symlinks to other files in the registry.
-    reglink_cache := newResolveRegistrySymlinkCache()
-    local_links := map[string]string{}
-
-    for _, path := range more_links {
-        src_path := filepath.Join(destination, path)
-        target, err := readSymlink(src_path)
-        if err != nil {
-            return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
-        }
-
-        local_inside, err := filepath.Rel(destination, target)
-        if err == nil && filepath.IsLocal(local_inside) {
-            local_links[path] = local_inside
-            continue
-        }
-
-        registry_inside, err := filepath.Rel(registry, target)
-        if err != nil || !filepath.IsLocal(registry_inside) {
-            return fmt.Errorf("symbolic links to files outside the registry directories (%q) are not supported", target)
-        }
-
-        tstat, err := os.Stat(target)
-        if err != nil {
-            return fmt.Errorf("failed to stat link target %q; %w", target, err)
-        }
-        if tstat.IsDir() {
-            return fmt.Errorf("symbolic links to directories (%q) are not supported", target)
-        }
-
-        obj, err := resolveRegistrySymlink(registry, project, asset, version, registry_inside, reglink_cache)
-        if err != nil {
-            return fmt.Errorf("failed to resolve the symlink at %q; %w", src_path, err)
-        }
-        manifest[path] = *obj
-        addLinkMetadataStore(path, obj.Link, all_links)
-    }
-
-    // Third pass to recursively resolve local symlinks.
-    for path, target := range local_links {
-        man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
-        if err != nil {
-            return err
-        }
-        addLinkMetadataStore(path, man.Link, all_links)
-    }
-
-    // Dumping the JSON metadata.
-    manifest_path := filepath.Join(destination, manifestFileName)
-    err = dumpJson(manifest_path, &manifest)
-    if err != nil {
-        return fmt.Errorf("failed to save manifest for %q; %w", destination, err)
-    }
-
-    err = saveLinkMetadataStore(destination, all_links)
-    return err
+func transferDirectory(source, registry, project, asset, version string, link_whitelist []string) error {
+    return processDirectory(true, source, registry, project, asset, version, link_whitelist)
 }
 
+func reindexDirectory(registry, project, asset, version string, link_whitelist []string) error {
+    source := filepath.Join(registry, project, asset, version)
+    return processDirectory(false, source, registry, project, asset, version, link_whitelist)
+}

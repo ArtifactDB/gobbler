@@ -58,7 +58,7 @@ func mockProbationVersion(reg, project, asset, version string) error {
         return fmt.Errorf("failed to create some mock files; %w", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version)
+    err = reindexDirectory(reg, project, asset, version, []string{})
     if err != nil {
         return fmt.Errorf("failed to reindex the directory; %w", err)
     }
