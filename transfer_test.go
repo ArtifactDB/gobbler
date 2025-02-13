@@ -191,25 +191,25 @@ func TestTransferDirectorySimple(t *testing.T) {
     }
     info, ok := man["evolution/up"]
     if !ok || int(info.Size) != len("raichu") || info.Link != nil {
-        t.Fatalf("unexpected manifest entry for 'evolution/up'")
+        t.Errorf("unexpected manifest entry for 'evolution/up'; %v", info)
     }
     info, ok = man["moves/electric/thunder"]
     if !ok || int(info.Size) != len("110") || info.Link != nil {
-        t.Fatalf("unexpected manifest entry for 'moves/electric/thunder'")
+        t.Errorf("unexpected manifest entry for 'moves/electric/thunder'; %v", info)
     }
 
     // Checking some of the actual files.
     err = verifyFileContents(filepath.Join(destination, "type"), "electric")
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
     err = verifyFileContents(filepath.Join(destination, "evolution", "down"), "pichu")
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
     err = verifyFileContents(filepath.Join(destination, "moves", "normal", "double_team"), "0")
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 }
 
@@ -251,12 +251,11 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
     }
 
     destination := filepath.Join(reg, project, asset, version)
-    if _, err := os.Stat(filepath.Join(destination, ".DS_store")); !errors.Is(err, os.ErrNotExist) {
-        t.Fatal("hidden files should not be transferred")
+    if _, err := os.Stat(filepath.Join(destination, ".DS_store")); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("hidden files should not be transferred")
     }
-
-    if _, err := os.Stat(filepath.Join(destination, ".cache", "credentials")); !errors.Is(err, os.ErrNotExist) {
-        t.Fatal("hidden files should not be transferred")
+    if _, err := os.Stat(filepath.Join(destination, ".cache", "credentials")); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("hidden files should not be transferred")
     }
 }
 
@@ -521,25 +520,25 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
         // Different file name.
         err = verifyRegistrySymlink(man, destination, "evolution/next", "raichu", project, asset, version, "evolution/up", false)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         // Same file name.
         err = verifyRegistrySymlink(man, destination, "moves/electric/thunder", "110", project, asset, version, "moves/electric/thunder", false)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         // Modified file.
         err = verifyNotSymlink(man, destination, "moves/electric/thunder_shock", "some_different_value")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         // New file.
         err = verifyNotSymlink(man, destination, "moves/steel/iron_tail", "100")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
     }
 
@@ -579,35 +578,35 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
 
         err = verifyRegistrySymlink(man, destination, "evolution/final", "raichu", project, asset, "blue", "evolution/next", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyRegistrySymlink(man, destination, "moves/electric/thunderbolt", "90", project, asset, "blue", "moves/electric/thunderbolt", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "moves/electric/thunderbolt", reg, project, asset, "red", "moves/electric/thunderbolt") 
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyNotSymlink(man, destination, "moves/electric/thunder_shock", "9999")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyNotSymlink(man, destination, "moves/normal/feint", "30")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyRegistrySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "blue", "moves/steel/iron_tail", false)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
     }
 
@@ -632,26 +631,26 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
 
         err = verifyRegistrySymlink(man, destination, "evolution/final", "raichu", project, asset, "green", "evolution/final", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "evolution/final", reg, project, asset, "red", "evolution/up") 
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyRegistrySymlink(man, destination, "moves/electric/thunder_shock", "9999", project, asset, "green", "moves/electric/thunder_shock", false)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         // We can also form new ancestral links.
         err = verifyRegistrySymlink(man, destination, "moves/steel/iron_tail", "100", project, asset, "green", "moves/steel/iron_tail", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "moves/steel/iron_tail", reg, project, asset, "blue", "moves/steel/iron_tail")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
     }
 }
@@ -761,30 +760,30 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
 
         err = verifyRegistrySymlink(man, destination, "types/first", "electric", "pokemon", "pikachu", "red", "type", false)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyRegistrySymlink(man, destination, "moves/electric/THUNDERBOLT", "90", "pokemon", "pikachu", "blue", "moves/electric/thunderbolt", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "moves/electric/THUNDERBOLT", reg, "pokemon", "pikachu", "red", "moves/electric/thunderbolt")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyRegistrySymlink(man, destination, "best_friend", "pichu", "pokemon", "pikachu", "green", "evolution/down", true)
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
         err = verifyAncestralSymlink(man, destination, "best_friend", reg, "pokemon", "pikachu", "red", "evolution/down")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
 
         err = verifyNotSymlink(man, destination, "types/second", "steel")
         if err != nil {
-            t.Fatal(err)
+            t.Error(err)
         }
     }
 }
@@ -795,58 +794,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    // Links to irrelevant files are forbidden.
-    {
-        src, err := setupSourceForTransferDirectoryTest()
-        if err != nil {
-            t.Fatalf("failed to set up test directories; %v", err)
-        }
-
-        other, err := os.CreateTemp("", "")
-        if err != nil {
-            t.Fatalf("failed to create a random temporary file; %v", err)
-        }
-        message := "gotta catch em all"
-        if _, err := other.WriteString(message); err != nil {
-            t.Fatalf("failed to write a random temporary file; %v", err)
-        }
-        other_name := other.Name()
-        if err := other.Close(); err != nil {
-            t.Fatalf("failed to close a random temporary file; %v", err)
-        }
-
-        err = os.Symlink(other_name, filepath.Join(src, "asdasd"))
-        if err != nil {
-            t.Fatalf("failed to create a test link to a random file")
-        }
-
-        project := "POKEMON"
-        asset := "PIKAPIKA"
-        version := "SILVER"
-        err = transferDirectory(src, reg, project, asset, version, []string{})
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        dest := filepath.Join(reg, project, asset, version)
-        target_info, err := os.Stat(filepath.Join(dest, "asdasd"))
-        if target_info.Mode() & os.ModeSymlink != 0 {
-            t.Fatal("non-whitelisted symlink should trigger a file copy")
-        }
-
-        man, err := readManifest(dest)
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        contents, found := man["asdasd"]
-        if !found || contents.Link != nil || contents.Size != int64(len(message)) {
-            t.Error("unexpected manifest entry for non-whitelisted symlink")
-        }
-    }
-
-    // Links to loose files in the registry are forbidden.
-    {
+    t.Run("loose registry files", func(t *testing.T) {
         src, err := os.MkdirTemp("", "")
         if err != nil {
             t.Fatalf("failed to create the temporary directory; %v", err)
@@ -867,12 +815,11 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         version := "GOLD"
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "outside of a project asset version directory") {
-            t.Fatal(err)
+            t.Errorf("expected a failure when linking to loose files; %v", err)
         }
-    }
+    })
 
-    // Links to the currently transferring project are forbidden.
-    {
+    t.Run("currently transferring", func(t *testing.T) {
         src, err := os.MkdirTemp("", "")
         if err != nil {
             t.Fatalf("failed to create the temporary directory; %v", err)
@@ -896,12 +843,11 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
 
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "currently-transferring") {
-            t.Fatal(err)
+            t.Errorf("expected a failure when linking to the currently-transferring version; %v", err)
         }
-    }
+    })
 
-    // Links to probational versions are forbidden.
-    {
+    t.Run("probational versions", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -927,12 +873,11 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         version = "crystal"
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "probational") {
-            t.Fatal(err)
+            t.Errorf("expected a failure when linking to a probational version; %v", err)
         }
-    }
+    })
 
-    // Links to internal files are forbidden.
-    {
+    t.Run("internal files", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -958,12 +903,11 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         version = "blue"
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "internal '..' files") {
-            t.Fatal(err)
+            t.Errorf("expected a failure when linking to internal files; %v", err)
         }
-    }
+    })
 
-    // Links to directories are forbidden.
-    {
+    t.Run("directory links", func(t *testing.T) {
         src, err := os.MkdirTemp("", "")
         if err != nil {
             t.Fatalf("failed to create the temporary directory; %v", err)
@@ -983,9 +927,9 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         version := "green"
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "is a directory") {
-            t.Fatalf("expected a failure when a symbolic link to a directory is present; %v", err)
+            t.Errorf("expected a failure when a symbolic link to a directory is present; %v", err)
         }
-    }
+    })
 }
 
 func TestTransferDirectoryLocalLinks(t *testing.T) {
@@ -1036,30 +980,30 @@ func TestTransferDirectoryLocalLinks(t *testing.T) {
 
     err = verifyLocalSymlink(man, destination, "type2", "electric", project, asset, version, "type", false)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     err = verifyLocalSymlink(man, destination, "evolution/foo", "electric", project, asset, version, "type2", true)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
     err = verifyAncestralSymlink(man, destination, "evolution/foo", reg, project, asset, version, "type")
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     err = verifyLocalSymlink(man, destination, "evolution/bar", "electric", project, asset, version, "type2", true)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
     err = verifyAncestralSymlink(man, destination, "evolution/bar", reg, project, asset, version, "type")
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     err = verifyLocalSymlink(man, destination, "WHEE", "raichu", project, asset, version, "evolution/up", false)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 }
 
@@ -1069,8 +1013,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    // Cyclic symlinks.
-    {
+    t.Run("cyclic links", func(t* testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -1097,12 +1040,11 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
 
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "too many levels") {
-            t.Fatalf("failed to detect cyclic local links; %v", err)
+            t.Errorf("failed to detect cyclic local links; %v", err)
         }
-    }
+    })
 
-    // Symlink to a directory.
-    {
+    t.Run("directory links", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -1119,12 +1061,12 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
 
         err = transferDirectory(src, reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "is a directory") {
-            t.Fatalf("failed to detect links to a directory; %v", err)
+            t.Errorf("failed to detect links to a directory; %v", err)
         }
-    }
+    })
 }
 
-func TestTransferDirectoryLinkWhitelist(t *testing.T) {
+func TestTransferDirectoryExternalLinks(t *testing.T) {
     reg, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -1153,32 +1095,65 @@ func TestTransferDirectoryLinkWhitelist(t *testing.T) {
         t.Fatalf("failed to create a test link to a random file")
     }
 
-    project := "POKEMON"
-    asset := "PIKAPIKA"
-    version := "SILVER"
-    err = transferDirectory(src, reg, project, asset, version, []string{ filepath.Dir(other_name) })
-    if err != nil {
-        t.Fatal(err)
-    }
+    // Without whitelisting, a copy is made.
+    t.Run("no whitelist", func(t *testing.T) {
+        project := "POKEMON"
+        asset := "SQUIRTLE"
+        version := "SILVER"
+        err := transferDirectory(src, reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatal(err)
+        }
 
-    dest := filepath.Join(reg, project, asset, version)
-    target, err := os.Readlink(filepath.Join(dest, "asdasd"))
-    if err != nil {
-        t.Fatal(err)
-    }
-    if target != other_name {
-        t.Error("unexpected target of the whitelisted symlink")
-    }
+        dest := filepath.Join(reg, project, asset, version)
+        target_info, err := os.Stat(filepath.Join(dest, "asdasd"))
+        if err != nil {
+            t.Fatal(err)
+        }
+        if target_info.Mode() & os.ModeSymlink != 0 {
+            t.Error("non-whitelisted symlink should trigger a file copy")
+        }
 
-    man, err := readManifest(dest)
-    if err != nil {
-        t.Fatal(err)
-    }
+        man, err := readManifest(dest)
+        if err != nil {
+            t.Fatal(err)
+        }
 
-    contents, found := man["asdasd"]
-    if !found || contents.Link != nil || contents.Size != int64(len(message)) {
-        t.Error("unexpected manifest entry for whitelisted symlink")
-    }
+        contents, found := man["asdasd"]
+        if !found || contents.Link != nil || contents.Size != int64(len(message)) {
+            t.Error("unexpected manifest entry for non-whitelisted symlink")
+        }
+    })
+
+    // Now with whitelisting.
+    t.Run("whitelist", func(t *testing.T) {
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "SILVER"
+        err = transferDirectory(src, reg, project, asset, version, []string{ filepath.Dir(other_name) })
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        dest := filepath.Join(reg, project, asset, version)
+        target, err := os.Readlink(filepath.Join(dest, "asdasd"))
+        if err != nil {
+            t.Fatal(err)
+        }
+        if target != other_name {
+            t.Error("unexpected target of the whitelisted symlink")
+        }
+
+        man, err := readManifest(dest)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        contents, found := man["asdasd"]
+        if !found || contents.Link != nil || contents.Size != int64(len(message)) {
+            t.Error("unexpected manifest entry for whitelisted symlink")
+        }
+    })
 }
 
 /**********************************************
@@ -1228,7 +1203,7 @@ func TestReindexDirectorySimple(t *testing.T) {
     }
     err = compareDirectoryContents(prior, recovered)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     // What happens if we inject a ..links file in there?
@@ -1317,7 +1292,7 @@ func TestReindexDirectorySkipHidden(t *testing.T) {
     }
     err = compareDirectoryContents(prior, recovered)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     // Checking that the dot files are still there, but not indexed.
@@ -1411,7 +1386,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     }
     err = compareDirectoryContents(prior, recovered)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     // Confirming that we have ..links files.
@@ -1437,22 +1412,15 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
-    // Mocking up a directory structure. 
-    project := "pokemon"
-    asset := "lugia"
-    version := "silver"
-    err = transferDirectory(src, reg, project, asset, version, []string{})
-    if err != nil {
-        t.Fatalf("failed to perform the transfer; %v", err)
-    }
+    t.Run("external files", func(t *testing.T) {
+        project := "pokemon"
+        asset := "lugia"
+        version := "silver"
+        err = transferDirectory(src, reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
 
-    v_path := filepath.Join(reg, project, asset, version)
-
-    // Most failures are handled by resolveRegistrySymlink and are common to
-    // both transfer and reindex functions, so we won't test them again here.
-
-    // Links to irrelevant files are forbidden.
-    t.Run("irrelevant files", func(t *testing.T) {
         other, err := os.CreateTemp("", "")
         if err != nil {
             t.Fatalf("failed to create a random temporary file; %v", err)
@@ -1465,6 +1433,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
             t.Fatalf("failed to close a random temporary file; %v", err)
         }
 
+        v_path := filepath.Join(reg, project, asset, version)
         err = os.Symlink(other_name, filepath.Join(v_path, "asdasd"))
         if err != nil {
             t.Fatalf("failed to create a test link to a random file")
@@ -1477,37 +1446,12 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
 
         err = reindexDirectory(reg, project, asset, version, []string{})
         if err == nil || !strings.Contains(err.Error(), "outside the registry") {
-            t.Fatalf("expected reindexing failure for files outside the registry; %f", err)
-        }
-
-        err = os.Remove(filepath.Join(v_path, "asdasd"))
-        if err != nil {
-            t.Fatalf("couldn't remove the symlink; %v", err)
+            t.Errorf("expected reindexing failure for files outside the registry; %v", err)
         }
     })
 
-    // Links to directories are forbidden.
-    t.Run("directory links", func(t *testing.T) {
-        mock, err := os.MkdirTemp(reg, "")
-        if err != nil {
-            t.Fatalf("failed to create the temporary directory as a link target; %v", err)
-        }
-
-        if err := os.Symlink(mock, filepath.Join(v_path, "WHEE")); err != nil {
-            t.Fatalf("failed to make a symlink to the mock directory; %v", err)
-        }
-
-        v_path := filepath.Join(reg, project, asset, version)
-        err = stripDoubleDotFiles(v_path)
-        if err != nil {
-            t.Fatalf("failed to strip all double dots; %v", err)
-        }
-
-        err = reindexDirectory(reg, project, asset, version, []string{})
-        if err == nil || !strings.Contains(err.Error(), "is a directory") {
-            t.Fatal("expected a failure when a symbolic link to a directory is present")
-        }
-    })
+    // All other failures are handled by resolveLocalSymlink and are common to
+    // both transfer and reindex functions, so we won't test them again here.
 }
 
 func TestReindexDirectoryLocalLinks(t *testing.T) {
@@ -1562,7 +1506,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
     }
     err = compareDirectoryContents(prior, recovered)
     if err != nil {
-        t.Fatal(err)
+        t.Error(err)
     }
 
     // All failures are handled by resolveLocalSymlink and are common to
