@@ -20,7 +20,7 @@ func copyFile(src, dest string) error {
     }
     defer in.Close()
 
-    out, err := os.OpenFile(dest, os.O_CREATE | os.O_WRONLY, 0644)
+    out, err := os.OpenFile(dest, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
     if err != nil {
         return fmt.Errorf("failed to open output file at '" + dest + "'; %w", err)
     }
