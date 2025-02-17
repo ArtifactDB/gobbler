@@ -8,6 +8,7 @@ import (
     "io"
     "io/fs"
     "encoding/hex"
+    "encoding/json"
     "errors"
     "strconv"
     "strings"
@@ -216,6 +217,42 @@ func resolveRegistrySymlink(
     return &output, nil
 }
 
+func wipeIfExists(path string) error {
+    if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+        err = os.Remove(path)
+        if err != nil {
+            return fmt.Errorf("failed to remove existing file at %q; %w", path, err)
+        }
+    }
+    return nil
+}
+
+func createSymlink(path string, registry string, link *linkMetadata, wipe_existing bool) error {
+    if link.Ancestor != nil {
+        link = link.Ancestor
+    }
+    target := filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
+
+    // We convert the link target to a relative path within the registry so that the registry is easily relocatable.
+    rellocal, err := filepath.Rel(filepath.Dir(path), target)
+    if err != nil {
+        return fmt.Errorf("failed to make a relative path for registry symlink from %q to %q; %w", path, target, err)
+    }
+
+    if wipe_existing {
+        err = wipeIfExists(path)
+        if err != nil {
+            return err
+        }
+    }
+
+    err = os.Symlink(rellocal, path)
+    if err != nil {
+        return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", path, target, err)
+    }
+    return nil
+}
+
 /***********************************************************
  ***** Local links within the directory being uploaded *****
  ***********************************************************/
@@ -316,12 +353,6 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
             if info.IsDir() {
                 return filepath.SkipDir
             } else {
-                if !do_transfer && base == linksFileName {
-                    err := os.Remove(src_path)
-                    if err != nil {
-                        return fmt.Errorf("failed to remove old ..links file at %q; %w", src_path, err)
-                    }
-                }
                 return nil
             }
         }
@@ -415,17 +446,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
             if ok {
                 man_entry.Link = &last_entry
                 manifest[path] = man_entry
-                dest := filepath.Join(destination, path)
-                target := filepath.Join(project, asset, last_entry.Version, last_entry.Path)
-                rellocal, err := filepath.Rel(filepath.Dir(dest), filepath.Join(registry, target))
-                if err != nil {
-                    return fmt.Errorf("failed to make a relative path for a within-asset symlink from %q to %q; %w", path, target, err)
-                }
-                err = os.Symlink(rellocal, dest)
-                if err != nil {
-                    return fmt.Errorf("failed to create a within-asset symlink for %q to %q; %w", path, target, err)
-                }
-                return nil
+                return createSymlink(filepath.Join(destination, path), registry, &last_entry, /* wipe_existing = */ false)
             }
 
             // Otherwise we just copy the file.
@@ -469,37 +490,21 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         }
         manifest[path] = *obj
 
-        if do_transfer {
-            // We convert the link target to a relative path within the registry so that the registry is easily relocatable.
-            dest := filepath.Join(destination, path)
-            rellocal, err := filepath.Rel(filepath.Dir(dest), filepath.Join(registry, target))
-            if err != nil {
-                return fmt.Errorf("failed to make a relative path for a within-registry symlink from %q to %q; %w", path, target, err)
-            }
-            err = os.Symlink(rellocal, dest)
-            if err != nil {
-                return fmt.Errorf("failed to create a symlink for %q to registry path %q; %w", path, target, err)
-            }
+        err = createSymlink(filepath.Join(destination, path), registry, obj.Link, /* wipe_existing = */ !do_transfer)
+        if err != nil {
+            return err
         }
     }
 
     /*** Final pass to resolve local links within the newly uploaded directory. ***/
     for path, target := range local_links {
-        _, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
+        man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
         if err != nil {
             return err
         }
-        if do_transfer {
-            // Again, converting it to the shortest relative path.
-            dest := filepath.Join(destination, path)
-            rellocal, err := filepath.Rel(filepath.Dir(dest), filepath.Join(destination, target))
-            if err != nil {
-                return fmt.Errorf("failed to make a relative path for a local symlink from %q to %q; %w", path, target, err)
-            }
-            err = os.Symlink(rellocal, dest)
-            if err != nil {
-                return fmt.Errorf("failed to create a local symlink from %q to %q; %w", path, target, err)
-            }
+        err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !do_transfer)
+        if err != nil {
+            return err
         }
     }
 
@@ -539,5 +544,57 @@ func transferDirectory(source, registry, project, asset, version string, link_wh
 
 func reindexDirectory(registry, project, asset, version string, link_whitelist []string) error {
     source := filepath.Join(registry, project, asset, version)
+
+    // Doing a preliminary pass to create correct symlinks from any existing ..link files.
+    err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
+        if err != nil {
+            return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
+        }
+
+        base := filepath.Base(src_path)
+        if !strings.HasPrefix(base, ".") {
+            return nil
+        }
+
+        if info.IsDir() {
+            return filepath.SkipDir
+        }
+
+        if base != linksFileName {
+            return nil
+        }
+
+        contents, err := os.ReadFile(src_path)
+        if err != nil {
+            return fmt.Errorf("failed to read link file at %q; %w", src_path, err)
+        }
+
+        links := map[string]linkMetadata{}
+        err = json.Unmarshal(contents, &links)
+        if err != nil {
+            return fmt.Errorf("failed to read parse JSON file at %q; %w", src_path, err)
+        }
+
+        dir := filepath.Dir(src_path)
+        for path, link := range links {
+            full := filepath.Join(dir, path)
+            err := wipeIfExists(full)
+            if err != nil {
+                return err
+            }
+            // Directly linking to the immediate parent; this ensures that manifest construction
+            // in processDirectory correctly records the immediate parent.
+            err = os.Symlink(filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path), full)
+            if err != nil {
+                return err
+            }
+        }
+
+        return nil
+    })
+    if err != nil{
+        return err
+    }
+
     return processDirectory(false, source, registry, project, asset, version, link_whitelist)
 }

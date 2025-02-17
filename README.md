@@ -80,6 +80,10 @@ If the user-supplied destination is itself another link, the object will contain
 If no `..links` file is present in a particular subdirectory, it can be assumed that there are no linked-from files in the same subdirectory. 
 This guarantee does not apply recursively, i.e., linked-from files may still be present in nested subdirectories.
 
+If a symbolic link in the registry would refer to another symbolic link, the Gobbler will automatically create a symbolic link to the actual "ancestral" file during upload or reindexing.
+This avoids potential problems with operating system limits on the depth of symbolic link chains.
+An exception is made for links to files in whitelisted directories (see the [`-whitelist`](#administration) option), which are treated as the files themselves.
+
 ### Permissions
 
 The Gobbler supports several levels of permissions:
@@ -314,13 +318,18 @@ This file should be JSON-formatted with the following properties:
 - `asset`: string containing the name of the asset.
 - `version`: string containing the name of the version.
 
+Reindexing assumes that a `..summary` file is already present in the version directory.
+This file will not be modified in order to preserve the details of the original upload.
+For bulk uploads, administrators should create this file manually before submitting a reindexing request.
+
+If any `..links` files are present in the to-be-reindexed version directory, they will be used to (re)create symbolic links in their respective directories.
+Any existing symbolic link of the same name will be overwritten.
+This behavior ensures that information about the immediate target of a link is not lost, 
+given that the symbolic links themselves only target [ancestral files](#link-deduplication).
+
 On success, the internal `..manifest` and `..links` files inside the version directory will be created or updated.
 All other files will not be modified.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
-
-Note that the reindexing process assumes that a `..summary` file is already present in the version directory.
-This file will not be modified in order to preserve the details of the original upload.
-For bulk uploads, administrators should create this file manually before submitting a reindexing request.
 
 Reindexing will not update any of the project or asset statistics.
 Specifically, reindexing will not update the latest version for the asset as the `..summary` files have not changed.

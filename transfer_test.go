@@ -288,7 +288,7 @@ func verifySymlink(
     target_asset,
     target_version,
     target_path string,
-    in_registry bool,
+    is_local bool,
     has_ancestor bool,
 ) error {
     info, ok := manifest[path]
@@ -317,17 +317,25 @@ func verifySymlink(
     okay := true
     if filepath.IsAbs(target) { // should always be relative to enable painless relocation of the registry.
         okay = false
-    } else if in_registry {
+    } else {
         candidate := filepath.Clean(filepath.Join(filepath.Dir(full), target))
         registry := filepath.Dir(filepath.Dir(filepath.Dir(version_dir)))
-        expected_dest := filepath.Join(registry, target_project, target_asset, target_version, target_path)
+
+        var expected_dest string
+        if has_ancestor {
+            expected_dest = filepath.Join(registry, info.Link.Ancestor.Project, info.Link.Ancestor.Asset, info.Link.Ancestor.Version, info.Link.Ancestor.Path)
+        } else {
+            expected_dest = filepath.Join(registry, target_project, target_asset, target_version, target_path)
+        }
         if expected_dest != candidate {
             okay = false
         }
-    } else {
-        candidate := filepath.Clean(filepath.Join(filepath.Dir(path), target))
-        if target_path != candidate {
-            okay = false
+
+        if is_local {
+            rellocal, err := filepath.Rel(filepath.Dir(version_dir), expected_dest)
+            if err != nil || !filepath.IsLocal(rellocal) {
+                okay = false
+            }
         }
     }
     if !okay {
@@ -374,7 +382,7 @@ func verifyRegistrySymlink(
     target_path string,
     has_ancestor bool,
 ) error {
-    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, true, has_ancestor)
+    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, false, has_ancestor)
 }
 
 func verifyLocalSymlink(
@@ -388,7 +396,7 @@ func verifyLocalSymlink(
     target_path string,
     has_ancestor bool,
 ) error {
-    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, false, has_ancestor)
+    return verifySymlink(manifest, version_dir, path, contents, target_project, target_asset, target_version, target_path, true, has_ancestor)
 }
 
 func verifyNotSymlink(manifest map[string]manifestEntry, version_dir, path, contents string) error {
@@ -1206,31 +1214,6 @@ func TestReindexDirectorySimple(t *testing.T) {
     if err != nil {
         t.Error(err)
     }
-
-    // What happens if we inject a ..links file in there?
-    lpath := filepath.Join(v_path, linksFileName)
-    err = os.WriteFile(lpath, []byte{}, 0644)
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    lpath2 := filepath.Join(v_path, "moves", "electric", linksFileName)
-    err = os.WriteFile(lpath2, []byte{}, 0644)
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    err = reindexDirectory(reg, project, asset, version, []string{})
-    if err != nil {
-        t.Fatalf("failed to reindex directory; %v", err)
-    }
-
-    if _, err := os.Stat(lpath); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Error("expected existing ..links file to be deleted")
-    }
-    if _, err := os.Stat(lpath2); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Error("expected existing nested ..links file to be deleted")
-    }
 }
 
 func TestReindexDirectorySkipHidden(t *testing.T) {
@@ -1357,48 +1340,93 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create the latest file; %v", err)
         }
+
+        err = transferDirectory(src, reg, project, asset, "green", []string{})
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, "green", summaryFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(reg, project, asset, latestFileName), []byte("{ \"version\": \"green\" }"), 0644)
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
     }
 
-    version := "blue"
-    v_path := filepath.Join(reg, project, asset, version)
-    prior, err := loadDirectoryContents(v_path)
-    if err != nil {
-        t.Fatalf("failed to load directory contents; %v", err)
+    {
+        version := "blue"
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+
+        // Now reindexing after we purge all the '..xxx' files.
+        err = stripDoubleDotFiles(v_path)
+        if err != nil {
+            t.Fatalf("failed to strip all double dots; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(v_path, summaryFileName), []byte("{}"), 0644) // mocking this up for a valid comparison.
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = reindexDirectory(reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatalf("failed to reindex directory; %v", err)
+        }
+
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Error(err)
+        }
+
+        // Confirming that we have ..links files.
+        _, found := recovered[linksFileName]
+        if !found {
+            t.Error("missing a top-level ..links file")
+        }
+
+        _, found = recovered[filepath.Join("moves", "electric", linksFileName)]
+        if !found {
+            t.Error("missing a nested ..links file")
+        }
     }
 
-    // Now reindexing after we purge all the '..xxx' files.
-    err = stripDoubleDotFiles(v_path)
-    if err != nil {
-        t.Fatalf("failed to strip all double dots; %v", err)
-    }
-    err = os.WriteFile(filepath.Join(v_path, summaryFileName), []byte("{}"), 0644) // mocking this up for a valid comparison.
-    if err != nil {
-        t.Fatalf("failed to create the latest file; %v", err)
-    }
+    // Checking that reindexing preserves ancestral information if ..links are present.
+    {
+        version := "green"
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
 
-    err = reindexDirectory(reg, project, asset, version, []string{})
-    if err != nil {
-        t.Fatalf("failed to reindex directory; %v", err)
-    }
+        // Don't delete all the ..links files.
+        err = os.Remove(filepath.Join(v_path, manifestFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
 
-    recovered, err := loadDirectoryContents(v_path)
-    if err != nil {
-        t.Fatalf("failed to load directory contents; %v", err)
-    }
-    err = compareDirectoryContents(prior, recovered)
-    if err != nil {
-        t.Error(err)
-    }
+        err = reindexDirectory(reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatalf("failed to reindex directory; %v", err)
+        }
 
-    // Confirming that we have ..links files.
-    _, found := recovered[linksFileName]
-    if !found {
-        t.Error("missing a top-level ..links file")
-    }
-
-    _, found = recovered[filepath.Join("moves", "electric", linksFileName)]
-    if !found {
-        t.Error("missing a nested ..links file")
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Error(err)
+        }
     }
 }
 
@@ -1476,39 +1504,119 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
         t.Fatalf("failed to create a symlink for 'evolution/foo'; %v", err)
     }
 
-    project := "POKEMON"
-    asset := "PIKAPIKA"
-    version := "GOLD"
+    t.Run("simple", func(t *testing.T) {
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "GOLD"
 
-    err = transferDirectory(src, reg, project, asset, version, []string{})
-    if err != nil {
-        t.Fatalf("failed to perform the transfer; %v", err)
-    }
+        err := transferDirectory(src, reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
 
-    v_path := filepath.Join(reg, project, asset, version)
-    prior, err := loadDirectoryContents(v_path)
-    if err != nil {
-        t.Fatalf("failed to load directory contents; %v", err)
-    }
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
 
-    err = stripDoubleDotFiles(v_path)
-    if err != nil {
-        t.Fatalf("failed to strip all double dots; %v", err)
-    }
+        err = stripDoubleDotFiles(v_path)
+        if err != nil {
+            t.Fatalf("failed to strip all double dots; %v", err)
+        }
 
-    err = reindexDirectory(reg, project, asset, version, []string{})
-    if err != nil {
-        t.Fatal(err)
-    }
+        err = reindexDirectory(reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatal(err)
+        }
 
-    recovered, err := loadDirectoryContents(v_path)
-    if err != nil {
-        t.Fatalf("failed to load directory contents; %v", err)
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+
+        // Same link information is reconstituted for 'type2'.
+        if recovered["type2"].LinkTarget != "type" || recovered[linksFileName].Contents != prior[linksFileName].Contents {
+            t.Error("mismatch in link information for 'type2'")
+        }
+
+        // But we lose the immediate parent link information for 'evolution/foo'.
+        if recovered["evolution/foo"].LinkTarget != "../type" {
+            t.Error("unexpected link target for 'evolution/foo'")
+        }
+    })
+
+    t.Run("with ..links", func(t *testing.T) {
+        project := "POKEMON"
+        asset := "PIKAPIKA"
+        version := "SILVER"
+        err = transferDirectory(src, reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+
+        err = stripDoubleDotFiles(v_path)
+        if err != nil {
+            t.Fatalf("failed to strip all double dots; %v", err)
+        }
+
+        // Inject a ..link file back in, and removing the link itself to ensure that reindexing doesn't rely on existing links if ..links is present.
+        err = os.WriteFile(filepath.Join(v_path, linksFileName), []byte(fmt.Sprintf(`{
+    "type2": {
+        "project": "%s",
+        "asset": "%s",
+        "version": "%s",
+        "path": "type"
     }
-    err = compareDirectoryContents(prior, recovered)
-    if err != nil {
-        t.Error(err)
+}`, project, asset, version)), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = os.Remove(filepath.Join(v_path, "type2"))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        // Inject a ..link file with ancestral information.
+        err = os.WriteFile(filepath.Join(v_path, "evolution", linksFileName), []byte(fmt.Sprintf(`{
+    "foo": {
+        "project": "%s",
+        "asset": "%s",
+        "version": "%s",
+        "path": "type2",
+        "ancestor": {
+            "project": "%s",
+            "asset": "%s",
+            "version": "%s",
+            "path": "type"
+        }
     }
+}`, project, asset, version, project, asset, version)), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = reindexDirectory(reg, project, asset, version, []string{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Error(err)
+        }
+    })
 
     // All failures are handled by resolveLocalSymlink and are common to
     // both transfer and reindex functions, so we won't test them again here.
