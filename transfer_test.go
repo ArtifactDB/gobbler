@@ -315,18 +315,19 @@ func verifySymlink(
     }
 
     okay := true
-    if in_registry {
-        if !strings.HasPrefix(target, "../") || !strings.HasSuffix(target, "/" + target_project + "/" + target_asset + "/" + target_version + "/" + target_path) {
+    if filepath.IsAbs(target) { // should always be relative to enable painless relocation of the registry.
+        okay = false
+    } else if in_registry {
+        candidate := filepath.Clean(filepath.Join(filepath.Dir(full), target))
+        registry := filepath.Dir(filepath.Dir(filepath.Dir(version_dir)))
+        expected_dest := filepath.Join(registry, target_project, target_asset, target_version, target_path)
+        if expected_dest != candidate {
             okay = false
         }
     } else {
-        if filepath.IsAbs(target) {
+        candidate := filepath.Clean(filepath.Join(filepath.Dir(path), target))
+        if target_path != candidate {
             okay = false
-        } else {
-            candidate := filepath.Clean(filepath.Join(filepath.Dir(path), target))
-            if !filepath.IsLocal(candidate) {
-                okay = false
-            }
         }
     }
     if !okay {
