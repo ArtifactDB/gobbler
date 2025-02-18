@@ -17,11 +17,11 @@ type deleteTasks struct {
     Version *string
 }
 
-func listDeletedFiles(registry string, to_delete []deleteTasks) (map[string]bool, error) {
-    version_deleted := []string{}
+func listDeletedVersions(registry string, to_delete []deleteTasks) (map[string]bool, error) {
+    version_deleted := map[string]bool{}
     for _, task := range to_delete {
         if task.Asset != nil && task.Version != nil {
-            version_deleted = append(version_deleted, filepath.Join(task.Project, *(task.Asset), *(task.Version)))
+            version_deleted[filepath.Join(task.Project, *(task.Asset), *(task.Version))] = true
             continue
         }
 
@@ -54,25 +54,28 @@ func listDeletedFiles(registry string, to_delete []deleteTasks) (map[string]bool
                 if version.IsDir() {
                     vname := version.Name()
                     if !strings.HasPrefix(vname, ".") {
-                        version_deleted = append(version_deleted, filepath.Join(task.Project, aname, vname))
+                        version_deleted[filepath.Join(task.Project, aname, vname)] = true
                     }
                 }
             }
         }
     }
 
+    return version_deleted, nil
+}
+
+func listDeletedFiles(registry string, version_deleted map[string]bool) (map[string]bool, error) {
     lost_files := map[string]bool{}
-    for _, vpath := range version_deleted {
-        full_vpath := filepath.Join(registry, vpath)
-        man, err := readManifest(full_vpath)
+    for version_dir, _ := range version_deleted {
+        full_version_dir := filepath.Join(registry, version_dir)
+        man, err := readManifest(full_version_dir)
         if err != nil {
-            return nil, fmt.Errorf("failed to read manifest at %q; %w", full_vpath, err)
+            return nil, fmt.Errorf("failed to read manifest at %q; %w", full_version_dir, err)
         }
         for key, _ := range man {
-            lost_files[filepath.Join(vpath, key)] = true
+            lost_files[filepath.Join(version_dir, key)] = true
         }
     }
-
     return lost_files, nil
 }
 
@@ -85,7 +88,8 @@ func copyFileOverwrite(src, dest string) error {
 }
 
 func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string) error {
-    man, err := readManifest(filepath.Join(registry, version_dir))
+    full_vpath := filepath.Join(registry, version_dir)
+    man, err := readManifest(full_vpath)
     if err != nil {
         return fmt.Errorf("failed to read manifest at %q; %w", version_dir, err)
     }
@@ -93,36 +97,35 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
     manifest_cache[version_dir] = man
 
     new_man := map[string]manifestEntry{}
+    delinked := map[string]bool{}
     for key, entry := range man {
         if entry.Link != nil {
-            new_man[key] = entry
             continue
         }
-        fpath := filepath.Join(version_dir, key)
-        full_path := filepath.Join(registry, fpath)
+        full_fpath := filepath.Join(full_vpath, key)
 
         parent := filepath.Join(entry.Link.Project, entry.Link.Asset, entry.Link.Version, entry.Link.Path)
         _, lost_parent := deleted_files[parent]
         if entry.Link.Ancestor == nil {
             if lost_parent {
-                err = copyFileOverwrite(filepath.Join(registry, parent), full_path)
+                err = copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
                 if err != nil {
                     return err
                 }
                 entry.Link = nil
+                new_man[key] = entry
+                delinked[filepath.Dir(key)] = true
             }
-            new_man[key] = entry
             continue
         }
 
         ancestor := filepath.Join(entry.Link.Ancestor.Project, entry.Link.Ancestor.Asset, entry.Link.Ancestor.Version, entry.Link.Ancestor.Path)
         _, lost_ancestor := deleted_files[ancestor]
         if !lost_parent && !lost_ancestor {
-            new_man[key] = entry
             continue
         }
 
-        // Otherwise we fall back to a full trace of the ancestry.
+        // If either the parent or ancestor was deleted, we need to perform a trace of the ancestry.
         candidate := entry.Link
         var living_parent *linkMetadata
         var living_ancestor *linkMetadata
@@ -153,7 +156,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
 
             entry, found := target_man[candidate.Path]
             if !found {
-                return fmt.Errorf("missing manifest entry for link to %q from %q", target_path, fpath) 
+                return fmt.Errorf("missing manifest entry for link to %q from %q", target_path, filepath.Join(version_dir, key))
             }
             candidate = entry.Link
         }
@@ -165,7 +168,12 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link.Version = living_parent.Version
                 entry.Link.Path = living_parent.Path
             } else {
+                err = copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
+                if err != nil {
+                    return err
+                }
                 entry.Link = nil
+                delinked[filepath.Dir(key)] = true
             }
         }
 
@@ -180,18 +188,34 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                     entry.Link.Ancestor = nil
                 }
             }
-            err := createSymlink(full_path, registry, entry.Link, true)
-            if err != nil {
-                return err
-            }
-        } else {
-            err = copyFileOverwrite(filepath.Join(registry, parent), full_path)
+            err := createSymlink(full_fpath, registry, entry.Link, true)
             if err != nil {
                 return err
             }
         }
 
-        man[key] = entry
+        new_man[key] = entry
+    }
+
+    // Updating all the internal metadata if any changes were performed.
+    if len(new_man) > 0 {
+        for k, entry := range new_man {
+            man[k] = entry
+        }
+        err := dumpJson(filepath.Join(full_vpath, manifestFileName), &man)
+        if err != nil {
+            return err
+        }
+        for delink, _ := range delinked { // get rid of ..links files in directories that no longer have any links at all.
+            err := os.Remove(filepath.Join(full_vpath, delink, linksFileName))
+            if err != nil {
+                return fmt.Errorf("failed to remove existing ..links file")
+            }
+        }
+        err = recreateLinkFiles(full_vpath, man) // reconstitute ..links files from the manifest.
+        if err != nil {
+            return err
+        }
     }
 
     return nil
