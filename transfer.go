@@ -119,6 +119,71 @@ func createDedupManifest(registry, project, asset string) (map[string]linkMetada
     return last_dedup, nil
 }
 
+func wipeIfExists(path string) error {
+    if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+        err = os.Remove(path)
+        if err != nil {
+            return fmt.Errorf("failed to remove existing file at %q; %w", path, err)
+        }
+    }
+    return nil
+}
+
+/**********************************
+ ***** Link-related utilities *****
+ **********************************/
+
+func createSymlink(path string, registry string, link *linkMetadata, wipe_existing bool) error {
+    if link.Ancestor != nil {
+        link = link.Ancestor
+    }
+    target := filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
+
+    // We convert the link target to a relative path within the registry so that the registry is easily relocatable.
+    rellocal, err := filepath.Rel(filepath.Dir(path), target)
+    if err != nil {
+        return fmt.Errorf("failed to make a relative path for registry symlink from %q to %q; %w", path, target, err)
+    }
+
+    if wipe_existing {
+        err = wipeIfExists(path)
+        if err != nil {
+            return err
+        }
+    }
+
+    err = os.Symlink(rellocal, path)
+    if err != nil {
+        return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", path, target, err)
+    }
+    return nil
+}
+
+func recreateLinkFiles(destination string, manifest map[string]manifestEntry) error {
+    all_links := map[string]map[string]*linkMetadata{}
+    for path, entry := range manifest {
+        if entry.Link != nil {
+            subdir, base := filepath.Split(path)
+            sublinks, ok := all_links[subdir]
+            if !ok {
+                sublinks = map[string]*linkMetadata{}
+                all_links[subdir] = sublinks
+            }
+            sublinks[base] = entry.Link
+        }
+    }
+
+    for k, v := range all_links {
+        link_path := filepath.Join(destination, k, linksFileName)
+        err := dumpJson(link_path, &v)
+        if err != nil {
+            return fmt.Errorf("failed to save links for %q; %w", k, err)
+        }
+    }
+
+    return nil
+}
+
 /***********************************************
  ***** Links to other registry directories *****
  ***********************************************/
@@ -215,42 +280,6 @@ func resolveRegistrySymlink(
     }
 
     return &output, nil
-}
-
-func wipeIfExists(path string) error {
-    if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
-        err = os.Remove(path)
-        if err != nil {
-            return fmt.Errorf("failed to remove existing file at %q; %w", path, err)
-        }
-    }
-    return nil
-}
-
-func createSymlink(path string, registry string, link *linkMetadata, wipe_existing bool) error {
-    if link.Ancestor != nil {
-        link = link.Ancestor
-    }
-    target := filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
-
-    // We convert the link target to a relative path within the registry so that the registry is easily relocatable.
-    rellocal, err := filepath.Rel(filepath.Dir(path), target)
-    if err != nil {
-        return fmt.Errorf("failed to make a relative path for registry symlink from %q to %q; %w", path, target, err)
-    }
-
-    if wipe_existing {
-        err = wipeIfExists(path)
-        if err != nil {
-            return err
-        }
-    }
-
-    err = os.Symlink(rellocal, path)
-    if err != nil {
-        return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", path, target, err)
-    }
-    return nil
 }
 
 /***********************************************************
@@ -515,27 +544,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         return fmt.Errorf("failed to save manifest for %q; %w", destination, err)
     }
 
-    all_links := map[string]map[string]*linkMetadata{}
-    for path, entry := range manifest {
-        if entry.Link != nil {
-            subdir, base := filepath.Split(path)
-            sublinks, ok := all_links[subdir]
-            if !ok {
-                sublinks = map[string]*linkMetadata{}
-                all_links[subdir] = sublinks
-            }
-            sublinks[base] = entry.Link
-        }
-    }
-
-    for k, v := range all_links {
-        link_path := filepath.Join(destination, k, linksFileName)
-        err := dumpJson(link_path, &v)
-        if err != nil {
-            return fmt.Errorf("failed to save links for %q; %w", k, err)
-        }
-    }
-    return nil
+    return recreateLinkFiles(destination, manifest)
 }
 
 func transferDirectory(source, registry, project, asset, version string, link_whitelist []string) error {
