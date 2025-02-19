@@ -85,34 +85,46 @@ func copyFileOverwrite(src, dest string) error {
     return copyFile(src, dest)
 }
 
-func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string) error {
+type rerouteAction struct {
+    Copy bool
+    Path string
+    Source string
+}
+
+func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string, dry_run bool) ([]rerouteAction, error) {
     full_vpath := filepath.Join(registry, version_dir)
     man, err := readManifest(full_vpath)
     if err != nil {
-        return fmt.Errorf("failed to read manifest at %q; %w", version_dir, err)
+        return nil, fmt.Errorf("failed to read manifest at %q; %w", version_dir, err)
     }
     manifest_cache := map[string]map[string]manifestEntry{}
     manifest_cache[version_dir] = man
 
     new_man := map[string]manifestEntry{}
     delinked := map[string]bool{}
+    changes := []rerouteAction{}
+
     for key, entry := range man {
         if entry.Link == nil {
             continue
         }
+        fpath := filepath.Join(version_dir, key)
         full_fpath := filepath.Join(full_vpath, key)
 
         parent := filepath.Join(entry.Link.Project, entry.Link.Asset, entry.Link.Version, entry.Link.Path)
         _, lost_parent := deleted_files[parent]
         if entry.Link.Ancestor == nil {
             if lost_parent {
-                err = copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
-                if err != nil {
-                    return err
+                if !dry_run {
+                    err := copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
+                    if err != nil {
+                        return nil, err
+                    }
                 }
                 entry.Link = nil
                 new_man[key] = entry
                 delinked[filepath.Dir(key)] = true
+                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath })
             }
             continue
         }
@@ -147,14 +159,14 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 full_target_dir := filepath.Join(registry, target_dir)
                 target_man0, err := readManifest(full_target_dir)
                 if err != nil {
-                    return fmt.Errorf("failed to read manifest at %q; %w", full_target_dir, err)
+                    return nil, fmt.Errorf("failed to read manifest at %q; %w", full_target_dir, err)
                 }
                 target_man = target_man0
             }
 
             entry, found := target_man[candidate.Path]
             if !found {
-                return fmt.Errorf("missing manifest entry for link to %q from %q", target_path, filepath.Join(version_dir, key))
+                return nil, fmt.Errorf("missing manifest entry for link to %q from %q", target_path, fpath)
             }
             candidate = entry.Link
         }
@@ -166,12 +178,15 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link.Version = living_parent.Version
                 entry.Link.Path = living_parent.Path
             } else {
-                err = copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
-                if err != nil {
-                    return err
+                if !dry_run {
+                    err := copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
+                    if err != nil {
+                        return nil, err
+                    }
                 }
                 entry.Link = nil
                 delinked[filepath.Dir(key)] = true
+                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath })
             }
         }
 
@@ -191,68 +206,80 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link.Ancestor.Path == entry.Link.Path { // deleting the ancestor if it's the same as the parent.
                 entry.Link.Ancestor = nil
             }
-            err := createSymlink(full_fpath, registry, entry.Link, true)
-            if err != nil {
-                return err
+
+            if !dry_run {
+                err := createSymlink(full_fpath, registry, entry.Link, true)
+                if err != nil {
+                    return nil, err
+                }
             }
+
+            var reported_src string
+            if lost_parent {
+                reported_src = parent  // favoring the immediate parent as the reported source.
+            } else {
+                reported_src = ancestor
+            }
+            changes = append(changes, rerouteAction{ Copy: false, Source: reported_src, Path: fpath })
         }
 
         new_man[key] = entry
     }
 
     // Updating all the internal metadata if any changes were performed.
-    if len(new_man) > 0 {
+    if !dry_run && len(new_man) > 0 {
         for k, entry := range new_man {
             man[k] = entry
         }
         err := dumpJson(filepath.Join(full_vpath, manifestFileName), &man)
         if err != nil {
-            return err
+            return nil, err
         }
         for delink, _ := range delinked { // get rid of ..links files in directories that might no longer have any links at all.
             err := os.Remove(filepath.Join(full_vpath, delink, linksFileName))
             if err != nil {
-                return fmt.Errorf("failed to remove existing ..links file")
+                return nil, fmt.Errorf("failed to remove existing ..links file")
             }
         }
         err = recreateLinkFiles(full_vpath, man) // reconstitute ..links files from the manifest.
         if err != nil {
-            return err
+            return nil, err
         }
     }
 
-    return nil
+    return changes, nil
 }
 
-func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
+func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerouteAction, error) {
     req_user, err := identifyUser(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
     if !isAuthorizedToAdmin(req_user, globals.Administrators) {
-        return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to delete a project", req_user))
+        return nil, newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to delete a project", req_user))
     }
 
     // First we validate the request.
     all_incoming := struct {
         ToDelete []deleteTask `json:"to_delete"`
+        DryRun bool `json:"dry_run"`
     }{}
     contents, err := os.ReadFile(reqpath)
     if err != nil {
-        return fmt.Errorf("failed to read %q; %w", reqpath, err)
+        return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
     }
 
     err = json.Unmarshal(contents, &all_incoming)
     if err != nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
     } else if all_incoming.ToDelete == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'to_delete' property in %q; %w", reqpath, err))
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'to_delete' property in %q; %w", reqpath, err))
     }
 
     for _, incoming := range all_incoming.ToDelete {
         err := isMissingOrBadName(&(incoming.Project))
         if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
         }
 
         if incoming.Asset == nil {
@@ -260,7 +287,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
         }
         err = isMissingOrBadName(incoming.Asset)
         if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
         }
 
         if incoming.Version == nil {
@@ -268,25 +295,26 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
         }
         err = isMissingOrBadName(incoming.Version)
         if err != nil {
-            return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
+            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
         }
     }
 
     // Then we need to reroute the links.
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {
-        return err
+        return nil, err
     }
 
     to_delete_files, err := listToBeDeletedFiles(globals.Registry, to_delete_versions)
     if err != nil {
-        return err
+        return nil, err
     }
 
+    actions := []rerouteAction{}
     if len(to_delete_files) > 0 {
         project_listing, err := os.ReadDir(globals.Registry)
         if err != nil {
-            return fmt.Errorf("failed to list projects in registry; %w", err)
+            return nil, fmt.Errorf("failed to list projects in registry; %w", err)
         }
 
         for _, project := range project_listing {
@@ -297,7 +325,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
             project_dir := filepath.Join(globals.Registry, pname)
             asset_listing, err := os.ReadDir(project_dir)
             if err != nil {
-                return fmt.Errorf("failed to list assets for project %q; %w", pname, err)
+                return nil, fmt.Errorf("failed to list assets for project %q; %w", pname, err)
             }
 
             for _, asset := range asset_listing {
@@ -308,7 +336,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
                 asset_dir := filepath.Join(project_dir, aname)
                 version_listing, err := os.ReadDir(asset_dir)
                 if err != nil {
-                    return fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, pname, err)
+                    return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, pname, err)
                 }
 
                 for _, version := range version_listing {
@@ -321,14 +349,17 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
                     if _, found := to_delete_versions[vpath]; found { // no need to process version directories that are about to be deleted.
                         continue
                     }
-                    err = rerouteLinksForVersion(globals.Registry, to_delete_files, vpath)
+
+                    curactions, err := rerouteLinksForVersion(globals.Registry, to_delete_files, vpath, all_incoming.DryRun)
                     if err != nil {
-                        return fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", vname, aname, pname, err)
+                        return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", vname, aname, pname, err)
                     }
+
+                    actions = append(actions, curactions...)
                 }
             }
         }
     }
 
-    return nil
+    return actions, nil
 }

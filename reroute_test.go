@@ -265,6 +265,14 @@ func readLinks(path string) (map[string]linkMetadata, error) {
     return link_details, nil
 }
 
+func invertChangelog(changes []rerouteAction) map[string]rerouteAction {
+    output := map[string]rerouteAction{}
+    for _, x := range changes {
+        output[x.Path] = x
+    }
+    return output
+}
+
 func TestRerouteLinksForVersion(t *testing.T) {
     t.Run("delete ancestor, reroute child", func(t *testing.T) {
         registry, err := os.MkdirTemp("", "")
@@ -285,9 +293,17 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "natural")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        // Check that changes affect 'akari' and 'alicia' in all 3 subsequent versions.
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 2 ||
+            !inverted_changes["ARIA/anime/natural/akari"].Copy || 
+            !inverted_changes["ARIA/anime/natural/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -351,9 +367,16 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "origination")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 2 ||
+            inverted_changes["ARIA/anime/origination/akari"].Copy || 
+            inverted_changes["ARIA/anime/origination/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -423,9 +446,16 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 2 ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -486,9 +516,20 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
+            !inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -558,9 +599,20 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -630,9 +682,18 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 4 ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -711,9 +772,20 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        err = rerouteLinksForVersion(registry, to_delete_files, version_dir)
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
+            !inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            !inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -730,10 +802,77 @@ func TestRerouteLinksForVersion(t *testing.T) {
             }
             apath := filepath.Join(registry, version_dir, fname)
             if contents, err := os.ReadFile(apath); err != nil || string(contents) != expected_contents {
-                t.Errorf("unexpected contents for ai; %v", string(contents))
+                t.Errorf("unexpected contents for %s; %v", fname, string(contents))
             }
             if info, err := os.Lstat(apath); err != nil || info.Mode() & os.ModeSymlink != 0 {
                 t.Errorf("expected %s to be its own file", fname)
+            }
+        }
+    })
+
+    t.Run("dry run", func(t *testing.T) {
+        registry, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        project := "ARIA" 
+        asset := "anime"
+        err = mockRegistryForReroute(registry, project, asset)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        to_delete_files, err := listToBeDeletedFiles(registry, map[string]bool{ "ARIA/anime/animation": true, "ARIA/anime/origination": true })
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        version_dir := filepath.Join(project, asset, "avvenire")
+        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, /* dry_run = */ true)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
+        }
+
+        full_vpath := filepath.Join(registry, version_dir)
+        man, err := readManifest(full_vpath)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        // Check that to-be-copied files are still symlinks.
+        {
+            entry, found := man["himeya/aika"]
+            if !found || entry.Link == nil {
+                t.Errorf("unexpected rerouting in dry-run manifest; %v", entry)
+            }
+            apath := filepath.Join(registry, version_dir, "himeya/aika")
+            if info, err := os.Lstat(apath); err != nil || info.Mode() & os.ModeSymlink == 0 {
+                t.Errorf("expected himeya/akia to be its a symlink after a dry-run")
+            }
+        }
+
+        // Check that to-be-relinked symlinks still point to the original location.
+        {
+            entry, found := man["alicia"]
+            if !found || entry.Link == nil {
+                t.Errorf("unexpected rerouting in dry-run manifest; %v", entry)
+            }
+            apath := filepath.Join(registry, version_dir, "alicia")
+            target, err := os.Readlink(apath)
+            if err != nil || target != "../animation/alicia" {
+                t.Errorf("expected alicia symlink to still point to 'animation'")
             }
         }
     })
@@ -773,9 +912,20 @@ func TestRerouteLinksHandler(t *testing.T) {
 
         globals := newGlobalConfiguration(registry)
         globals.Administrators = append(globals.Administrators, self)
-        err = rerouteLinksHandler(reqpath, &globals)
+        changes, err := rerouteLinksHandler(reqpath, &globals)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
+            !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
@@ -842,9 +992,22 @@ func TestRerouteLinksHandler(t *testing.T) {
 
         globals := newGlobalConfiguration(registry)
         globals.Administrators = append(globals.Administrators, self)
-        err = rerouteLinksHandler(reqpath, &globals)
+        changes, err := rerouteLinksHandler(reqpath, &globals)
         if err != nil {
             t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 8 ||
+            !inverted_changes["ARIA/anime/origination/orange_planet/alice"].Copy || 
+            !inverted_changes["ARIA/anime/origination/orange_planet/athena"].Copy ||
+            !inverted_changes["ARIA/anime/origination/akari"].Copy || 
+            !inverted_changes["ARIA/anime/origination/alicia"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
         }
 
         // Some links are replaced with copies.
@@ -892,6 +1055,89 @@ func TestRerouteLinksHandler(t *testing.T) {
         }
     })
 
+    t.Run("dry run", func(t *testing.T) {
+        registry, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        project := "ARIA" 
+        asset := "anime"
+        err = mockRegistryForReroute(registry, project, asset)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`{
+    "to_delete": [ 
+        { "project": "%s", "asset": "%s", "version": "natural" } 
+    ],
+    "dry_run": true
+}`, project, asset))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        globals := newGlobalConfiguration(registry)
+        globals.Administrators = append(globals.Administrators, self)
+        changes, err := rerouteLinksHandler(reqpath, &globals)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        inverted_changes := invertChangelog(changes)
+        if len(inverted_changes) != 6 ||
+            !inverted_changes["ARIA/anime/origination/orange_planet/alice"].Copy || 
+            !inverted_changes["ARIA/anime/origination/orange_planet/athena"].Copy ||
+            inverted_changes["ARIA/anime/origination/akari"].Copy || 
+            inverted_changes["ARIA/anime/origination/alicia"].Copy ||
+            inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
+            inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy {
+            t.Errorf("unexpected changelog; %v", changes)
+        }
+
+        // Nothing is actually changed in a dry run.
+        {
+            version_dir := filepath.Join(project, asset, "origination")
+            full_vpath := filepath.Join(registry, version_dir)
+            man, err := readManifest(full_vpath)
+            if err != nil {
+                t.Fatal(err)
+            }
+
+            entry, found := man["orange_planet/athena"]
+            if !found || entry.Link == nil {
+                t.Errorf("unexpected rerouting in manifest; %v", entry)
+            }
+
+            apath := filepath.Join(registry, version_dir, "orange_planet", "athena")
+            if info, err := os.Lstat(apath); err != nil || info.Mode() & os.ModeSymlink == 0 {
+                t.Error("expected himeya/aika to still be a symlink")
+            }
+        }
+
+        // Again, nothing is changed in the great grandchild.
+        {
+            version_dir := filepath.Join(project, asset, "avvenire")
+            full_vpath := filepath.Join(registry, version_dir)
+            man, err := readManifest(full_vpath)
+            if err != nil {
+                t.Fatal(err)
+            }
+
+            entry, found := man["orange_planet/athena"]
+            if !found || entry.Link == nil {
+                t.Errorf("unexpected rerouting in manifest; %v", entry)
+            }
+
+            apath := filepath.Join(registry, version_dir, "orange_planet", "athena")
+            target, err := os.Readlink(apath)
+            if err != nil || target == "../natural/orange_planet/athena" {
+                t.Errorf("expected orange_planet/athena symlink to still point to 'natural'")
+            }
+        }
+    })
+
     t.Run("unauthorized", func(t *testing.T) {
         registry, err := os.MkdirTemp("", "")
         if err != nil {
@@ -911,7 +1157,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         }
 
         globals := newGlobalConfiguration(registry)
-        err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Error("unexpected authorization for non-admin")
         }
@@ -937,7 +1183,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "'to_delete'") {
             t.Error("expected failure when to_delete isn't present")
         }
@@ -946,19 +1192,19 @@ func TestRerouteLinksHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
             t.Error("expected failure from invalid project")
         }
 
         reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "" } ] }`)
-        err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
             t.Error("expected failure from invalid asset")
         }
 
         reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "anime", "version": "" } ] }`)
-        err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Error("expected failure from invalid version")
         }

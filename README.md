@@ -396,17 +396,33 @@ This file should be JSON-formatted with the following properties:
   For a project directory, the object should contain a `project` string property that names the project;
   for an asset directory, the object should contain the `project` and `asset` string properties;
   and for a version directory, the object should contain the `project`, `asset` and `version` string properties.
+- `dry_run` (optional): boolean indicating whether to perform a dry-run of the rerouting.
+  If true, an array of rerouting actions is still returned but no files in the registry are actually changed.
+  Defaults to false if not provided.
 
-On success, the Gobbler will update any links in the registry to any file in the directories corresponding to `delete`. 
+On success, the HTTP response will contain a JSON object with the `status` property set to `SUCCESS` and a `changes` array of rerouting actions.
+Each element of the array is an object with the following properties:
+
+- `copy`: boolean indicating whether a copy of the file was made from `source` to `path`.
+  If false, a symlink at `path` was updated to a new target.
+- `path`: string containing the path to a file inside the registry that was changed by rerouting.
+- `source`: string containing the path to a file inside the registry that is to be deleted.
+  If `copy = true`, this is the original linked-to file that was copied to `path`.
+  Otherwise, the deletion of this file has been determined to trigger a change in the link target/metadata of `path`. 
+
+If `dry_run = false`, the Gobbler will update any links in the registry to any file in the directories corresponding to `delete`. 
 All internal metadata files (`..manifest`, `..links`) are similarly updated to mirror the changes on the filesystem.
-The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
 
 Note that a rerouting request does not actually delete the directories corresponding to `to_delete`.
 After rerouting, administrators still need to delete each project, asset or version [as described above](#deleting-content-admin).
 If an administrator is sure that there are no links targeting a directory, deletion can be performed directly without the expense of rerouting. 
 
-We use a `to_delete` array to batch together multiple deletion tasks.
-This improves efficiency by amortizing the cost of a full registry scan to find links that target any of the affected directories.
+**Comments on efficiency:**
+
+- We use a `to_delete` array to batch together multiple deletion tasks.
+  This improves efficiency by amortizing the cost of a full registry scan to find links that target any of the affected directories.
+- Deletion of projects/assets/verseions from the registry can actually _increase_ disk usage if rerouting creates multiple copies of the underlying files.
+  Administrators may wish to use `dry_run = true` first to evaluate if deletion will trigger excessive copying.
 
 ## Parsing logs
 
