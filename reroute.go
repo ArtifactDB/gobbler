@@ -234,7 +234,9 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // First we validate the request.
-    all_incoming := []deleteTask{}
+    all_incoming := struct {
+        ToDelete []deleteTask `json:"to_delete"`
+    }{}
     contents, err := os.ReadFile(reqpath)
     if err != nil {
         return fmt.Errorf("failed to read %q; %w", reqpath, err)
@@ -243,9 +245,11 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
     err = json.Unmarshal(contents, &all_incoming)
     if err != nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
+    } else if all_incoming.ToDelete == nil {
+        return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'to_delete' property in %q; %w", reqpath, err))
     }
 
-    for _, incoming := range all_incoming {
+    for _, incoming := range all_incoming.ToDelete {
         err := isMissingOrBadName(&(incoming.Project))
         if err != nil {
             return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'project' property in %q; %w", reqpath, err))
@@ -269,7 +273,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // Then we need to reroute the links.
-    to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming)
+    to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {
         return err
     }

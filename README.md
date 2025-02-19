@@ -339,9 +339,9 @@ Administrators should refresh these statistics manually as described above after
 ### Deleting content (admin)
 
 Administrators have the ability to delete files from the registry.
-This violates **gypsum**'s immutability contract and should be done sparingly.
-In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated.
-This check involves going through all the manifest files and is currently a manual process.
+This violates the Gobbler's immutability contract and should be done sparingly.
+In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated -
+see the ["Rerouting symlinks"](#rerouting-symlinks-admin) section for details.
 
 To delete a project, create a file with the `request-delete_project-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -378,6 +378,35 @@ This file should be JSON-formatted with the following properties:
 On success, the version is deleted.
 The HTTP response will contain a JSON object with the `type` property set to `SUCCESS`.
 A success is still reported even if the version, its asset or its project is not present, in which case the operation is a no-op.
+
+### Rerouting symlinks (admin)
+
+In the (hopefully rare) scenario where one or more directories must be deleted from the registry,
+administrators must consider the possibility that other projects in the registry contain symbolic links to the files in the to-be-deleted directories.
+Deletion would result in dangling links that compromise the validity of those other projects. 
+To avoid this, the Gobbler can reroute each affected link to a more appropriate location,
+either by updating the link target or replacing it with a copy of the to-be-deleted file.
+After successful rerouting, each project, asset or version can be safely deleted without damaging other projects.
+
+To reroute links, create a file with the `request-reroute_links-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `to_delete`: an array of JSON objects.
+  Each object corresponds to a project, asset or version directory to be deleted.
+  For a project directory, the object should contain a `project` string property that names the project;
+  for an asset directory, the object should contain the `project` and `asset` string properties;
+  and for a version directory, the object should contain the `project`, `asset` and `version` string properties.
+
+On success, the Gobbler will update any links in the registry to any file in the directories corresponding to `delete`. 
+All internal metadata files (`..manifest`, `..links`) are similarly updated to mirror the changes on the filesystem.
+The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
+
+Note that a rerouting request does not actually delete the directories corresponding to `to_delete`.
+After rerouting, administrators still need to delete each project, asset or version [as described above](#deleting-content-admin).
+If an administrator is sure that there are no links targeting a directory, deletion can be performed directly without the expense of rerouting. 
+
+We use a `to_delete` array to batch together multiple deletion tasks.
+This improves efficiency by amortizing the cost of a full registry scan to find links that target any of the affected directories.
 
 ## Parsing logs
 

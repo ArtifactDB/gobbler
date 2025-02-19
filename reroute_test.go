@@ -762,7 +762,11 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`[ { "project": "%s", "asset": "%s", "version": "origination" } ]`, project, asset))
+        reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`{
+    "to_delete": [ 
+        { "project": "%s", "asset": "%s", "version": "origination" } 
+    ]
+}`, project, asset))
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
@@ -826,10 +830,12 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`[ 
-    { "project": "%s", "asset": "%s", "version": "animation" },
-    { "project": "%s", "asset": "%s", "version": "natural" }
-]`, project, asset, project, asset))
+        reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`{
+    "to_delete": [ 
+        { "project": "%s", "asset": "%s", "version": "animation" },
+        { "project": "%s", "asset": "%s", "version": "natural" }
+    ]
+}`, project, asset, project, asset))
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
@@ -899,7 +905,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        reqpath, err := dumpRequest("reroute_links", `[ { "project": "ARIA" } ]`)
+        reqpath, err := dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA" } ] }`)
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
@@ -924,25 +930,34 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        reqpath, err := dumpRequest("reroute_links", `[ { "project": "" } ]`)
+        globals := newGlobalConfiguration(registry)
+        globals.Administrators = append(globals.Administrators, self)
+
+        reqpath, err := dumpRequest("reroute_links", "{}")
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
+        err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "'to_delete'") {
+            t.Error("expected failure when to_delete isn't present")
+        }
 
-        globals := newGlobalConfiguration(registry)
-        globals.Administrators = append(globals.Administrators, self)
+        reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "" } ] }`)
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
         err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
             t.Error("expected failure from invalid project")
         }
 
-        reqpath, err = dumpRequest("reroute_links", `[ { "project": "ARIA", "asset": "" } ]`)
+        reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "" } ] }`)
         err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
             t.Error("expected failure from invalid asset")
         }
 
-        reqpath, err = dumpRequest("reroute_links", `[ { "project": "ARIA", "asset": "anime", "version": "" } ]`)
+        reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "anime", "version": "" } ] }`)
         err = rerouteLinksHandler(reqpath, &globals)
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Error("expected failure from invalid version")
