@@ -9,13 +9,13 @@ import (
     "net/http"
 )
 
-type deleteTasks struct {
+type deleteTask struct {
     Project string `json:"project"`
     Asset *string `json:"asset"`
     Version *string `json:"version"`
 }
 
-func listDeletedVersions(registry string, to_delete []deleteTasks) (map[string]bool, error) {
+func listToBeDeletedVersions(registry string, to_delete []deleteTask) (map[string]bool, error) {
     version_deleted := map[string]bool{}
     for _, task := range to_delete {
         if task.Asset != nil && task.Version != nil {
@@ -62,7 +62,7 @@ func listDeletedVersions(registry string, to_delete []deleteTasks) (map[string]b
     return version_deleted, nil
 }
 
-func listDeletedFiles(registry string, version_deleted map[string]bool) (map[string]bool, error) {
+func listToBeDeletedFiles(registry string, version_deleted map[string]bool) (map[string]bool, error) {
     lost_files := map[string]bool{}
     for version_dir, _ := range version_deleted {
         full_version_dir := filepath.Join(registry, version_dir)
@@ -97,7 +97,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
     new_man := map[string]manifestEntry{}
     delinked := map[string]bool{}
     for key, entry := range man {
-        if entry.Link != nil {
+        if entry.Link == nil {
             continue
         }
         full_fpath := filepath.Join(full_vpath, key)
@@ -185,6 +185,11 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 } else {
                     entry.Link.Ancestor = nil
                 }
+            } else if entry.Link.Ancestor.Project == entry.Link.Project &&
+                entry.Link.Ancestor.Asset == entry.Link.Asset &&
+                entry.Link.Ancestor.Version == entry.Link.Version &&
+                entry.Link.Ancestor.Path == entry.Link.Path { // deleting the ancestor if it's the same as the parent.
+                entry.Link.Ancestor = nil
             }
             err := createSymlink(full_fpath, registry, entry.Link, true)
             if err != nil {
@@ -219,7 +224,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
     return nil
 }
 
-func rerouteHandler(reqpath string, globals *globalConfiguration) error {
+func rerouteLinksHandler(reqpath string, globals *globalConfiguration) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -229,7 +234,7 @@ func rerouteHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // First we validate the request.
-    all_incoming := []deleteTasks{}
+    all_incoming := []deleteTask{}
     contents, err := os.ReadFile(reqpath)
     if err != nil {
         return fmt.Errorf("failed to read %q; %w", reqpath, err)
@@ -264,12 +269,12 @@ func rerouteHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // Then we need to reroute the links.
-    to_delete_versions, err := listDeletedVersions(globals.Registry, all_incoming)
+    to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming)
     if err != nil {
         return err
     }
 
-    to_delete_files, err := listDeletedFiles(globals.Registry, to_delete_versions)
+    to_delete_files, err := listToBeDeletedFiles(globals.Registry, to_delete_versions)
     if err != nil {
         return err
     }
@@ -285,7 +290,8 @@ func rerouteHandler(reqpath string, globals *globalConfiguration) error {
                 continue
             }
             pname := project.Name()
-            asset_listing, err := os.ReadDir(filepath.Join(globals.Registry, pname))
+            project_dir := filepath.Join(globals.Registry, pname)
+            asset_listing, err := os.ReadDir(project_dir)
             if err != nil {
                 return fmt.Errorf("failed to list assets for project %q; %w", pname, err)
             }
@@ -295,7 +301,8 @@ func rerouteHandler(reqpath string, globals *globalConfiguration) error {
                     continue
                 }
                 aname := asset.Name()
-                version_listing, err := os.ReadDir(filepath.Join(globals.Registry, aname))
+                asset_dir := filepath.Join(project_dir, aname)
+                version_listing, err := os.ReadDir(asset_dir)
                 if err != nil {
                     return fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, pname, err)
                 }
