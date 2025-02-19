@@ -7,6 +7,7 @@ import (
     "fmt"
     "errors"
     "encoding/json"
+    "strings"
 )
 
 func mockRegistryForReroute(registry, project, asset string) error {
@@ -739,6 +740,15 @@ func TestRerouteLinksForVersion(t *testing.T) {
 }
 
 func TestRerouteLinksHandler(t *testing.T) {
+    mock, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create a mock temp directory; %v", err)
+    }
+    self, err := identifyUser(mock)
+    if err != nil {
+        t.Fatalf("failed to identify self; %v", err)
+    }
+
     t.Run("basic", func(t *testing.T) {
         registry, err := os.MkdirTemp("", "")
         if err != nil {
@@ -758,12 +768,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         }
 
         globals := newGlobalConfiguration(registry)
-        self, err := identifyUser(registry)
-        if err != nil {
-            t.Fatalf("failed to identify self; %v", err)
-        }
         globals.Administrators = append(globals.Administrators, self)
-
         err = rerouteLinksHandler(reqpath, &globals)
         if err != nil {
             t.Fatal(err)
@@ -830,12 +835,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         }
 
         globals := newGlobalConfiguration(registry)
-        self, err := identifyUser(registry)
-        if err != nil {
-            t.Fatalf("failed to identify self; %v", err)
-        }
         globals.Administrators = append(globals.Administrators, self)
-
         err = rerouteLinksHandler(reqpath, &globals)
         if err != nil {
             t.Fatal(err)
@@ -883,6 +883,69 @@ func TestRerouteLinksHandler(t *testing.T) {
             if err != nil || target != "../../origination/orange_planet/alice" {
                 t.Errorf("unexpected target for orange_planet/alice; %q", target)
             }
+        }
+    })
+
+    t.Run("unauthorized", func(t *testing.T) {
+        registry, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        project := "ARIA" 
+        asset := "anime"
+        err = mockRegistryForReroute(registry, project, asset)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest("reroute_links", `[ { "project": "ARIA" } ]`)
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        globals := newGlobalConfiguration(registry)
+        err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Error("unexpected authorization for non-admin")
+        }
+    })
+
+    t.Run("bad request", func(t *testing.T) {
+        registry, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the temporary directory; %v", err)
+        }
+
+        project := "ARIA" 
+        asset := "anime"
+        err = mockRegistryForReroute(registry, project, asset)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reqpath, err := dumpRequest("reroute_links", `[ { "project": "" } ]`)
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        globals := newGlobalConfiguration(registry)
+        globals.Administrators = append(globals.Administrators, self)
+        err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
+            t.Error("expected failure from invalid project")
+        }
+
+        reqpath, err = dumpRequest("reroute_links", `[ { "project": "ARIA", "asset": "" } ]`)
+        err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
+            t.Error("expected failure from invalid asset")
+        }
+
+        reqpath, err = dumpRequest("reroute_links", `[ { "project": "ARIA", "asset": "anime", "version": "" } ]`)
+        err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
+            t.Error("expected failure from invalid version")
         }
     })
 }
