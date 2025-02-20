@@ -283,19 +283,22 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
         }
 
         if incoming.Asset == nil {
-            continue
-        }
-        err = isMissingOrBadName(incoming.Asset)
-        if err != nil {
-            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
-        }
+            if incoming.Version != nil {
+                return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("'version' requires the 'asset' to be specified in %q; %w", reqpath, err))
+            }
+        } else {
+            err = isMissingOrBadName(incoming.Asset)
+            if err != nil {
+                return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'asset' property in %q; %w", reqpath, err))
+            }
 
-        if incoming.Version == nil {
-            continue
-        }
-        err = isMissingOrBadName(incoming.Version)
-        if err != nil {
-            return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
+            if incoming.Version == nil {
+                continue
+            }
+            err = isMissingOrBadName(incoming.Version)
+            if err != nil {
+                return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("invalid 'version' property in %q; %w", reqpath, err))
+            }
         }
     }
 

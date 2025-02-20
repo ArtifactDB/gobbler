@@ -1208,5 +1208,11 @@ func TestRerouteLinksHandler(t *testing.T) {
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Error("expected failure from invalid version")
         }
+
+        reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "version": "origination" } ] }`)
+        _, err = rerouteLinksHandler(reqpath, &globals)
+        if err == nil || !strings.Contains(err.Error(), "requires the 'asset'") {
+            t.Error("expected failure from version without asset")
+        }
     })
 }
