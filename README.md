@@ -202,7 +202,8 @@ This is done by creating a file with the `request-create_project-` prefix, which
   This should not contain `/`, `\`, or `.`.
 - `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
   Each of these properties has the same type as described [above](#permissions).
-  If `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
+  If not supplied, `owners` is set as described above and `uploaders` is empty.
+  If only `owners` is not supplied, it is automatically set to a length-1 array containing only the uploading user.
   This property is ignored when uploading a new version of an asset to an existing project.
 
 On success, a new project is created with the designated permissions.
@@ -274,6 +275,7 @@ This file should be JSON-formatted with the following properties:
 - `force` (optional): boolean indicating whether a probational version should be forcibly deleted.
   Occasionally necessary if the version contains corrupted summary or manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
+  Defaults to false if not supplied.
 
 On success, the relevant version is removed from the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -360,6 +362,7 @@ This file should be JSON-formatted with the following properties:
 - `force` (optional): boolean indicating whether the asset should be forcibly deleted.
   Occasionally necessary if the asset contains corrupted manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
+  Defaults to false if not supplied.
 
 On success, the asset is deleted.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -374,6 +377,7 @@ This file should be JSON-formatted with the following properties:
 - `force` (optional): boolean indicating whether the version should be forcibly deleted.
   Occasionally necessary if the version contains corrupted summary or manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
+  Defaults to false if not supplied.
 
 On success, the version is deleted.
 The HTTP response will contain a JSON object with the `type` property set to `SUCCESS`.
@@ -421,7 +425,7 @@ If an administrator is sure that there are no links targeting a directory, delet
 
 - We use a `to_delete` array to batch together multiple deletion tasks.
   This improves efficiency by amortizing the cost of a full registry scan to find links that target any of the affected directories.
-- Deletion of projects/assets/verseions from the registry can actually _increase_ disk usage if rerouting creates multiple copies of the underlying files.
+- Deletion of projects/assets/versions from the registry can actually _increase_ disk usage if rerouting creates multiple copies of the underlying files.
   Administrators may wish to use `dry_run = true` first to evaluate if deletion will trigger excessive copying.
 
 ## Parsing logs
