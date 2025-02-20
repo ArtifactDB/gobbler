@@ -407,12 +407,12 @@ This file should be JSON-formatted with the following properties:
 On success, the HTTP response will contain a JSON object with the `status` property set to `SUCCESS` and a `changes` array of rerouting actions.
 Each element of the array is an object with the following properties:
 
-- `copy`: boolean indicating whether a copy of the file was made from `source` to `path`.
-  If false, a symlink at `path` was updated to a new target.
-- `path`: string containing the path to a file inside the registry that was changed by rerouting.
-- `source`: string containing the path to a file inside the registry that is to be deleted.
+- `path`: string containing the path to a symbolic link inside the registry that was changed by rerouting.
+- `copy`: boolean indicating whether the link at `path` was replaced by a copy of its target file.
+  If false, the link was merely updated to refer to a new target file.
+- `source`: string containing the path to the target file that caused rerouting of `path`.
+  Specifically, this is a file in one of the to-be-deleted directories specified in `to_delete`.
   If `copy = true`, this is the original linked-to file that was copied to `path`.
-  Otherwise, the deletion of this file has been determined to trigger a change in the link target/metadata of `path`. 
 
 If `dry_run = false`, the Gobbler will update any links in the registry to any file in the directories corresponding to `delete`. 
 All internal metadata files (`..manifest`, `..links`) are similarly updated to mirror the changes on the filesystem.

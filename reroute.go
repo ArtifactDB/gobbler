@@ -86,9 +86,9 @@ func copyFileOverwrite(src, dest string) error {
 }
 
 type rerouteAction struct {
-    Copy bool
-    Path string
-    Source string
+    Copy bool `json:"copy"`
+    Path string `json:"path"`
+    Source string `json:"source"`
 }
 
 func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string, dry_run bool) ([]rerouteAction, error) {
