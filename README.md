@@ -419,7 +419,7 @@ All internal metadata files (`..manifest`, `..links`) are similarly updated to m
 
 Note that a rerouting request does not actually delete the directories corresponding to `to_delete`.
 After rerouting, administrators still need to delete each project, asset or version [as described above](#deleting-content-admin).
-If an administrator is sure that there are no links targeting a directory, deletion can be performed directly without the expense of rerouting. 
+If an administrator is sure that there are no links targeting a directory (e.g., it contains probational versions only), deletion can be performed directly without the expense of rerouting. 
 
 **Comments on efficiency:**
 
