@@ -413,6 +413,8 @@ Each element of the array is an object with the following properties:
 - `source`: string containing the path to the target file that caused rerouting of `path`.
   Specifically, this is a file in one of the to-be-deleted directories specified in `to_delete`.
   If `copy = true`, this is the original linked-to file that was copied to `path`.
+- `usage`: integer specifying the increase in project usage due to file copying.
+  This will be zero if `copy = false`.
 
 If `dry_run = false`, the Gobbler will update any links in the registry to any file in the directories corresponding to `delete`. 
 All internal metadata files (`..manifest`, `..links`) are similarly updated to mirror the changes on the filesystem.

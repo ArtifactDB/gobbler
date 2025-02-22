@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "strings"
     "net/http"
+    "time"
 )
 
 type deleteTask struct {
@@ -89,6 +90,7 @@ type rerouteAction struct {
     Copy bool `json:"copy"`
     Path string `json:"path"`
     Source string `json:"source"`
+    Usage int64 `json:"usage"`
 }
 
 func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string, dry_run bool) ([]rerouteAction, error) {
@@ -124,7 +126,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link = nil
                 new_man[key] = entry
                 delinked[filepath.Dir(key)] = true
-                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath })
+                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath, Usage: entry.Size })
             }
             continue
         }
@@ -186,7 +188,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 }
                 entry.Link = nil
                 delinked[filepath.Dir(key)] = true
-                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath })
+                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath, Usage: entry.Size })
             }
         }
 
@@ -220,7 +222,7 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
             } else {
                 reported_src = ancestor
             }
-            changes = append(changes, rerouteAction{ Copy: false, Source: reported_src, Path: fpath })
+            changes = append(changes, rerouteAction{ Copy: false, Source: reported_src, Path: fpath, Usage: 0 })
         }
 
         new_man[key] = entry
@@ -248,6 +250,67 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
     }
 
     return changes, nil
+}
+
+func rerouteLinksForProject(globals *globalConfiguration, to_delete_versions map[string]bool, to_delete_files map[string]bool, project string, dry_run bool) ([]rerouteAction, error) {
+    project_dir := filepath.Join(globals.Registry, project)
+
+    err := globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    if err != nil {
+        return nil, fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+    }
+    defer globals.Locks.Unlock(project_dir)
+
+    asset_listing, err := os.ReadDir(project_dir)
+    if err != nil {
+        return nil, fmt.Errorf("failed to list assets for project %q; %w", project, err)
+    }
+
+    actions := []rerouteAction{}
+    for _, asset := range asset_listing {
+        if !asset.IsDir() {
+            continue
+        }
+        aname := asset.Name()
+        asset_dir := filepath.Join(project_dir, aname)
+        version_listing, err := os.ReadDir(asset_dir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, project, err)
+        }
+
+        for _, version := range version_listing {
+            if !version.IsDir() {
+                continue
+            }
+            vname := version.Name()
+            vpath := filepath.Join(project, aname, vname)
+            if _, found := to_delete_versions[vpath]; found { // no need to process version directories that are about to be deleted.
+                continue
+            }
+            curactions, err := rerouteLinksForVersion(globals.Registry, to_delete_files, vpath, dry_run)
+            if err != nil {
+                return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", vname, aname, project, err)
+            }
+            actions = append(actions, curactions...)
+        }
+    }
+
+    if !dry_run {
+        usage, err := readUsage(project_dir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
+        }
+        for _, action := range actions {
+            usage.Total += action.Usage
+        }
+        usage_path := filepath.Join(project_dir, usageFileName)
+        err = dumpJson(usage_path, &usage)
+        if err != nil {
+            return nil, fmt.Errorf("failed to save updated usage for project %q; %w", project, err)
+        }
+    }
+
+    return actions, nil
 }
 
 func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerouteAction, error) {
@@ -324,43 +387,11 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
             if !project.IsDir() {
                 continue
             }
-            pname := project.Name()
-            project_dir := filepath.Join(globals.Registry, pname)
-            asset_listing, err := os.ReadDir(project_dir)
+            curactions, err := rerouteLinksForProject(globals, to_delete_versions, to_delete_files, project.Name(), all_incoming.DryRun)
             if err != nil {
-                return nil, fmt.Errorf("failed to list assets for project %q; %w", pname, err)
+                return nil, err
             }
-
-            for _, asset := range asset_listing {
-                if !asset.IsDir() {
-                    continue
-                }
-                aname := asset.Name()
-                asset_dir := filepath.Join(project_dir, aname)
-                version_listing, err := os.ReadDir(asset_dir)
-                if err != nil {
-                    return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, pname, err)
-                }
-
-                for _, version := range version_listing {
-                    if !version.IsDir() {
-                        continue
-                    }
-                    vname := version.Name()
-                    vpath := filepath.Join(pname, aname, vname)
-
-                    if _, found := to_delete_versions[vpath]; found { // no need to process version directories that are about to be deleted.
-                        continue
-                    }
-
-                    curactions, err := rerouteLinksForVersion(globals.Registry, to_delete_files, vpath, all_incoming.DryRun)
-                    if err != nil {
-                        return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", vname, aname, pname, err)
-                    }
-
-                    actions = append(actions, curactions...)
-                }
-            }
+            actions = append(actions, curactions...)
         }
     }
 

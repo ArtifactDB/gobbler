@@ -133,6 +133,23 @@ func mockRegistryForReroute(registry, project, asset string) error {
         }
     }
 
+    // Setting the total usage.
+    total_usage := usageMetadata{
+        Total: int64(
+            len("mizunashi") + 
+            len("florence") + 
+            len("carroll") + 
+            len("glory") + 
+            len("granzchesta") + 
+            len("ferrari") + 
+            len("aino"),
+        ),
+    }
+    err = dumpJson(filepath.Join(registry, project, usageFileName), &total_usage)
+    if err != nil {
+        return err
+    }
+
     return nil
 }
 
@@ -980,6 +997,11 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
+        old_usage, err := readUsage(filepath.Join(registry, project))
+        if err != nil{
+            t.Fatal(err)
+        }
+
         reqpath, err := dumpRequest("reroute_links", fmt.Sprintf(`{
     "to_delete": [ 
         { "project": "%s", "asset": "%s", "version": "animation" },
@@ -1053,6 +1075,16 @@ func TestRerouteLinksHandler(t *testing.T) {
                 t.Errorf("unexpected target for orange_planet/alice; %q", target)
             }
         }
+
+        // Check that usage increases according to all the files that were copied in 'changes'.
+        new_usage, err := readUsage(filepath.Join(registry, project))
+        if err != nil{
+            t.Fatal(err)
+        }
+        diff_usage := new_usage.Total - old_usage.Total
+        if diff_usage != int64(len("carroll") + len("glory") + len("mizunashi") + len("florence")) {
+            t.Errorf("unexpected increase in usage; %v versus %v", new_usage.Total, old_usage.Total)
+        }
     })
 
     t.Run("dry run", func(t *testing.T) {
@@ -1065,6 +1097,11 @@ func TestRerouteLinksHandler(t *testing.T) {
         asset := "anime"
         err = mockRegistryForReroute(registry, project, asset)
         if err != nil {
+            t.Fatal(err)
+        }
+
+        old_usage, err := readUsage(filepath.Join(registry, project))
+        if err != nil{
             t.Fatal(err)
         }
 
@@ -1135,6 +1172,14 @@ func TestRerouteLinksHandler(t *testing.T) {
             if err != nil || target == "../natural/orange_planet/athena" {
                 t.Errorf("expected orange_planet/athena symlink to still point to 'natural'")
             }
+        }
+
+        new_usage, err := readUsage(filepath.Join(registry, project))
+        if err != nil{
+            t.Fatal(err)
+        }
+        if new_usage.Total != old_usage.Total {
+            t.Error("usage should not change after a dry run")
         }
     })
 
