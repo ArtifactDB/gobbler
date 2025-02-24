@@ -39,6 +39,13 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
+    // Locking the entire registry to avoid confusion from concurrent uploads to the to-be-deleted project.
+    err = lockRegistry(globals, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
+    }
+    defer unlockRegistry(globals)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
@@ -98,15 +105,18 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
+    // We lock the project directory as (i) it's convention to lock the entire
+    // project even if we're mutating a single asset and (ii) we need to update
+    // the usage anyway so we'd have to obtain this lock eventually.
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    err = lockProject(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.Unlock(project_dir)
+    defer unlockProject(globals, project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
@@ -199,11 +209,11 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    err = lockProject(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.Unlock(project_dir)
+    defer unlockProject(globals, project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {

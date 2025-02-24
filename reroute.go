@@ -255,12 +255,6 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
 func rerouteLinksForProject(globals *globalConfiguration, to_delete_versions map[string]bool, to_delete_files map[string]bool, project string, dry_run bool) ([]rerouteAction, error) {
     project_dir := filepath.Join(globals.Registry, project)
 
-    err := globals.Locks.LockDirectory(project_dir, 10 * time.Second)
-    if err != nil {
-        return nil, fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
-    }
-    defer globals.Locks.Unlock(project_dir)
-
     assets, err := listUserDirectories(project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to list assets for project %q; %w", project, err)
@@ -356,6 +350,13 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
             }
         }
     }
+
+    // Obtaining an all-of-registry lock.
+    err = lockRegistry(globals, 10 * time.Second)
+    if err != nil {
+        return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
+    }
+    defer unlockRegistry(globals)
 
     // Then we need to reroute the links.
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)

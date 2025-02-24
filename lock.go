@@ -9,16 +9,30 @@ import (
     "path/filepath"
 )
 
+type pathLock struct {
+    Handle *os.File
+    IsShared bool
+    NumShared int
+}
+
 type pathLocks struct {
-    Lock sync.Mutex 
-    InUse map[string]*os.File
+    UseLock sync.Mutex 
+    InUse map[string]*pathLock
 }
 
 func newPathLocks() pathLocks {
-    return pathLocks{ InUse: map[string]*os.File{} }
+    return pathLocks{ InUse: map[string]*pathLock{} }
 }
 
-func (pl *pathLocks) obtainLock(path string, lockfile string, timeout time.Duration) error {
+func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) error {
+    lockfile := filepath.Join(path, "..LOCK")
+    var lock_mode int
+    if exclusive { 
+        lock_mode = syscall.LOCK_EX
+    } else {
+        lock_mode = syscall.LOCK_SH
+    }
+
     var t time.Time
     init := true
 
@@ -31,27 +45,36 @@ func (pl *pathLocks) obtainLock(path string, lockfile string, timeout time.Durat
         }
 
         already_locked := func() bool {
-            pl.Lock.Lock()
-            defer pl.Lock.Unlock()
+            pl.UseLock.Lock()
+            defer pl.UseLock.Unlock()
 
-            _, ok := pl.InUse[path]
+            val, ok := pl.InUse[path]
             if ok {
-                return true
+                if exclusive {
+                    return true
+                } else {
+                    if !val.IsShared {
+                        return true
+                    } else {
+                        val.NumShared += 1
+                        return false
+                    }
+                }
             }
 
             // Place an advisory lock across multiple gobbler processes. 
-            file, err := os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0666)
+            file, err := os.OpenFile(lockfile, os.O_RDWR | os.O_CREATE, 0666)
             if err != nil { // Maybe we failed to write it because the handle was opened by some other process.
                 return true
             }
 
-            err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+            err = syscall.Flock(int(file.Fd()), lock_mode | syscall.LOCK_NB)
             if err != nil { // The lock failed because of contention, or permissions, or who knows.
                 file.Close()
                 return true
             }
 
-            pl.InUse[path] = file
+            pl.InUse[path] = &pathLock{ Handle: file, IsShared: !exclusive, NumShared: 1 }
             return false
         }()
 
@@ -63,17 +86,44 @@ func (pl *pathLocks) obtainLock(path string, lockfile string, timeout time.Durat
     }
 }
 
-func (pl *pathLocks) LockDirectory(path string, timeout time.Duration) error {
-    return pl.obtainLock(path, filepath.Join(path, "..LOCK"), timeout)
+func (pl* pathLocks) Unlock(path string) {
+    pl.UseLock.Lock()
+    defer pl.UseLock.Unlock()
+
+    val := pl.InUse[path]
+    if val.IsShared {
+        if val.NumShared > 1 {
+            val.NumShared -= 1
+            return
+        }
+    }
+
+    defer val.Handle.Close()
+    syscall.Flock(int(val.Handle.Fd()), syscall.LOCK_UN)
+    delete(pl.InUse, path)
 }
 
-func (pl* pathLocks) Unlock(path string) {
-    pl.Lock.Lock()
-    defer pl.Lock.Unlock()
+func lockRegistry(globals *globalConfiguration, timeout time.Duration) error {
+    return globals.Locks.Lock(globals.Registry, timeout, true)
+}
 
-    file := pl.InUse[path]
-    defer file.Close()
+func unlockRegistry(globals *globalConfiguration) {
+    globals.Locks.Unlock(globals.Registry)
+}
 
-    syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-    delete(pl.InUse, path)
+func lockProject(globals *globalConfiguration, project_dir string, timeout time.Duration) error {
+    err := globals.Locks.Lock(globals.Registry, timeout, false)
+    if err != nil {
+        return err
+    }
+    err = globals.Locks.Lock(project_dir, timeout, true)
+    if err != nil {
+        globals.Locks.Unlock(globals.Registry)
+    }
+    return err
+}
+
+func unlockProject(globals *globalConfiguration, project_dir string) {
+    globals.Locks.Unlock(project_dir)
+    globals.Locks.Unlock(globals.Registry)
 }

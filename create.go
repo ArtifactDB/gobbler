@@ -49,23 +49,22 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
         return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name; %w", err))
     }
 
-    // Creating a new project from a pre-supplied name.
+    // Locking the entire registry to avoid confusion from concurrent additions of the same project.
+    err = lockRegistry(globals, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
+    }
+    defer unlockRegistry(globals)
+
     project_dir := filepath.Join(globals.Registry, project)
     if _, err = os.Stat(project_dir); !errors.Is(err, os.ErrNotExist) {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("project %q already exists", project))
     }
 
-    // No need to lock before MkdirAll, it just no-ops if the directory already exists.
     err = os.MkdirAll(project_dir, 0755)
     if err != nil {
         return fmt.Errorf("failed to create a new project directory for %s; %w", project, err)
     }
-
-    globals.Locks.LockDirectory(project_dir, 10 * time.Second)
-    if err != nil {
-        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
-    }
-    defer globals.Locks.Unlock(project_dir)
 
     perms := permissionsMetadata{}
     if inperms != nil && inperms.Owners != nil {

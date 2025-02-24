@@ -78,11 +78,11 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    err = lockProject(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer globals.Locks.Unlock(project_dir)
+    defer unlockProject(globals, project_dir)
 
     // Check if this reindexing request is properly authorized. 
     perms, err := readPermissions(project_dir)

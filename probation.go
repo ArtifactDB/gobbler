@@ -87,11 +87,11 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return err
     }
 
-    err = globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    err = lockProject(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer globals.Locks.Unlock(project_dir)
+    defer unlockProject(globals, project_dir)
 
     existing, err := readPermissions(project_dir)
     if err != nil {
@@ -198,11 +198,17 @@ func rejectProbationHandler(reqpath string, globals *globalConfiguration) error 
 func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project string, expiry time.Duration) []error {
     project_dir := filepath.Join(globals.Registry, project)
 
-    err := globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    // Technically, we could separate this into a lock on the registry in
+    // 'purgeOldProbationalVersions', and then lock each project individually
+    // within this function. However, obtaining and releasing the lock
+    // repeatedly is probably more polite as it gives other endpoints a chance
+    // to sneak in some jobs, otherwise the entire API would freeze up while
+    // the registry was being scanned for the purge.
+    err := lockProject(globals, project_dir, 10 * time.Second)
     if err != nil {
         return []error{ fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err) }
     }
-    defer globals.Locks.Unlock(project_dir)
+    defer unlockProject(globals, project_dir)
 
     assets, err := listUserDirectories(project_dir)
     if err != nil {
