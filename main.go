@@ -50,6 +50,7 @@ func main() {
     port := flag.Int("port", 8080, "Port to listen to API requests")
     prefix := flag.String("prefix", "", "Prefix to add to each endpoint, excluding the first and last slashes (default \"\")")
     whitelist := flag.String("whitelist", "", "Whitelist of directories in which linked-to files are to be treated as real files (default none)")
+    probation := flag.Int("probation", -1, "Lifespan of probational versions, set to -1 to keep them until rejection")
     flag.Parse()
 
     if *spath == "" || *rpath == "" {
@@ -203,21 +204,30 @@ func main() {
         w.WriteHeader(http.StatusNoContent)
     })
 
-    // Adding a per-day job that purges various old files.
-	ticker := time.NewTicker(time.Hour * 24)
-	defer ticker.Stop()
-
+    // Adding a per-day job to purge old files.
     go func() {
+        ticker := time.NewTicker(time.Hour * 24)
+        defer ticker.Stop()
+        day := time.Hour * 24
+
         for {
             <-ticker.C
-            err := purgeOldFiles(staging, time.Hour * 24 * 7)
+
+            err := purgeOldFiles(staging, day * 7)
             if err != nil {
                 log.Println(err)
             }
 
-            err = purgeOldFiles(log_dir, time.Hour * 24 * 7)
+            err = purgeOldFiles(log_dir, day * 7)
             if err != nil {
                 log.Println(err)
+            }
+
+            if *probation >= 0 {
+                errors := purgeOldProbationalVersions(&globals, day * time.Duration(*probation))
+                for _, err := range errors {
+                    log.Println(err)
+                }
             }
         }
     }()

@@ -1,10 +1,12 @@
 package main
 
 import (
+    "os"
     "path/filepath"
     "fmt"
     "io/fs"
     "errors"
+    "strings"
     "net/url"
     "net/http"
 )
@@ -65,4 +67,26 @@ func listFilesHandler(r *http.Request, registry string) ([]string, error) {
 
     all, err := listFiles(path, recursive)
     return all, err
+}
+
+// This refers to non-internal directories that were created by users, e.g., not ..logs.
+func listUserDirectories(dir string) ([]string, error) {
+    project_listing, err := os.ReadDir(dir)
+    if err != nil {
+        return nil, err
+    }
+
+    output := []string{}
+    for _, project := range project_listing {
+        if !project.IsDir() {
+            continue
+        }
+        pname := project.Name()
+        if strings.HasPrefix(pname, ".") {
+            continue
+        }
+        output = append(output, pname)
+    }
+
+    return output, nil
 }

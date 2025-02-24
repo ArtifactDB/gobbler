@@ -7,6 +7,8 @@ import (
     "fmt"
     "strings"
     "errors"
+    "time"
+    "sort"
 )
 
 func mockProbationVersion(reg, project, asset, version string) error {
@@ -325,4 +327,169 @@ func TestRejectProbationHandler(t *testing.T) {
             t.Error("expected probational version directory to be deleted")
         }
     })
+}
+
+func TestPurgeOldProbationalVersions(t *testing.T) {
+    project := "dawn"
+    asset := "sinnoh"
+
+    mockProbationalRegistry := func(reg string) error {
+        project_dir := filepath.Join(reg, project)
+        err := os.Mkdir(project_dir, 0755)
+        if err != nil {
+            return fmt.Errorf("failed to create a project directory; %w", err)
+        }
+
+        err = os.WriteFile(
+            filepath.Join(project_dir, permissionsFileName),
+            []byte(`{ "owners": [], "uploaders": [] }`),
+            0644,
+        )
+        if err != nil {
+            return fmt.Errorf("failed to create some mock permissions; %w", err)
+        }
+
+        asset_dir := filepath.Join(project_dir, asset)
+        err = os.Mkdir(asset_dir, 0755)
+        if err != nil {
+            return fmt.Errorf("failed to create an asset directory; %w", err)
+        }
+
+        // Mocking up a few probational versions.
+        for _, version := range []string{ "foo", "bar", "stuff", "whee" } {
+            version_dir := filepath.Join(asset_dir, version)
+            err = os.Mkdir(version_dir, 0755)
+            if err != nil {
+                return fmt.Errorf("failed to create a version directory; %w", err)
+            }
+
+            var summary string
+            if version == "foo" {
+                summary = `{
+    "upload_user_id": "cynthia",
+    "upload_start": "2020-02-02T02:02:02Z",
+    "upload_finish": "2020-02-02T02:02:20Z",
+    "on_probation": false
+}`
+            } else if version == "bar" {
+                upload_time := time.Now().Add(-10 * time.Minute).Format(time.RFC3339)
+                summary = fmt.Sprintf(`{
+    "upload_user_id": "cynthia",
+    "upload_start": "%s",
+    "upload_finish": "%s",
+    "on_probation": true
+}`, upload_time, upload_time)
+            } else if version == "stuff" {
+                summary = `{
+    "upload_user_id": "cynthia",
+    "upload_start": "2020-02-02T02:02:02Z",
+    "upload_finish": "2020-02-02T02:02:20Z"
+}`
+            } else {
+                upload_time := time.Now().Add(-10 * time.Hour).Format(time.RFC3339)
+                summary = fmt.Sprintf(`{
+    "upload_user_id": "cynthia",
+    "upload_start": "%s",
+    "upload_finish": "%s",
+    "on_probation": true
+}`, upload_time, upload_time)
+            }
+
+            err = os.WriteFile(filepath.Join(version_dir, summaryFileName), []byte(summary), 0644)
+            if err != nil {
+                return fmt.Errorf("failed to create a mock summary; %w", err)
+            }
+
+            contents := "ARGLEFARGLE"
+            err = os.WriteFile(filepath.Join(version_dir, "random"), []byte(contents), 0644)
+            if err != nil {
+                return fmt.Errorf("failed to create some mock files; %w", err)
+            }
+
+            err = reindexDirectory(reg, project, asset, version, []string{})
+            if err != nil {
+                return fmt.Errorf("failed to reindex the directory; %w", err)
+            }
+
+            err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte(fmt.Sprintf(`{ "total": %d }`, len(contents))), 0644)
+            if err != nil {
+                return fmt.Errorf("failed to create mock usage; %w", err)
+            }
+        }
+
+        return nil
+    }
+
+    t.Run("zero hours", func(t *testing.T) {
+        reg, err := constructMockRegistry()
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = mockProbationalRegistry(reg)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        globals := newGlobalConfiguration(reg)
+        errs := purgeOldProbationalVersions(&globals, 0)
+        if len(errs) != 0 {
+            t.Fatal(errs[0])
+        }
+
+        available_versions, err := listUserDirectories(filepath.Join(globals.Registry, project, asset))
+        sort.Strings(available_versions)
+        if len(available_versions) != 2 || available_versions[0] != "foo" || available_versions[1] != "stuff" {
+            t.Errorf("unexpected versions remaining after probational purge; %v", available_versions)
+        }
+    })
+
+    t.Run("one hour", func(t *testing.T) {
+        reg, err := constructMockRegistry()
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = mockProbationalRegistry(reg)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        globals := newGlobalConfiguration(reg)
+        errs := purgeOldProbationalVersions(&globals, time.Hour)
+        if len(errs) != 0 {
+            t.Fatal(errs[0])
+        }
+
+        available_versions, err := listUserDirectories(filepath.Join(globals.Registry, project, asset))
+        sort.Strings(available_versions)
+        if len(available_versions) != 3 || available_versions[0] != "bar" || available_versions[1] != "foo" || available_versions[2] != "stuff" {
+            t.Errorf("unexpected versions remaining after probational purge; %v", available_versions)
+        }
+    })
+
+    t.Run("one day", func(t *testing.T) {
+        reg, err := constructMockRegistry()
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = mockProbationalRegistry(reg)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        globals := newGlobalConfiguration(reg)
+        errs := purgeOldProbationalVersions(&globals, time.Hour * 24)
+        if len(errs) != 0 {
+            t.Fatal(errs[0])
+        }
+
+        available_versions, err := listUserDirectories(filepath.Join(globals.Registry, project, asset))
+        sort.Strings(available_versions)
+        if len(available_versions) != 4 {
+            t.Errorf("unexpected versions remaining after probational purge; %v", available_versions)
+        }
+    })
+
 }

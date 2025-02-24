@@ -10,6 +10,38 @@ import (
     "net/http"
 )
 
+func rejectProbation(project_dir, version_dir string, force_deletion bool) error {
+    version_usage, version_usage_err := computeVersionUsage(version_dir)
+    if version_usage_err != nil && !force_deletion {
+        return fmt.Errorf("failed to compute usage for %q; %w", version_dir, version_usage_err)
+    }
+
+    err := os.RemoveAll(version_dir)
+    if err != nil {
+        return fmt.Errorf("failed to delete %q; %w", version_dir, err)
+    }
+
+    if version_usage_err == nil {
+        project_usage, err := readUsage(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
+        }
+
+        project_usage.Total -= version_usage
+        if project_usage.Total < 0 { // just in case.
+            project_usage.Total = 0
+        }
+
+        usage_path := filepath.Join(project_dir, usageFileName)
+        err = dumpJson(usage_path, &project_usage)
+        if err != nil {
+            return fmt.Errorf("failed to update project usage at %q; %w", usage_path, err)
+        }
+    }
+
+    return nil
+}
+
 func baseProbationHandler(reqpath string, globals *globalConfiguration, approve bool) error {
     incoming := struct {
         Project *string `json:"project"`
@@ -146,33 +178,9 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
 
     } else {
         force_deletion := incoming.Force != nil && *(incoming.Force)
-
-        version_usage, version_usage_err := computeVersionUsage(version_dir)
-        if version_usage_err != nil && !force_deletion {
-            return fmt.Errorf("failed to compute usage for %q; %w", version_dir, version_usage_err)
-        }
-
-        err := os.RemoveAll(version_dir)
+        err := rejectProbation(project_dir, version_dir, force_deletion)
         if err != nil {
-            return fmt.Errorf("failed to delete %q; %w", version_dir, err)
-        }
-
-        if version_usage_err == nil {
-            project_usage, err := readUsage(project_dir)
-            if err != nil {
-                return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
-            }
-
-            project_usage.Total -= version_usage
-            if project_usage.Total < 0 { // just in case.
-                project_usage.Total = 0
-            }
-
-            usage_path := filepath.Join(project_dir, usageFileName)
-            err = dumpJson(usage_path, &project_usage)
-            if err != nil {
-                return fmt.Errorf("failed to update project usage at %q; %w", usage_path, err)
-            }
+            return err
         }
     }
 
@@ -185,4 +193,68 @@ func approveProbationHandler(reqpath string, globals *globalConfiguration) error
 
 func rejectProbationHandler(reqpath string, globals *globalConfiguration) error {
     return baseProbationHandler(reqpath, globals, false)
+}
+
+func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project string, expiry time.Duration) []error {
+    project_dir := filepath.Join(globals.Registry, project)
+
+    err := globals.Locks.LockDirectory(project_dir, 10 * time.Second)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err) }
+    }
+    defer globals.Locks.Unlock(project_dir)
+
+    assets, err := listUserDirectories(project_dir)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to list assets for project %q; %w", project, err) }
+    }
+
+    now := time.Now()
+    all_errors := []error{}
+    for _, asset := range assets {
+        asset_dir := filepath.Join(project_dir, asset)
+        versions, err := listUserDirectories(asset_dir)
+        if err != nil {
+            all_errors = append(all_errors, fmt.Errorf("failed to list versions for asset %q in project %q; %w", asset, project, err))
+            continue
+        }
+
+        for _, version := range versions {
+            version_dir := filepath.Join(asset_dir, version)
+            summ, err := readSummary(version_dir)
+            if err != nil {
+                all_errors = append(all_errors, fmt.Errorf("failed to open summary file at %s; %w", version_dir, err))
+                continue
+            }
+            if summ.OnProbation == nil || !*(summ.OnProbation) {
+                continue
+            }
+            as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+            if err != nil {
+                all_errors = append(all_errors, fmt.Errorf("failed to open parse upload time for summary file at %s; %w", version_dir, err))
+                continue
+            }
+            if now.Sub(as_time) > expiry {
+                err := rejectProbation(project_dir, version_dir, false)
+                if err != nil {
+                    all_errors = append(all_errors, err)
+                }
+            }
+        }
+    }
+
+    return all_errors
+}
+
+func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Duration) []error {
+    projects, err := listUserDirectories(globals.Registry)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to list projects in registry; %w", err) }
+    }
+    all_errors := []error{}
+    for _, project := range projects {
+        cur_errors := purgeOldProbationalVersionsForProject(globals, project, expiry)
+        all_errors = append(all_errors, cur_errors...)
+    }
+    return all_errors
 }

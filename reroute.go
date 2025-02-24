@@ -261,35 +261,27 @@ func rerouteLinksForProject(globals *globalConfiguration, to_delete_versions map
     }
     defer globals.Locks.Unlock(project_dir)
 
-    asset_listing, err := os.ReadDir(project_dir)
+    assets, err := listUserDirectories(project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to list assets for project %q; %w", project, err)
     }
 
     actions := []rerouteAction{}
-    for _, asset := range asset_listing {
-        if !asset.IsDir() {
-            continue
-        }
-        aname := asset.Name()
-        asset_dir := filepath.Join(project_dir, aname)
-        version_listing, err := os.ReadDir(asset_dir)
+    for _, asset := range assets {
+        asset_dir := filepath.Join(project_dir, asset)
+        versions, err := listUserDirectories(asset_dir)
         if err != nil {
-            return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", aname, project, err)
+            return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", asset, project, err)
         }
 
-        for _, version := range version_listing {
-            if !version.IsDir() {
-                continue
-            }
-            vname := version.Name()
-            vpath := filepath.Join(project, aname, vname)
+        for _, version := range versions {
+            vpath := filepath.Join(project, asset, version)
             if _, found := to_delete_versions[vpath]; found { // no need to process version directories that are about to be deleted.
                 continue
             }
             curactions, err := rerouteLinksForVersion(globals.Registry, to_delete_files, vpath, dry_run)
             if err != nil {
-                return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", vname, aname, project, err)
+                return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", version, asset, project, err)
             }
             actions = append(actions, curactions...)
         }
@@ -378,16 +370,12 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
 
     actions := []rerouteAction{}
     if len(to_delete_files) > 0 {
-        project_listing, err := os.ReadDir(globals.Registry)
+        projects, err := listUserDirectories(globals.Registry)
         if err != nil {
-            return nil, fmt.Errorf("failed to list projects in registry; %w", err)
+            return nil, err
         }
-
-        for _, project := range project_listing {
-            if !project.IsDir() {
-                continue
-            }
-            curactions, err := rerouteLinksForProject(globals, to_delete_versions, to_delete_files, project.Name(), all_incoming.DryRun)
+        for _, project := range projects {
+            curactions, err := rerouteLinksForProject(globals, to_delete_versions, to_delete_files, project, all_incoming.DryRun)
             if err != nil {
                 return nil, err
             }

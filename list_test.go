@@ -120,3 +120,45 @@ func TestListFiles(t *testing.T) {
         }
     })
 }
+
+func TestListUserDirectories(t *testing.T) {
+    dir, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Mkdir(filepath.Join(dir, "foo"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Mkdir(filepath.Join(dir, "bar"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Mkdir(filepath.Join(dir, logDirName), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.WriteFile(filepath.Join(dir, "foo", "whee"), []byte{}, 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.WriteFile(filepath.Join(dir, "stuff"), []byte{}, 0644)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    available, err := listUserDirectories(dir)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    sort.Strings(available)
+    if len(available) != 2 || available[0] != "bar" || available[1] != "foo" {
+        t.Errorf("unexpected listing of user directories: %v", available)
+    }
+}

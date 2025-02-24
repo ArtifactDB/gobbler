@@ -507,6 +507,8 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
   Any symbolic link that targets a file in a whitelisted directory is treated as the file itself during upload and reindexing.
   This is useful for avoiding unnecessary copies from data archives.
   By default, no directories are whitelisted.
+- `-probation` specifies the lifespan of probational versions in days, after which they will be automatically deleted.
+  The default value of -1 will not perform any deletion. 
 
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;
