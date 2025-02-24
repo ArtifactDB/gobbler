@@ -78,55 +78,50 @@ func listToBeDeletedFiles(registry string, version_deleted map[string]bool) (map
     return lost_files, nil
 }
 
-func copyFileOverwrite(src, dest string) error {
-    err := os.Remove(dest)
-    if err != nil {
-        return fmt.Errorf("failed to remove existing file at %q; %w", dest, err)
-    }
-    return copyFile(src, dest)
-}
-
 type rerouteAction struct {
     Copy bool `json:"copy"`
     Path string `json:"path"`
     Source string `json:"source"`
     Usage int64 `json:"usage"`
+    Key string `json:"-"`
+    Link *linkMetadata `json:"-"`
 }
 
-func rerouteLinksForVersion(registry string, deleted_files map[string]bool, version_dir string, dry_run bool) ([]rerouteAction, error) {
-    full_vpath := filepath.Join(registry, version_dir)
-    man, err := readManifest(full_vpath)
+type rerouteProposal struct {
+    Actions []rerouteAction
+    DeltaManifest map[string]manifestEntry
+}
+
+func proposeLinkReroutes(registry string, deleted_files map[string]bool, version_dir string) (*rerouteProposal, error) {
+    man, err := readManifest(filepath.Join(registry, version_dir))
     if err != nil {
         return nil, fmt.Errorf("failed to read manifest at %q; %w", version_dir, err)
     }
     manifest_cache := map[string]map[string]manifestEntry{}
     manifest_cache[version_dir] = man
 
+    actions := []rerouteAction{}
     new_man := map[string]manifestEntry{}
-    delinked := map[string]bool{}
-    changes := []rerouteAction{}
-
     for key, entry := range man {
         if entry.Link == nil {
             continue
         }
         fpath := filepath.Join(version_dir, key)
-        full_fpath := filepath.Join(full_vpath, key)
 
         parent := filepath.Join(entry.Link.Project, entry.Link.Asset, entry.Link.Version, entry.Link.Path)
         _, lost_parent := deleted_files[parent]
         if entry.Link.Ancestor == nil {
             if lost_parent {
-                if !dry_run {
-                    err := copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
-                    if err != nil {
-                        return nil, err
-                    }
-                }
                 entry.Link = nil
                 new_man[key] = entry
-                delinked[filepath.Dir(key)] = true
-                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath, Usage: entry.Size })
+                actions = append(actions, rerouteAction{ 
+                    Copy: true, 
+                    Source: parent, 
+                    Path: fpath, 
+                    Key: key,
+                    Link: nil, 
+                    Usage: entry.Size,
+                })
             }
             continue
         }
@@ -180,15 +175,15 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link.Version = living_parent.Version
                 entry.Link.Path = living_parent.Path
             } else {
-                if !dry_run {
-                    err := copyFileOverwrite(filepath.Join(registry, parent), full_fpath)
-                    if err != nil {
-                        return nil, err
-                    }
-                }
                 entry.Link = nil
-                delinked[filepath.Dir(key)] = true
-                changes = append(changes, rerouteAction{ Copy: true, Source: parent, Path: fpath, Usage: entry.Size })
+                actions = append(actions, rerouteAction{ 
+                    Copy: true, 
+                    Source: parent, 
+                    Path: fpath, 
+                    Usage: entry.Size,
+                    Key: key,
+                    Link: nil, 
+                })
             }
         }
 
@@ -209,94 +204,73 @@ func rerouteLinksForVersion(registry string, deleted_files map[string]bool, vers
                 entry.Link.Ancestor = nil
             }
 
-            if !dry_run {
-                err := createSymlink(full_fpath, registry, entry.Link, true)
-                if err != nil {
-                    return nil, err
-                }
-            }
-
             var reported_src string
             if lost_parent {
                 reported_src = parent  // favoring the immediate parent as the reported source.
             } else {
                 reported_src = ancestor
             }
-            changes = append(changes, rerouteAction{ Copy: false, Source: reported_src, Path: fpath, Usage: 0 })
+            actions = append(actions, rerouteAction{
+                Copy: false,
+                Source: reported_src,
+                Path: fpath,
+                Usage: 0,
+                Key: key,
+                Link: entry.Link,
+            })
         }
 
         new_man[key] = entry
     }
 
-    // Updating all the internal metadata if any changes were performed.
-    if !dry_run && len(new_man) > 0 {
-        for k, entry := range new_man {
-            man[k] = entry
-        }
-        err := dumpJson(filepath.Join(full_vpath, manifestFileName), &man)
-        if err != nil {
-            return nil, err
-        }
-        for delink, _ := range delinked { // get rid of ..links files in directories that might no longer have any links at all.
-            err := os.Remove(filepath.Join(full_vpath, delink, linksFileName))
-            if err != nil {
-                return nil, fmt.Errorf("failed to remove existing ..links file")
-            }
-        }
-        err = recreateLinkFiles(full_vpath, man) // reconstitute ..links files from the manifest.
-        if err != nil {
-            return nil, err
-        }
-    }
-
-    return changes, nil
+    return &rerouteProposal{ Actions: actions, DeltaManifest: new_man }, nil
 }
 
-func rerouteLinksForProject(globals *globalConfiguration, to_delete_versions map[string]bool, to_delete_files map[string]bool, project string, dry_run bool) ([]rerouteAction, error) {
-    project_dir := filepath.Join(globals.Registry, project)
-
-    assets, err := listUserDirectories(project_dir)
-    if err != nil {
-        return nil, fmt.Errorf("failed to list assets for project %q; %w", project, err)
-    }
-
-    actions := []rerouteAction{}
-    for _, asset := range assets {
-        asset_dir := filepath.Join(project_dir, asset)
-        versions, err := listUserDirectories(asset_dir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", asset, project, err)
-        }
-
-        for _, version := range versions {
-            vpath := filepath.Join(project, asset, version)
-            if _, found := to_delete_versions[vpath]; found { // no need to process version directories that are about to be deleted.
-                continue
-            }
-            curactions, err := rerouteLinksForVersion(globals.Registry, to_delete_files, vpath, dry_run)
+func executeLinkReroutes(registry string, version_dir string, proposal *rerouteProposal) error {
+    delinked := map[string]bool{}
+    for _, action := range proposal.Actions {
+        dest := filepath.Join(registry, action.Path)
+        if action.Copy {
+            err := os.Remove(dest)
             if err != nil {
-                return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", version, asset, project, err)
+                return fmt.Errorf("failed to remove existing file at %q; %w", dest, err)
             }
-            actions = append(actions, curactions...)
+            err = copyFile(filepath.Join(registry, action.Source), dest)
+            if err != nil {
+                return err
+            }
+            delinked[filepath.Dir(action.Key)] = true
+        } else {
+            err := createSymlink(dest, registry, action.Link, true)
+            if err != nil {
+                return err
+            }
         }
     }
 
-    if !dry_run {
-        usage, err := readUsage(project_dir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
-        }
-        for _, action := range actions {
-            usage.Total += action.Usage
-        }
-        usage_path := filepath.Join(project_dir, usageFileName)
-        err = dumpJson(usage_path, &usage)
-        if err != nil {
-            return nil, fmt.Errorf("failed to save updated usage for project %q; %w", project, err)
-        }
+    // Updating the manifest with the deltas.
+    full_version_dir := filepath.Join(registry, version_dir)
+    man, err := readManifest(full_version_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read manifest at %q; %w", full_version_dir, err)
+    }
+    for k, entry := range proposal.DeltaManifest {
+        man[k] = entry
+    }
+    err = dumpJson(filepath.Join(full_version_dir, manifestFileName), &man)
+    if err != nil {
+        return err
     }
 
-    return actions, nil
+    // First we get rid of ..links files in directories that might no longer have any links at all;
+    // and then we reconstitute all of the link files to be on the safe side.
+    for delink, _ := range delinked {
+        err := os.Remove(filepath.Join(full_version_dir, delink, linksFileName))
+        if err != nil {
+            return fmt.Errorf("failed to remove existing ..links file")
+        }
+    }
+    return recreateLinkFiles(full_version_dir, man)
 }
 
 func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerouteAction, error) {
@@ -351,14 +325,13 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
         }
     }
 
-    // Obtaining an all-of-registry lock.
+    // Obtaining an all-of-registry lock before we identify the rerouting actions.
     err = lockRegistry(globals, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
     defer unlockRegistry(globals)
 
-    // Then we need to reroute the links.
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {
         return nil, err
@@ -370,17 +343,88 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     }
 
     actions := []rerouteAction{}
-    if len(to_delete_files) > 0 {
-        projects, err := listUserDirectories(globals.Registry)
+    if len(to_delete_files) == 0 {
+        return actions, nil
+    }
+
+    projects, err := listUserDirectories(globals.Registry)
+    if err != nil {
+        return nil, err
+    }
+
+    // First pass to identify all the rerouting actions across the registry.
+    all_changes := map[string]*rerouteProposal{}
+    all_usage := map[string]*usageMetadata{}
+    dry_run := all_incoming.DryRun
+
+    for _, project := range projects {
+        project_dir := filepath.Join(globals.Registry, project)
+        assets, err := listUserDirectories(project_dir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to list assets for project %q; %w", project, err)
+        }
+
+        for _, asset := range assets {
+            asset_dir := filepath.Join(project_dir, asset)
+            versions, err := listUserDirectories(asset_dir)
+            if err != nil {
+                return nil, fmt.Errorf("failed to list versions for asset %q in project %q; %w", asset, project, err)
+            }
+
+            for _, version := range versions {
+                version_dir := filepath.Join(project, asset, version)
+                if _, found := to_delete_versions[version_dir]; found { // no need to process version directories that are about to be deleted.
+                    continue
+                }
+
+                cur_changes, err := proposeLinkReroutes(globals.Registry, to_delete_files, version_dir)
+                if err != nil {
+                    return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", version, asset, project, err)
+                }
+                if len(cur_changes.Actions) == 0 {
+                    continue
+                }
+                all_changes[version_dir] = cur_changes
+
+                if !dry_run {
+                    cur_usage, ok := all_usage[project]
+                    if !ok {
+                        usage0, err := readUsage(project_dir)
+                        if err != nil {
+                            return nil, fmt.Errorf("failed to read usage for %q; %w", project_dir, err)
+                        }
+                        cur_usage = usage0
+                    }
+                    for _, action := range cur_changes.Actions {
+                        cur_usage.Total += action.Usage
+                    }
+                    all_usage[project] = cur_usage
+                }
+            }
+        }
+    }
+
+    // Second pass to actually implement the changes. This two-pass approach
+    // improves the atomicity of the rerouting operation as any failures in the
+    // first pass won't leave the registry in a half-mutated state.
+    for vpath, info := range all_changes {
+        actions = append(actions, (info.Actions)...)
+        if dry_run {
+            continue
+        }
+        err := executeLinkReroutes(globals.Registry, vpath, info)
         if err != nil {
             return nil, err
         }
-        for _, project := range projects {
-            curactions, err := rerouteLinksForProject(globals, to_delete_versions, to_delete_files, project, all_incoming.DryRun)
+    }
+
+    if !dry_run {
+        for project, usage := range all_usage {
+            usage_path := filepath.Join(globals.Registry, project, usageFileName)
+            err = dumpJson(usage_path, usage)
             if err != nil {
-                return nil, err
+                return nil, fmt.Errorf("failed to save updated usage for project %q; %w", project, err)
             }
-            actions = append(actions, curactions...)
         }
     }
 

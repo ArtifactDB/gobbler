@@ -310,17 +310,22 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "natural")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
         // Check that changes affect 'akari' and 'alicia' in all 3 subsequent versions.
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 2 ||
             !inverted_changes["ARIA/anime/natural/akari"].Copy || 
             !inverted_changes["ARIA/anime/natural/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -384,16 +389,21 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "origination")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 2 ||
             inverted_changes["ARIA/anime/origination/akari"].Copy || 
             inverted_changes["ARIA/anime/origination/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -463,16 +473,21 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 2 ||
             inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -533,12 +548,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 6 ||
             !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
             !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
@@ -546,7 +561,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
             !inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
             inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -616,12 +636,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 6 ||
             !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
             !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
@@ -629,7 +649,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
             inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
             inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -699,18 +724,23 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 4 ||
             inverted_changes["ARIA/anime/avvenire/orange_planet/alice"].Copy || 
             inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
             inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -789,12 +819,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, false)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 6 ||
             !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
             !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
@@ -802,7 +832,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
             !inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
             !inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             !inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
+        }
+
+        err = executeLinkReroutes(registry, version_dir, proposed)
+        if err != nil {
+            t.Fatal(err)
         }
 
         full_vpath := filepath.Join(registry, version_dir)
@@ -846,12 +881,12 @@ func TestRerouteLinksForVersion(t *testing.T) {
         }
 
         version_dir := filepath.Join(project, asset, "avvenire")
-        changes, err := rerouteLinksForVersion(registry, to_delete_files, version_dir, /* dry_run = */ true)
+        proposed, err := proposeLinkReroutes(registry, to_delete_files, version_dir)
         if err != nil {
             t.Fatal(err)
         }
 
-        inverted_changes := invertChangelog(changes)
+        inverted_changes := invertChangelog(proposed.Actions)
         if len(inverted_changes) != 6 ||
             !inverted_changes["ARIA/anime/avvenire/himeya/akira"].Copy || 
             !inverted_changes["ARIA/anime/avvenire/himeya/aika"].Copy ||
@@ -859,8 +894,10 @@ func TestRerouteLinksForVersion(t *testing.T) {
             inverted_changes["ARIA/anime/avvenire/orange_planet/athena"].Copy ||
             inverted_changes["ARIA/anime/avvenire/akari"].Copy || 
             inverted_changes["ARIA/anime/avvenire/alicia"].Copy {
-            t.Errorf("unexpected changelog; %v", changes)
+            t.Errorf("unexpected changelog; %v", proposed.Actions)
         }
+
+        // No executeLinkReroutes() call here, so everything in the registry should still be unchanged.
 
         full_vpath := filepath.Join(registry, version_dir)
         man, err := readManifest(full_vpath)
