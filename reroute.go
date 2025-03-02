@@ -5,7 +5,6 @@ import (
     "fmt"
     "encoding/json"
     "path/filepath"
-    "strings"
     "net/http"
     "time"
 )
@@ -29,33 +28,21 @@ func listToBeDeletedVersions(registry string, to_delete []deleteTask) (map[strin
         if task.Asset != nil {
             all_assets = append(all_assets, *(task.Asset))
         } else {
-            asset_listing, err := os.ReadDir(project_dir)
+            asset_listing, err := listUserDirectories(project_dir)
             if err != nil {
                 return nil, fmt.Errorf("failed to read contents of %q; %w", project_dir, err)
             }
-            for _, asset := range asset_listing {
-                if asset.IsDir() {
-                    aname := asset.Name()
-                    if !strings.HasPrefix(aname, ".") {
-                        all_assets = append(all_assets, aname)
-                    }
-                }
-            }
+            all_assets = asset_listing
         }
 
-        for _, aname := range all_assets {
-            asset_dir := filepath.Join(project_dir, aname)
-            version_listing, err := os.ReadDir(asset_dir)
+        for _, asset := range all_assets {
+            asset_dir := filepath.Join(project_dir, asset)
+            version_listing, err := listUserDirectories(asset_dir)
             if err != nil {
                 return nil, fmt.Errorf("failed to read contents of %q; %w", asset_dir, err)
             }
             for _, version := range version_listing {
-                if version.IsDir() {
-                    vname := version.Name()
-                    if !strings.HasPrefix(vname, ".") {
-                        version_deleted[filepath.Join(task.Project, aname, vname)] = true
-                    }
-                }
+                version_deleted[filepath.Join(task.Project, asset, version)] = true
             }
         }
     }

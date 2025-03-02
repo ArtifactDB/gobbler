@@ -6,7 +6,6 @@ import (
     "fmt"
     "path/filepath"
     "time"
-    "strings"
     "net/http"
 )
 
@@ -34,7 +33,7 @@ func readLatest(path string) (*latestMetadata, error) {
 }
 
 func refreshLatest(asset_dir string) (*latestMetadata, error) {
-    entries, err := os.ReadDir(asset_dir)
+    entries, err := listUserDirectories(asset_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to list versions in %q; %w", asset_dir, err)
     }
@@ -44,26 +43,24 @@ func refreshLatest(asset_dir string) (*latestMetadata, error) {
     var most_recent_name string
 
     for _, entry := range entries {
-        if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
-            full_path := filepath.Join(asset_dir, entry.Name())
-            summ, err := readSummary(full_path)
-            if err != nil {
-                return nil, fmt.Errorf("failed to read summary from %q; %w", full_path, err)
-            }
-            if summ.IsProbational() {
-                continue
-            }
+        full_path := filepath.Join(asset_dir, entry)
+        summ, err := readSummary(full_path)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read summary from %q; %w", full_path, err)
+        }
+        if summ.IsProbational() {
+            continue
+        }
 
-            as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
-            if err != nil {
-                return nil, fmt.Errorf("could not parse 'upload_finish' from %q; %w", full_path, err)
-            }
+        as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+        if err != nil {
+            return nil, fmt.Errorf("could not parse 'upload_finish' from %q; %w", full_path, err)
+        }
 
-            if !found || most_recent.Before(as_time) {
-                most_recent = as_time
-                most_recent_name = entry.Name()
-                found = true
-            }
+        if !found || most_recent.Before(as_time) {
+            most_recent = as_time
+            most_recent_name = entry
+            found = true
         }
     }
 

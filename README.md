@@ -199,7 +199,7 @@ Administrators are responsible for creating new projects within the registry.
 This is done by creating a file with the `request-create_project-` prefix, which should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the new project.
-  This should not contain `/`, `\`, or `.`.
+  This should not contain `/` or `\`, or start with `..`.
 - `permissions` (optional): an object containing either or both of `owners` and `uploaders`.
   Each of these properties has the same type as described [above](#permissions).
   If not supplied, `owners` is set as described above and `uploaders` is empty.
@@ -215,7 +215,7 @@ To upload a new version of an asset of a project, users should create a temporar
 The temporary directory may have any name but should avoid starting with `request-`.
 Files within this temporary directory will be transferred to the appropriate subdirectory within the registry, subject to the following rules:
 
-- Hidden files (i.e., prefixed with `.`) are ignored.
+- Files prefixed with `..` are reserved for Gobbler's internal files and are ignored.
 - Symbolic links to directories are not allowed.
 - Symbolic links to files are allowed if:
   - The symlink target is an existing file within a project-asset-version subdirectory of the registry.
@@ -225,10 +225,11 @@ Once this directory is constructed and populated, the user should create a file 
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of an existing project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
-  This should not contain `/`, `\`, or `.`.
+  This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
-  This should not contain `/`, `\`, or `.`.
+  This should not contain `/` or `\`, or start with `..`.
 - `source`: string containing the name of the temporary directory, itself containing the files to be uploaded for this version of the asset.
   This temporary directory is expected to be inside the staging directory.
 - `on_probation` (optional): boolean specifying whether this version of the asset should be considered as probational.
@@ -244,7 +245,9 @@ This ensures that the Gobbler instance is able to free up space by periodically 
 Users should create a file with the `request-set_permissions-` prefix, which should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset` (optional): string containing the name of an asset.
+  This should not contain `/` or `\`, or start with `..`.
   If provided, asset-level uploader permissions will be modified instead of project-level permissions.
 - `permissions`: an object containing zero, one or more of `owners`, `uploaders` and `global_write`.
   Each of these properties has the same type as described [above](#permissions).
@@ -260,8 +263,11 @@ To approve probation, a user should create a file with the `request-approve_prob
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
+  This should not contain `/` or `\`, or start with `..`.
 
 On success, the probational status is removed.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -270,8 +276,11 @@ To reject probation, a user should create a file with the `request-reject_probat
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
+  This should not contain `/` or `\`, or start with `..`.
 - `force` (optional): boolean indicating whether a probational version should be forcibly deleted.
   Occasionally necessary if the version contains corrupted summary or manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
@@ -290,6 +299,7 @@ To refresh project usage, create a file with the `request-refresh_usage-` prefix
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 
 On success, the usage is updated.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`,
@@ -317,14 +327,22 @@ To trigger a reindexing job, create a file with the `request-reindex_version-` p
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
+  This should not contain `/` or `\`, or start with `..`.
+
+To create the manifest, reindexing will recompute the MD5 checksum and size for each non-symlink file. 
+For symbolic links that are not defined in an existing `..links` file, reindexing will retrieve information about the target file,
+as well as the ancestor if the target is itself a symlink.
+All `..`-prefixed files are considered to be Gobbler's internal files and are excluded from the manifest.
 
 Reindexing assumes that a `..summary` file is already present in the version directory.
 This file will not be modified in order to preserve the details of the original upload.
 For bulk uploads, administrators should create this file manually before submitting a reindexing request.
 
-If any `..links` files are present in the to-be-reindexed version directory, they will be used to (re)create symbolic links in their respective directories.
+If any `..links` files are present in the to-be-reindexed version directory or its subdirectories, they will be used to (re)create symbolic links in their respective directories.
 Any existing symbolic link of the same name will be overwritten.
 This behavior ensures that information about the immediate target of a link is not lost, 
 given that the symbolic links themselves only target [ancestral files](#link-deduplication).
@@ -358,7 +376,9 @@ To delete an asset, create a file with the `request-delete_asset-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
 - `force` (optional): boolean indicating whether the asset should be forcibly deleted.
   Occasionally necessary if the asset contains corrupted manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
@@ -372,8 +392,11 @@ To delete a version, create a file with the `request-delete_version-` prefix.
 This file should be JSON-formatted with the following properties:
 
 - `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
 - `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
+  This should not contain `/` or `\`, or start with `..`.
 - `force` (optional): boolean indicating whether the version should be forcibly deleted.
   Occasionally necessary if the version contains corrupted summary or manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
@@ -400,6 +423,7 @@ This file should be JSON-formatted with the following properties:
   For a project directory, the object should contain a `project` string property that names the project;
   for an asset directory, the object should contain the `project` and `asset` string properties;
   and for a version directory, the object should contain the `project`, `asset` and `version` string properties.
+  Each of the project, asset or version names should not contain `/` or `\`, or start with `..`.
 - `dry_run` (optional): boolean indicating whether to perform a dry-run of the rerouting.
   If true, an array of rerouting actions is still returned but no files in the registry are actually changed.
   Defaults to false if not provided.

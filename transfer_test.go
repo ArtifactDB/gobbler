@@ -213,7 +213,7 @@ func TestTransferDirectorySimple(t *testing.T) {
     }
 }
 
-func TestTransferDirectorySkipHidden(t *testing.T) {
+func TestTransferDirectorySkipInternal(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "red"
@@ -228,20 +228,20 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    // Injecting some hidden files.
-    err = os.WriteFile(filepath.Join(src, ".DS_store"), []byte("some_mac_crap"), 0644)
+    // Injecting some internal files.
+    err = os.WriteFile(filepath.Join(src, "..something"), []byte("something something"), 0644)
     if err != nil {
-        t.Fatalf("failed to write hidden file; %v", err)
+        t.Fatalf("failed to write internal file; %v", err)
     }
 
-    err = os.Mkdir(filepath.Join(src, ".cache"), 0755)
+    err = os.Mkdir(filepath.Join(src, "..internal"), 0755)
     if err != nil {
-        t.Fatalf("failed to make a hidden directory; %v", err)
+        t.Fatalf("failed to make an internal directory; %v", err)
     }
 
-    err = os.WriteFile(filepath.Join(src, ".cache", "credentials"), []byte("password"), 0644)
+    err = os.WriteFile(filepath.Join(src, "..internal", "credentials"), []byte("password"), 0644)
     if err != nil {
-        t.Fatalf("failed to write file inside a hidden directory; %v", err)
+        t.Fatalf("failed to write file inside a internal directory; %v", err)
     }
 
     // Executing the transfer.
@@ -251,11 +251,11 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
     }
 
     destination := filepath.Join(reg, project, asset, version)
-    if _, err := os.Stat(filepath.Join(destination, ".DS_store")); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Error("hidden files should not be transferred")
+    if _, err := os.Stat(filepath.Join(destination, "..something")); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("internal files should not be transferred")
     }
-    if _, err := os.Stat(filepath.Join(destination, ".cache", "credentials")); err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Error("hidden files should not be transferred")
+    if _, err := os.Stat(filepath.Join(destination, "..internal", "credentials")); err == nil || !errors.Is(err, os.ErrNotExist) {
+        t.Error("internal files should not be transferred")
     }
 }
 
@@ -1216,7 +1216,7 @@ func TestReindexDirectorySimple(t *testing.T) {
     }
 }
 
-func TestReindexDirectorySkipHidden(t *testing.T) {
+func TestReindexDirectorySkipInternal(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "red"
@@ -1239,16 +1239,16 @@ func TestReindexDirectorySkipHidden(t *testing.T) {
 
     // Injecting some hidden files.
     dest := filepath.Join(reg, project, asset, version)
-    err = os.Mkdir(filepath.Join(dest, ".cache"), 0755)
+    err = os.Mkdir(filepath.Join(dest, "..cache"), 0755)
     if err != nil {
         t.Fatalf("failed to make a hidden directory; %v", err)
     }
-    err = os.WriteFile(filepath.Join(dest, ".cache", "foo"), []byte{}, 0644)
+    err = os.WriteFile(filepath.Join(dest, "..cache", "foo"), []byte{}, 0644)
     if err != nil {
         t.Fatalf("failed to write file inside a hidden directory; %v", err)
     }
 
-    err = os.WriteFile(filepath.Join(dest, ".special"), []byte{}, 0644)
+    err = os.WriteFile(filepath.Join(dest, "..special"), []byte{}, 0644)
     if err != nil {
         t.Fatalf("failed to write hidden file; %v", err)
     }
@@ -1259,12 +1259,7 @@ func TestReindexDirectorySkipHidden(t *testing.T) {
         t.Fatalf("failed to load directory contents; %v", err)
     }
 
-    // Now reindexing after we purge all the '..xxx' files.
-    err = stripDoubleDotFiles(v_path)
-    if err != nil {
-        t.Fatalf("failed to strip all double dots; %v", err)
-    }
-
+    // Now reindexing after without purging all the internal files.
     err = reindexDirectory(reg, project, asset, version, []string{})
     if err != nil {
         t.Fatalf("failed to reindex directory; %v", err)
@@ -1280,10 +1275,10 @@ func TestReindexDirectorySkipHidden(t *testing.T) {
     }
 
     // Checking that the dot files are still there, but not indexed.
-    if _, ok := recovered[".cache/foo"]; !ok {
+    if _, ok := recovered["..cache/foo"]; !ok {
         t.Error(".cache/foo should still be present in the directory")
     }
-    if _, ok := recovered[".special"]; !ok {
+    if _, ok := recovered["..special"]; !ok {
         t.Error(".special should still be present in the directory")
     }
 
@@ -1293,7 +1288,7 @@ func TestReindexDirectorySkipHidden(t *testing.T) {
     }
 
     for k, _ := range man {
-        if strings.HasPrefix(filepath.Base(k), ".") {
+        if strings.HasPrefix(filepath.Base(k), "..") {
             t.Error("dot files should not be present in the new manifest")
         }
     }

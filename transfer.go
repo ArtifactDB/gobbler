@@ -378,7 +378,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         }
 
         base := filepath.Base(src_path)
-        if strings.HasPrefix(base, ".") {
+        if strings.HasPrefix(base, "..") {
             if info.IsDir() {
                 return filepath.SkipDir
             } else {
@@ -561,7 +561,7 @@ func reindexDirectory(registry, project, asset, version string, link_whitelist [
         }
 
         base := filepath.Base(src_path)
-        if !strings.HasPrefix(base, ".") {
+        if !strings.HasPrefix(base, "..") {
             return nil
         }
 

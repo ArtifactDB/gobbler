@@ -71,21 +71,21 @@ func listFilesHandler(r *http.Request, registry string) ([]string, error) {
 
 // This refers to non-internal directories that were created by users, e.g., not ..logs.
 func listUserDirectories(dir string) ([]string, error) {
-    project_listing, err := os.ReadDir(dir)
+    listing, err := os.ReadDir(dir)
     if err != nil {
         return nil, err
     }
 
     output := []string{}
-    for _, project := range project_listing {
-        if !project.IsDir() {
+    for _, entry := range listing {
+        if !entry.IsDir() {
             continue
         }
-        pname := project.Name()
-        if strings.HasPrefix(pname, ".") {
+        name := entry.Name()
+        if strings.HasPrefix(name, "..") {
             continue
         }
-        output = append(output, pname)
+        output = append(output, name)
     }
 
     return output, nil
