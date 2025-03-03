@@ -758,9 +758,7 @@ func TestUploadHandlerConsume(t *testing.T) {
     asset := "gastly"
     version := "lavender"
 
-    // Check that it doesn't consume by default, and then doing it again to
-    // checking that it consumes properly. 
-    for _, move := range []bool{ false, true } {
+    quickSetup := func() (string, globalConfiguration, string) {
         reg, err := constructMockRegistry()
         if err != nil {
             t.Fatalf("failed to create the registry; %v", err)
@@ -777,7 +775,33 @@ func TestUploadHandlerConsume(t *testing.T) {
             t.Fatalf("failed to set up test directories; %v", err)
         }
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "consume": %v }`, filepath.Base(src), project, asset, version, move)
+        return reg, globals, src
+    }
+
+    t.Run("no consume", func(t *testing.T) {
+        _, globals, src := quickSetup()
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "consume": false }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        err = verifyFileContents(filepath.Join(src, "moves"), "lick,confuse_ray,shadow_ball,dream_eater")
+        if err != nil {
+            t.Errorf("could not verify 'moves' in the source; %v", err)
+        }
+    })
+
+    t.Run("with consume", func(t *testing.T) {
+        reg, globals, src := quickSetup()
+
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "consume": true }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -793,49 +817,39 @@ func TestUploadHandlerConsume(t *testing.T) {
         if err != nil {
             t.Errorf("could not verify 'moves' in the registry; %v", err)
         }
-
-        if !move {
-            err = verifyFileContents(filepath.Join(src, "moves"), "lick,confuse_ray,shadow_ball,dream_eater")
-            if err != nil {
-                t.Errorf("could not verify 'moves' in the source; %v", err)
-            }
-        } else {
-            if _, err := os.Stat(filepath.Join(src, "moves")); err == nil || !errors.Is(err, os.ErrNotExist) {
-                t.Errorf("should have consumed 'moves' in the source; %v", err)
-            }
+        if _, err := os.Stat(filepath.Join(src, "moves")); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Errorf("should have consumed 'moves' in the source; %v", err)
         }
-    }
+    })
 }
 
 func TestUploadHandlerIgnoreDot(t *testing.T) {
     project := "pokemon"
     asset := "gastly"
-    version := "lavender"
 
-    // Check that it doesn't consume by default, and then doing it again to
-    // checking that it consumes properly. 
-    for _, ignore := range []bool{ false, true } {
-        reg, err := constructMockRegistry()
-        if err != nil {
-            t.Fatalf("failed to create the registry; %v", err)
-        }
-        globals := newGlobalConfiguration(reg)
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg)
 
-        err = setupProjectForUploadTest(project, &globals)
-        if err != nil {
-            t.Fatalf("failed to set up project directory; %v", err)
-        }
+    err = setupProjectForUploadTest(project, &globals)
+    if err != nil {
+        t.Fatalf("failed to set up project directory; %v", err)
+    }
 
-        src, err := setupSourceForUploadTest()
-        if err != nil {
-            t.Fatalf("failed to set up test directories; %v", err)
-        }
-        err = os.WriteFile(filepath.Join(src, ".final"), []byte("gengar"), 0644)
-        if err != nil {
-            t.Fatalf("failed to write a hidden file; %v", err)
-        }
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+    err = os.WriteFile(filepath.Join(src, ".final"), []byte("gengar"), 0644)
+    if err != nil {
+        t.Fatalf("failed to write a hidden file; %v", err)
+    }
 
-        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "ignore_dot": %v }`, filepath.Base(src), project, asset, version, ignore)
+    t.Run("with dots", func(t *testing.T) {
+        version := "lavender"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "ignore_dot": false }`, filepath.Base(src), project, asset, version)
         reqname, err := dumpRequest("upload", req_string)
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
@@ -847,15 +861,28 @@ func TestUploadHandlerIgnoreDot(t *testing.T) {
         }
 
         destination := filepath.Join(reg, project, asset, version)
-        if !ignore {
-            err := verifyFileContents(filepath.Join(destination, ".final"), "gengar")
-            if err != nil {
-                t.Errorf("could not verify '.final' in the registry; %v", err)
-            }
-        } else {
-            if _, err := os.Stat(filepath.Join(destination, ".final")); err == nil || !errors.Is(err, os.ErrNotExist) {
-                t.Errorf("'.final' should not be in the registry; %v", err)
-            }
+        err = verifyFileContents(filepath.Join(destination, ".final"), "gengar")
+        if err != nil {
+            t.Errorf("could not verify '.final' in the registry; %v", err)
         }
-    }
+    })
+
+    t.Run("without dots", func(t *testing.T) {
+        version := "lost_cave"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "ignore_dot": true }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        destination := filepath.Join(reg, project, asset, version)
+        if _, err := os.Stat(filepath.Join(destination, ".final")); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Errorf("'.final' should not be in the registry; %v", err)
+        }
+    })
 }

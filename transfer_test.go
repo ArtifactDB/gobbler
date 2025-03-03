@@ -289,8 +289,7 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
         t.Fatalf("failed to write file inside a hidden directory; %v", err)
     }
 
-    // Executing the transfer; by default, nothing is ignored.
-    {
+    t.Run("with dots", func(t *testing.T) {
         version := "red"
         err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})
         if err != nil {
@@ -303,10 +302,9 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
         if _, err := os.Stat(filepath.Join(destination, ".git", "something")); err != nil {
             t.Errorf("hidden files should be transferred; %v", err)
         }
-    }
+    })
 
-    // Repeating with dot-ignorance enabled.
-    {
+    t.Run("ignore dots", func(t *testing.T) {
         version := "blue"
         err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{ IgnoreDot: true })
         if err != nil {
@@ -319,17 +317,16 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
         if _, err := os.Stat(filepath.Join(destination, "..hidden", "credentials")); err == nil || !errors.Is(err, os.ErrNotExist) {
             t.Error("hidden files should not be transferred")
         }
-    }
+    })
 }
 
 func TestTransferDirectoryTryMove(t *testing.T) {
     project := "pokemon"
     asset := "pikachu" 
-
     version := "yellow"
 
     // Executing the transfer; by default, nothing is moved, until TryMove=true.
-    for _, move := range []bool{ false, true } {
+    t.Run("no move", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -340,7 +337,35 @@ func TestTransferDirectoryTryMove(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{ TryMove: move })
+        err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        _, err = os.Stat(filepath.Join(src, "evolution", "up"))
+        if err != nil {
+            t.Errorf("source files should not have been moved; %v", err)
+        }
+
+        _, err = os.Stat(filepath.Join(src, "moves", "normal", "quick_attack"))
+        if err != nil {
+            t.Errorf("source files should not have been moved; %v", err)
+        }
+    })
+
+    // Until TryMove=true.
+    t.Run("with move", func(t *testing.T) {
+        src, err := setupSourceForTransferDirectoryTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the registry; %v", err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{ TryMove: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -351,27 +376,15 @@ func TestTransferDirectoryTryMove(t *testing.T) {
         }
 
         _, err = os.Stat(filepath.Join(src, "evolution", "up"))
-        if !move {
-            if err != nil {
-                t.Errorf("source files should not be altered; %v", err)
-            }
-        } else {
-            if err == nil || !errors.Is(err, os.ErrNotExist) {
-                t.Errorf("source files should have been moved; %v", err)
-            }
+        if err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Errorf("source files should have been moved; %v", err)
         }
 
         _, err = os.Stat(filepath.Join(src, "moves", "normal", "quick_attack"))
-        if !move {
-            if err != nil {
-                t.Errorf("source files should have been moved; %v", err)
-            }
-        } else {
-            if err == nil || !errors.Is(err, os.ErrNotExist) {
-                t.Errorf("source files should have been moved; %v", err)
-            }
+        if err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Errorf("source files should have been moved; %v", err)
         }
-    }
+    })
 
     t.Run("local links", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
@@ -401,7 +414,6 @@ func TestTransferDirectoryTryMove(t *testing.T) {
         }
 
         destination := filepath.Join(reg, project, asset, version)
-
         target, err := os.Readlink(filepath.Join(destination, "moves", "normal", "charm"))
         if err != nil || target != "double_team" {
             t.Errorf("expected 'charm' to link to 'double_team'; %v", err)
