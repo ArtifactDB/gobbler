@@ -236,8 +236,8 @@ This file should be JSON-formatted with the following properties:
   If not provided, this defaults to false.
 - `ignore_dot` (optional): boolean specifying whether to ignore hidden files (i.e., dotfiles) within the `source` directory.
   If not provided, this defaults to false.
-- `consume` (optional): boolean specifying whether the Gobbler is allowed to move files from `source` into the registry.
-  This consumes the files in the temporary directory, avoiding an extra copy but invalidating the contents of `source`.
+- `consume` (optional): boolean specifying whether the Gobbler is allowed to attempt to move files from `source` into the registry.
+  If successful, this consumes the files in the temporary directory, avoiding an extra copy but invalidating the contents of `source`.
   If not provided, this defaults to false.
 
 On success, the files will be transferred to the registry.

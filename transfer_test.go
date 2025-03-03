@@ -372,6 +372,54 @@ func TestTransferDirectoryTryMove(t *testing.T) {
             }
         }
     }
+
+    t.Run("local links", func(t *testing.T) {
+        src, err := setupSourceForTransferDirectoryTest()
+        if err != nil {
+            t.Fatalf("failed to set up test directories; %v", err)
+        }
+
+        // Adding a local link to check that they aren't invalidated by moves. We add 
+        // some that sort before and after 'double_team' to check that the order doesn't matter.
+        err = os.Symlink("double_team", filepath.Join(src, "moves", "normal", "charm"))
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = os.Symlink("double_team", filepath.Join(src, "moves", "normal", "growl"))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatalf("failed to create the registry; %v", err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{ TryMove: true })
+        if err != nil {
+            t.Fatalf("failed to perform the transfer; %v", err)
+        }
+
+        destination := filepath.Join(reg, project, asset, version)
+
+        target, err := os.Readlink(filepath.Join(destination, "moves", "normal", "charm"))
+        if err != nil || target != "double_team" {
+            t.Errorf("expected 'charm' to link to 'double_team'; %v", err)
+        }
+        err = verifyFileContents(filepath.Join(destination, "moves", "normal", "charm"), "0")
+        if err != nil {
+            t.Error(err)
+        }
+
+        target, err = os.Readlink(filepath.Join(destination, "moves", "normal", "growl"))
+        if err != nil || target != "double_team" {
+            t.Errorf("expected 'growl' to link to 'double_team'; %v", err)
+        }
+        err = verifyFileContents(filepath.Join(destination, "moves", "normal", "growl"), "0")
+        if err != nil {
+            t.Error(err)
+        }
+    })
 }
 
 /**********************************************
@@ -951,18 +999,27 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
 
         project := "POKEMON"
         asset := "PIKAPIKA"
-        version := "GOLD"
+        version := "SILVER"
 
-        err = os.WriteFile(filepath.Join(src, "aaa"), []byte("123123123123"), 0644)
+        // Creating a link to target the same version that's currently being
+        // created. In practice, this should not work as the initial Stat() of
+        // the link requires the file to already be in the registry. Files for
+        // the currently-created version are only copied to the registry in the
+        // second pass after the Stat(), so the file could only exist if the
+        // version is already present, and this should be prohibited by the
+        // upload endpoint... nonetheless, defence in depth, so here we are.
+        dest := filepath.Join(reg, project, asset, version)
+        err = os.Mkdir(dest, 0755)
         if err != nil {
-            t.Fatalf("failed to mock up a random file")
+            t.Fatal(err)
         }
-
-        // Deliberately 'zzz' to sort after 'aaa' so that it gets walked later,
-        // otherwise the link target doesn't exist yet! Then we get the wrong error.
-        err = os.Symlink(filepath.Join(reg, project, asset, version, "aaa"), filepath.Join(src, "zzz")) 
+        err = os.WriteFile(filepath.Join(dest, "aaa"), []byte("123123123123"), 0644)
         if err != nil {
-            t.Fatalf("failed to create a test link to a random file")
+            t.Fatal(err)
+        }
+        err = os.Symlink(filepath.Join(dest, "aaa"), filepath.Join(src, "zzz")) 
+        if err != nil {
+            t.Fatal(err)
         }
 
         err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})

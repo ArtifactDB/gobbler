@@ -375,6 +375,7 @@ func processDirectory(source, registry, project, asset, version string, options 
 
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
+    transferrable := []string{}
     registry_links := map[string]string{}
     local_links := map[string]string{}
 
@@ -487,30 +488,8 @@ func processDirectory(source, registry, project, asset, version string, options 
                 return createSymlink(filepath.Join(destination, path), registry, &last_entry, /* wipe_existing = */ false)
             }
 
-            // Otherwise we just copy/move the file. We only move if the user has indicated that we can consume the source.
-            final := filepath.Join(destination, path)
-
-            do_copy := true 
-            if options.TryMove {
-                err := os.Rename(src_path, final)
-                if err == nil {
-                    do_copy = false
-                }
-            }
-
-            if do_copy {
-                err := copyFile(src_path, final)
-                if err != nil {
-                    return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
-                }
-                finalsum, err := computeChecksum(final)
-                if err != nil {
-                    return fmt.Errorf("failed to hash the file at %q; %w", final, err)
-                }
-                if finalsum != insum {
-                    return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
-                }
-            }
+            // Otherwise we just copy/move the file.
+            transferrable = append(transferrable, path)
         }
 
         manifest[path] = man_entry
@@ -520,7 +499,39 @@ func processDirectory(source, registry, project, asset, version string, options 
         return err
     }
 
-    /*** Second pass to resolve links to other files in the registry. **/
+    /*** Second pass performs a copy/move of files. ***/
+    if options.Transfer {
+        for _, path := range transferrable {
+            final := filepath.Join(destination, path)
+            src_path := filepath.Join(source, path)
+
+            // We use a second pass so that Rename() doesn't break local links
+            // within the staging directory during the first pass. If Rename()
+            // is moved to a second pass, copyFile() also needs to be moved as
+            // it serves as the fallback if the renaming fails.
+            if options.TryMove {
+                err := os.Rename(src_path, final)
+                if err == nil {
+                    continue
+                }
+            }
+
+            err := copyFile(src_path, final)
+            if err != nil {
+                return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
+            }
+            finalsum, err := computeChecksum(final)
+            if err != nil {
+                return fmt.Errorf("failed to hash the file at %q; %w", final, err)
+            }
+            insum := manifest[path].Md5sum
+            if finalsum != insum {
+                return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+            }
+        }
+    }
+
+    /*** Third pass to resolve links to other files in the registry. **/
     manifest_cache := map[string]map[string]manifestEntry{}
     probation_cache := map[string]bool{}
 
