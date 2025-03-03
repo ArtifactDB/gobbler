@@ -356,10 +356,17 @@ func resolveLocalSymlink(
  ***** Transfer contents of a non-registry directory *****
  *********************************************************/
 
-func processDirectory(do_transfer bool, source, registry, project, asset, version string, link_whitelist []string) error {
+type processDirectoryOptions struct {
+    Transfer bool
+    TryMove bool
+    IgnoreDot bool
+    LinkWhitelist []string
+}
+
+func processDirectory(source, registry, project, asset, version string, options processDirectoryOptions) error {
     var last_dedup map[string]linkMetadata 
     var err error
-    if do_transfer {
+    if options.Transfer {
         last_dedup, err = createDedupManifest(registry, project, asset)
         if err != nil {
             return err
@@ -378,11 +385,13 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         }
 
         base := filepath.Base(src_path)
-        if strings.HasPrefix(base, "..") {
-            if info.IsDir() {
-                return filepath.SkipDir
-            } else {
-                return nil
+        if strings.HasPrefix(base, ".") {
+            if options.IgnoreDot || strings.HasPrefix(base, "..") {
+                if info.IsDir() {
+                    return filepath.SkipDir
+                } else {
+                    return nil
+                }
             }
         }
 
@@ -392,7 +401,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         }
 
         if info.IsDir() {
-            if do_transfer {
+            if options.Transfer {
                 err := os.MkdirAll(filepath.Join(destination, path), 0755)
                 if err != nil {
                     return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
@@ -434,7 +443,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
             }
 
             // Symlinks to files in whitelisted directories are preserved, but manifest pretends as if they were the files themselves.
-            if isLinkWhitelisted(target, link_whitelist) {
+            if isLinkWhitelisted(target, options.LinkWhitelist) {
                 target_sum, err := computeChecksum(target)
                 if err != nil {
                     return fmt.Errorf("failed to hash the link target %q; %w", target, err)
@@ -443,7 +452,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
                     Size: target_stat.Size(), 
                     Md5sum: target_sum,
                 }
-                if do_transfer {
+                if options.Transfer {
                     final := filepath.Join(destination, path)
                     err := os.Symlink(target, final)
                     if err != nil {
@@ -451,7 +460,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
                     }
                 }
                 return nil
-            } else if !do_transfer {
+            } else if !options.Transfer {
                 return fmt.Errorf("symbolic link %q to file %q outside the registry directory is not allowed", path, target)
             }
 
@@ -469,7 +478,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
             Md5sum: insum,
         }
 
-        if do_transfer {
+        if options.Transfer {
             // Seeing if we can create a link to the last version's file with the same md5sum.
             last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
             if ok {
@@ -478,18 +487,29 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
                 return createSymlink(filepath.Join(destination, path), registry, &last_entry, /* wipe_existing = */ false)
             }
 
-            // Otherwise we just copy the file.
+            // Otherwise we just copy/move the file. We only move if the user has indicated that we can consume the source.
             final := filepath.Join(destination, path)
-            err := copyFile(src_path, final)
-            if err != nil {
-                return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
+
+            do_copy := true 
+            if options.TryMove {
+                err := os.Rename(src_path, final)
+                if err == nil {
+                    do_copy = false
+                }
             }
-            finalsum, err := computeChecksum(final)
-            if err != nil {
-                return fmt.Errorf("failed to hash the file at %q; %w", final, err)
-            }
-            if finalsum != insum {
-                return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+
+            if do_copy {
+                err := copyFile(src_path, final)
+                if err != nil {
+                    return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
+                }
+                finalsum, err := computeChecksum(final)
+                if err != nil {
+                    return fmt.Errorf("failed to hash the file at %q; %w", final, err)
+                }
+                if finalsum != insum {
+                    return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+                }
             }
         }
 
@@ -519,7 +539,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         }
         manifest[path] = *obj
 
-        err = createSymlink(filepath.Join(destination, path), registry, obj.Link, /* wipe_existing = */ !do_transfer)
+        err = createSymlink(filepath.Join(destination, path), registry, obj.Link, /* wipe_existing = */ !options.Transfer)
         if err != nil {
             return err
         }
@@ -531,7 +551,7 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
         if err != nil {
             return err
         }
-        err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !do_transfer)
+        err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !options.Transfer)
         if err != nil {
             return err
         }
@@ -547,8 +567,26 @@ func processDirectory(do_transfer bool, source, registry, project, asset, versio
     return recreateLinkFiles(destination, manifest)
 }
 
-func transferDirectory(source, registry, project, asset, version string, link_whitelist []string) error {
-    return processDirectory(true, source, registry, project, asset, version, link_whitelist)
+type transferDirectoryOptions struct {
+    TryMove bool
+    IgnoreDot bool
+    LinkWhitelist []string
+}
+
+func transferDirectory(source, registry, project, asset, version string, options transferDirectoryOptions) error {
+    return processDirectory(
+        source,
+        registry,
+        project,
+        asset,
+        version,
+        processDirectoryOptions{
+            Transfer: true,
+            TryMove: options.TryMove,
+            IgnoreDot: options.IgnoreDot,
+            LinkWhitelist: options.LinkWhitelist,
+        },
+    )
 }
 
 func reindexDirectory(registry, project, asset, version string, link_whitelist []string) error {
@@ -605,5 +643,15 @@ func reindexDirectory(registry, project, asset, version string, link_whitelist [
         return err
     }
 
-    return processDirectory(false, source, registry, project, asset, version, link_whitelist)
+    return processDirectory(
+        source,
+        registry,
+        project,
+        asset,
+        version,
+        processDirectoryOptions{
+            Transfer: false,
+            LinkWhitelist: link_whitelist,
+        },
+    )
 }

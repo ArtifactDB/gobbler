@@ -28,7 +28,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "animation", []string{})
+        err = transferDirectory(src, registry, project, asset, "animation", transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -57,7 +57,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "natural", []string{})
+        err = transferDirectory(src, registry, project, asset, "natural", transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -91,7 +91,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "origination", []string{})
+        err = transferDirectory(src, registry, project, asset, "origination", transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -117,7 +117,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "avvenire", []string{})
+        err = transferDirectory(src, registry, project, asset, "avvenire", transferDirectoryOptions{})
         if err != nil {
             return err
         }

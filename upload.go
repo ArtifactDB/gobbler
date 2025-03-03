@@ -16,6 +16,8 @@ type uploadRequest struct {
     Asset *string `json:"asset"`
     Version *string `json:"version"`
     OnProbation *bool `json:"on_probation"`
+    Consume *bool `json:"consume"`
+    IgnoreDot *bool `json:"ignore_dot"`
     User string `json:"-"`
 }
 
@@ -172,7 +174,19 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }()
 
     source := *(request.Source)
-    err = transferDirectory(source, globals.Registry, project, asset, version, globals.LinkWhitelist)
+    err = transferDirectory(
+        source,
+        globals.Registry,
+        project,
+        asset,
+        version,
+        transferDirectoryOptions{
+            TryMove: (request.Consume != nil && *(request.Consume)),
+            IgnoreDot: (request.IgnoreDot != nil && *(request.IgnoreDot)),
+            LinkWhitelist: globals.LinkWhitelist,
+        },
+    )
+
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
