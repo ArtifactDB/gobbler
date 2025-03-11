@@ -1294,27 +1294,8 @@ func TestTransferDirectoryExternalLinks(t *testing.T) {
         asset := "SQUIRTLE"
         version := "SILVER"
         err := transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        dest := filepath.Join(reg, project, asset, version)
-        target_info, err := os.Stat(filepath.Join(dest, "asdasd"))
-        if err != nil {
-            t.Fatal(err)
-        }
-        if target_info.Mode() & os.ModeSymlink != 0 {
-            t.Error("non-whitelisted symlink should trigger a file copy")
-        }
-
-        man, err := readManifest(dest)
-        if err != nil {
-            t.Fatal(err)
-        }
-
-        contents, found := man["asdasd"]
-        if !found || contents.Link != nil || contents.Size != int64(len(message)) {
-            t.Error("unexpected manifest entry for non-whitelisted symlink")
+        if err == nil && !strings.Contains(err.Error(), "not allowed") {
+            t.Error("expected a failure when symlinking to a non-whitelisted directory")
         }
     })
 

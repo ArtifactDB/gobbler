@@ -461,12 +461,9 @@ func processDirectory(source, registry, project, asset, version string, options 
                     }
                 }
                 return nil
-            } else if !options.Transfer {
+            } else {
                 return fmt.Errorf("symbolic link %q to file %q outside the registry directory is not allowed", path, target)
             }
-
-            // Symlinks to non-whitelisted directories are not preserved and are just transferred as regular files.
-            restat = target_stat
         }
 
         insum, err := computeChecksum(src_path)

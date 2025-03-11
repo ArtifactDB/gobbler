@@ -220,6 +220,7 @@ Files within this temporary directory will be transferred to the appropriate sub
 - Symbolic links to files are allowed if:
   - The symlink target is an existing file within a project-asset-version subdirectory of the registry.
   - The symlink target is a file in the same temporary directory.
+  - The symlink target is in a [whitelisted directory](#administration).
 
 Once this directory is constructed and populated, the user should create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
