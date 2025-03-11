@@ -43,9 +43,20 @@ func uploadPreflight(reqpath string) (*uploadRequest, error) {
     }
     source := *(request.Source)
     if source != filepath.Base(source) {
-        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected 'source' to be in the same directory as %q", reqpath))
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected 'source' to be a name, not a path, in %q", reqpath))
     }
+
+    // Forbid references to files, symlinks within the staging directory.
+    source_name := source
     source = filepath.Join(filepath.Dir(reqpath), source)
+    source_info, err := os.Lstat(source)
+    if err != nil {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("failed to stat %q in the staging directory; %w", source_name, err))
+    }
+    if !source_info.IsDir() {
+        return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected %q to be a directory", source_name))
+    }
+
     source_user, err := identifyUser(source)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", source, err)

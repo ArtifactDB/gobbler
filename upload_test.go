@@ -208,25 +208,72 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
             t.Fatalf("failed to set up project directory; %v", err)
         }
 
-        req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
-        reqname, err := dumpRequest("upload", req_string)
-        if err != nil {
-            t.Fatalf("failed to create upload request; %v", err)
-        }
-        err = uploadHandler(reqname, &globals)
-        if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
-            t.Fatalf("configuration should have failed without a source")
-        }
+        t.Run("no source", func(t *testing.T) {
+            req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+            reqname, err := dumpRequest("upload", req_string)
+            if err != nil {
+                t.Fatalf("failed to create upload request; %v", err)
+            }
+            err = uploadHandler(reqname, &globals)
+            if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
+                t.Fatalf("configuration should have failed without a source")
+            }
+        })
 
-        req_string = fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
-        reqname, err = dumpRequest("upload", req_string)
-        if err != nil {
-            t.Fatalf("failed to create upload request; %v", err)
-        }
-        err = uploadHandler(reqname, &globals)
-        if err == nil || !strings.Contains(err.Error(), "same directory as") {
-            t.Fatalf("configuration should have failed if the source is a path instead of a name")
-        }
+        t.Run("not name", func(t *testing.T) {
+            req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, src, project, asset, version)
+            reqname, err := dumpRequest("upload", req_string)
+            if err != nil {
+                t.Fatalf("failed to create upload request; %v", err)
+            }
+
+            err = uploadHandler(reqname, &globals)
+            if err == nil || !strings.Contains(err.Error(), "not a path") {
+                t.Fatalf("configuration should have failed if the source is a path instead of a name")
+            }
+        })
+
+        // Source does not exist.
+        t.Run("non-existent", func(t *testing.T) {
+            alt, err := os.MkdirTemp("", "")
+            if err != nil {
+                t.Fatal(err)
+            }
+            err = os.Remove(alt)
+            if err != nil {
+                t.Fatal(err)
+            }
+
+            req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(alt), project, asset, version)
+            reqname, err := dumpRequest("upload", req_string)
+            if err != nil {
+                t.Fatalf("failed to create upload request; %v", err)
+            }
+            err = uploadHandler(reqname, &globals)
+            if err == nil || !strings.Contains(err.Error(), "failed to stat") {
+                t.Fatal("configuration should have failed if the source does not exist")
+            }
+        })
+
+        // Source is not a directory.
+        t.Run("not directory", func(t *testing.T) {
+            handle, err := os.CreateTemp("", "")
+            if err != nil {
+                t.Fatal(err)
+            }
+            alt := handle.Name()
+            handle.Close()
+
+            req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(alt), project, asset, version)
+            reqname, err := dumpRequest("upload", req_string)
+            if err != nil {
+                t.Fatalf("failed to create upload request; %v", err)
+            }
+            err = uploadHandler(reqname, &globals)
+            if err == nil || !strings.Contains(err.Error(), "be a directory") {
+                t.Fatal("configuration should have failed if the source is not a directory")
+            }
+        })
     })
 
     t.Run("bad project", func(t *testing.T) {

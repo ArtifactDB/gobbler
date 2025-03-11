@@ -231,8 +231,8 @@ This file should be JSON-formatted with the following properties:
   This should not contain `/` or `\`, or start with `..`.
 - `version`: string containing the name of the version.
   This should not contain `/` or `\`, or start with `..`.
-- `source`: string containing the name of the temporary directory, itself containing the files to be uploaded for this version of the asset.
-  This temporary directory is expected to be inside the staging directory.
+- `source`: string containing the name of the temporary directory to be uploaded to the specified version of the asset.
+  This temporary directory should be inside the staging directory.
 - `on_probation` (optional): boolean specifying whether this version of the asset should be considered as probational.
   If not provided, this defaults to false.
 - `ignore_dot` (optional): boolean specifying whether to ignore hidden files (i.e., dotfiles) within the `source` directory.
