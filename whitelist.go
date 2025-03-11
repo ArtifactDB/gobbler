@@ -1,15 +1,16 @@
 package main
 
 import (
-    "strings"
     "os"
     "fmt"
     "bufio"
+    "path/filepath"
 )
 
 func isLinkWhitelisted(path string, whitelist []string) bool {
     for _, w := range whitelist {
-        if strings.HasPrefix(path, w) {
+        rel, err := filepath.Rel(w, path)
+        if err == nil && filepath.IsLocal(rel) {
             return true
         }
     }
@@ -26,11 +27,7 @@ func loadLinkWhitelist(path string) ([]string, error) {
     output := []string{}
     scanner := bufio.NewScanner(whandle)
     for scanner.Scan() {
-        line := scanner.Text()
-        if !strings.HasSuffix(line, string(os.PathSeparator)) {
-            return nil, fmt.Errorf("all whitelisted directories should end with a path separator")
-        }
-        output = append(output, scanner.Text())
+        output = append(output, filepath.Clean(scanner.Text()))
     }
 
     if err := scanner.Err(); err != nil {

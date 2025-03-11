@@ -58,8 +58,8 @@ func main() {
         os.Exit(1)
     }
 
-    staging := *spath
-    globals := newGlobalConfiguration(*rpath)
+    staging := filepath.Clean(*spath)
+    globals := newGlobalConfiguration(filepath.Clean(*rpath))
     if *mstr != "" {
         globals.Administrators = strings.Split(*mstr, ",")
     }
