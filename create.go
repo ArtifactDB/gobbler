@@ -92,12 +92,12 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
 
     // Dumping a mock quota and usage file for consistency with gypsum.
     // Note that the quota isn't actually enforced yet.
-    err = os.WriteFile(filepath.Join(project_dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0755)
+    err = os.WriteFile(filepath.Join(project_dir, "..quota"), []byte("{ \"baseline\": 1000000000, \"growth_rate\": 1000000000, \"year\": " + strconv.Itoa(time.Now().Year()) + " }"), 0644)
     if err != nil {
         return fmt.Errorf("failed to write quota for '" + project_dir + "'; %w", err)
     }
 
-    err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte("{ \"total\": 0 }"), 0755)
+    err = os.WriteFile(filepath.Join(project_dir, usageFileName), []byte("{ \"total\": 0 }"), 0644)
     if err != nil {
         return fmt.Errorf("failed to write usage for '" + project_dir + "'; %w", err)
     }
