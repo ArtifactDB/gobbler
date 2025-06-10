@@ -269,6 +269,9 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
 
         // Release the asset lock before promoting the project lock to avoid deadlocks.
+        // Technically, this is not quite safe as another process could acquire the free asset lock, delete the just-added version and update the usage, before the project lock is promoted.
+        // Then, our addition of the usage would be incorrect as the version directory no longer exists.
+        // However, that kind of discrepancy should be pretty rare, and it's harmless and easy to fix by just refreshing the usage, so whatever.
         alock.Unlock()
         plock.Promote()
 
