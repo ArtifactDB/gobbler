@@ -71,6 +71,12 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
+    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+    }
+    defer unlockDirectory(globals, globals.Registry)
+
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
@@ -78,11 +84,11 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    err = lockDirectoryShared(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer unlockDirectory(globals, project_dir)
 
     // Check if this reindexing request is properly authorized. 
     perms, err := readPermissions(project_dir)
@@ -101,6 +107,12 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return err
     }
+
+    err = lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", asset_dir, err)
+    }
+    defer unlockDirectory(globals, asset_dir)
 
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)

@@ -132,17 +132,23 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
+    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer unlockDirectory(globals, globals.Registry)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    err = lockDirectoryExclusive(globals, project_dir, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer unlockDirectory(globals, project_dir)
 
     new_usage, err := computeProjectUsage(project_dir)
     if err != nil {

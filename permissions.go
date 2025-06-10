@@ -233,24 +233,30 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
+    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer unlockDirectory(globals, globals.Registry)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
-    if err != nil {
-        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
-    }
-    defer unlockProject(globals, project_dir)
-
-    project_perms, err := readPermissions(project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to read permissions for %q; %w", project, err)
-    }
-
     if incoming.Asset == nil {
+        err = lockDirectoryExclusive(globals, project_dir, 10 * time.Second)
+        if err != nil {
+            return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+        }
+        defer unlockDirectory(globals, project_dir)
+
+        project_perms, err := readPermissions(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read permissions for %q; %w", project, err)
+        }
+
         if !isAuthorizedToMaintain(source_user, globals.Administrators, project_perms.Owners) {
             return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
         }
@@ -311,11 +317,32 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         }
 
         if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
-            err = os.Mkdir(asset_dir, 0755)
+            // Moving this into a closure to ensure that the promoted lock is released once the directory is created.
+            // This gives other processes a chance to proceed. 
+            err := func() error {
+                err := lockDirectoryUnshared(globals, project_dir, 10 * time.Second)
+                if err != nil {
+                    return fmt.Errorf("failed to promote lock on the project directory %q; %w", project_dir, err)
+                }
+                defer unlockDirectoryUnshared(globals, project_dir)
+
+                err = os.Mkdir(asset_dir, 0755)
+                if err != nil {
+                    return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
+                }
+                return nil
+            }()
             if err != nil {
-                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
+                return err
             }
         }
+
+        err := lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+        if err != nil {
+            return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+        }
+        defer unlockDirectory(globals, asset_dir)
+
         err = dumpJson(perm_path, asset_perms)
         if err != nil {
             return fmt.Errorf("failed to write asset-level permissions for %q; %w", asset_dir, err)

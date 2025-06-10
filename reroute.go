@@ -313,11 +313,11 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     }
 
     // Obtaining an all-of-registry lock before we identify the rerouting actions.
-    err = lockRegistry(globals, 10 * time.Second)
+    err = lockDirectoryExclusive(globals, globals.Registry, 10 * time.Second)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer unlockRegistry(globals)
+    defer unlockDirectory(globals, globals.Registry)
 
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {

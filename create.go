@@ -50,11 +50,11 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
     }
 
     // Locking the entire registry to avoid confusion from concurrent additions of the same project.
-    err = lockRegistry(globals, 10 * time.Second)
+    err = lockDirectoryExclusive(globals, globals.Registry, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer unlockRegistry(globals)
+    defer unlockDirectory(globals, globals.Registry)
 
     project_dir := filepath.Join(globals.Registry, project)
     if _, err = os.Stat(project_dir); !errors.Is(err, os.ErrNotExist) {

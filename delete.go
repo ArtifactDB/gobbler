@@ -40,11 +40,11 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     // Locking the entire registry to avoid confusion from concurrent uploads to the to-be-deleted project.
-    err = lockRegistry(globals, 10 * time.Second)
+    err = lockDirectoryExclusive(globals, globals.Registry, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer unlockRegistry(globals)
+    defer unlockDirectory(globals, globals.Registry)
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
@@ -105,23 +105,30 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    // We lock the project directory as (i) it's convention to lock the entire
-    // project even if we're mutating a single asset and (ii) we need to update
-    // the usage anyway so we'd have to obtain this lock eventually.
+    // Acquiring the various locks first.
+    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer unlockDirectory(globals, globals.Registry)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = lockProject(globals, project_dir, 10 * time.Second)
+
+    err = lockDirectoryExclusive(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer unlockDirectory(globals, project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
+
+    // Now performing the deletion, adjusting for the total usage afterwards.
     asset_usage, asset_usage_err := computeAssetUsage(asset_dir)
     if asset_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %s; %v", asset_dir, asset_usage_err)
@@ -202,29 +209,41 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    // We lock the project directory as (i) it's convention to lock the entire
-    // project even if we're mutating a single asset and (ii) we need to update
-    // the usage anyway so we'd have to obtain this lock eventually.
+    // Acquiring the various locks.
+    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer unlockDirectory(globals, globals.Registry)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    err = lockProject(globals, project_dir, 10 * time.Second)
+
+    err = lockDirectoryShared(globals, project_dir, 10 * time.Second)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer unlockDirectory(globals, project_dir)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
 
+    err = lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+    if err != nil {
+        return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+    }
+    defer unlockDirectory(globals, asset_dir)
+
     version_dir := filepath.Join(asset_dir, *(incoming.Version))
     if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
 
+    // Now performing the deletion, adjusting for the total usage and latest version afterwards.
     version_usage, version_usage_err := computeVersionUsage(version_dir)
     if version_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %s; %v", version_dir, version_usage_err)
@@ -241,6 +260,12 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if version_usage_err == nil {
+        err := lockDirectoryUnshared(globals, project_dir, 10 * time.Second)
+        if err != nil {
+            return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
+        }
+        defer unlockDirectoryUnshared(globals, project_dir)
+
         project_usage, err := readUsage(project_dir)
         if err != nil {
             return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
@@ -288,4 +313,3 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
 
     return nil
 }
-

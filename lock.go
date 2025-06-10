@@ -25,7 +25,6 @@ func newPathLocks() pathLocks {
 }
 
 func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) error {
-    lockfile := filepath.Join(path, "..LOCK")
     var lock_mode int
     if exclusive { 
         lock_mode = syscall.LOCK_EX
@@ -63,7 +62,7 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
             }
 
             // Place an advisory lock across multiple gobbler processes. 
-            file, err := os.OpenFile(lockfile, os.O_RDWR | os.O_CREATE, 0666)
+            file, err := os.OpenFile(path, os.O_RDWR | os.O_CREATE, 0666)
             if err != nil { // Maybe we failed to write it because the handle was opened by some other process.
                 return true
             }
@@ -86,7 +85,7 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
     }
 }
 
-func (pl* pathLocks) Unlock(path string) {
+func (pl* pathLocks) Unlock(path, name string) {
     pl.UseLock.Lock()
     defer pl.UseLock.Unlock()
 
@@ -103,27 +102,27 @@ func (pl* pathLocks) Unlock(path string) {
     delete(pl.InUse, path)
 }
 
-func lockRegistry(globals *globalConfiguration, timeout time.Duration) error {
-    return globals.Locks.Lock(globals.Registry, timeout, true)
+func lockDirectoryShared(globals *globalConfiguration, dir string, timeout time.Duration) error {
+    path := filepath.Join(dir, "..LOCK")
+    return globals.Locks.Lock(dir, timeout, false)
 }
 
-func unlockRegistry(globals *globalConfiguration) {
-    globals.Locks.Unlock(globals.Registry)
+func lockDirectoryExclusive(globals *globalConfiguration, dir string, timeout time.Duration) error {
+    path := filepath.Join(dir, "..LOCK")
+    return globals.Locks.Lock(dir, timeout, true)
 }
 
-func lockProject(globals *globalConfiguration, project_dir string, timeout time.Duration) error {
-    err := globals.Locks.Lock(globals.Registry, timeout, false)
-    if err != nil {
-        return err
-    }
-    err = globals.Locks.Lock(project_dir, timeout, true)
-    if err != nil {
-        globals.Locks.Unlock(globals.Registry)
-    }
-    return err
+func unlockDirectory(globals *globalConfiguration, dir string) {
+    path := filepath.Join(dir, "..LOCK")
+    globals.Locks.Unlock(dir)
 }
 
-func unlockProject(globals *globalConfiguration, project_dir string) {
-    globals.Locks.Unlock(project_dir)
-    globals.Locks.Unlock(globals.Registry)
+func lockDirectoryUnshared(globals *globalConfiguration, dir string, timeout time.Duration) error {
+    path := filepath.Join(dir, "..LOCK_EXTRA")
+    return globals.Locks.Lock(path, timeout, true)
+}
+
+func unlockDirectoryUnshared(globals *globalConfiguration, dir string) {
+    path := filepath.Join(dir, "..LOCK_EXTRA")
+    globals.Locks.Unlock(path)
 }
