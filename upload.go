@@ -236,28 +236,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    {
-        plock.Promote()
-        extra, err := computeVersionUsage(version_dir)
-        if err != nil {
-            return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
-        }
-
-        usage, err := readUsage(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
-        }
-        usage.Total += extra
-
-        // Try to do this write later to reduce the chance of an error
-        // triggering an abort after the usage total has been updated.
-        usage_path := filepath.Join(project_dir, usageFileName)
-        err = dumpJson(usage_path, &usage)
-        if err != nil {
-            return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
-        }
-    }
-
     if !on_probation {
         // Doing this as late as possible to reduce the chances of an error
         // triggering an abort _after_ the latest version has been updated.
@@ -281,6 +259,31 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         err = dumpLog(globals.Registry, log_info)
         if err != nil {
             return fmt.Errorf("failed to save log file; %w", err)
+        }
+    }
+
+    {
+        extra, err := computeVersionUsage(version_dir)
+        if err != nil {
+            return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
+        }
+
+        // Release the asset lock before promoting the project lock to avoid deadlocks.
+        alock.Unlock()
+        plock.Promote()
+
+        usage, err := readUsage(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
+        }
+        usage.Total += extra
+
+        // Try to do this write later to reduce the chance of an error
+        // triggering an abort after the usage total has been updated.
+        usage_path := filepath.Join(project_dir, usageFileName)
+        err = dumpJson(usage_path, &usage)
+        if err != nil {
+            return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
         }
     }
 

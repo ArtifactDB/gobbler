@@ -110,18 +110,24 @@ func (pl* pathLocks) Unlock(path string) {
  * A promoted weak lock allows the process to read, create and modify files or subdirectories within 'dir'.
  * These permissions are not recursive.
  *
- * - If we want to go to a subdirectory, the process is a bit involved.
+ * - If we want to go inside a subdirectory, the process is a bit involved.
  *   First, we acquire a promoted lock on the directory, check if the subdirectory exists, and possibly create it if it doesn't.
  *   Then, we demote the promoted lock to a weak lock to free up other processes, and proceed to the subdirectory.
+ *   Alternatively we can acquire a strong lock on the directory if we don't care about freeing up other processes.
+ * - Only one "lineage" of locks should be acquired by a process at any given time,
+ *   i.e., all locks held by that process should apply to directories that are children/parents of other locked directories.
+ *   This ensures that multiple processes are only ever contending for a single lock at their "lowest common ancestor", to avoid deadlocks.
  * - If we want to modify subdirectories without acquiring a promoted lock on each one, we can just acquire a strong lock on the parent directory.
  *   This is because only strong locks apply recursively.
  * - If we realize that we wanted to modify a file in a directory, we can promote the directory's weak lock to a promoted lock.
- *   Keep in mind that the promotion may be contended, so a process's modification may occur after other modifications on the same file.
+ *   This should only be done if no other locks are held on any subdirectories, so as to avoid deadlocks.
+ *   Also keep in mind that the promotion may be contended, so a process's modification may occur after other modifications on the same file.
  */
 
 type directoryLock struct {
     Globals *globalConfiguration
     Dir string
+    Active bool
     Promoted bool
 }
 
@@ -131,7 +137,7 @@ func lockDirectoryWeak(globals *globalConfiguration, dir string) (*directoryLock
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Promoted: false }, nil
+    return &directoryLock{ Globals: globals, Dir: dir, Active: true, Promoted: false }, nil
 }
 
 func lockDirectoryStrong(globals *globalConfiguration, dir string) (*directoryLock, error) {
@@ -140,7 +146,7 @@ func lockDirectoryStrong(globals *globalConfiguration, dir string) (*directoryLo
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Promoted: false }, nil
+    return &directoryLock{ Globals: globals, Dir: dir, Active: true, Promoted: false }, nil
 }
 
 func lockDirectoryPromoted(globals *globalConfiguration, dir string) (*directoryLock, error) {
@@ -176,10 +182,14 @@ func (dlock *directoryLock) Demote() {
 }
 
 func (dlock *directoryLock) Unlock() {
+    if !dlock.Active {
+        return
+    }
     if dlock.Promoted {
         dlock.Demote()
     }
     path := filepath.Join(dlock.Dir, "..LOCK")
     dlock.Globals.Locks.Unlock(path)
+    dlock.Active = false
     return
 }

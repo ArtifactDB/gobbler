@@ -113,7 +113,11 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return err
     }
-    plock.Demote()
+
+    // For rejection, we still need a promoted lock as we'll be modifying the project-level usage.
+    if approve {
+        plock.Demote()
+    }
 
     alock, err := lockDirectoryStrong(globals, asset_dir)
     if err != nil {
@@ -192,8 +196,6 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         }
 
     } else {
-        plock.Promote() // Promoting the lock as the version's usage needs to be subtracted from the project usage. 
-
         force_deletion := incoming.Force != nil && *(incoming.Force)
         err = rejectProbation(project_dir, version_dir, force_deletion)
         if err != nil {
@@ -259,11 +261,18 @@ func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project
 }
 
 func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_dir string, project_lock *directoryLock, asset_dir string, expiry time.Duration) []error {
+    // Promoting and demoting each one inside this function, to give other processes a chance to contend and sneak in operations.
+    // Otherwise there would just be a big block of time where a promoted lock is held during the scan of a project's contents.
+    project_lock.Promote()
+    defer project_lock.Demote()
+
     alock, err := lockDirectoryStrong(globals, asset_dir)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err) }
     }
-    defer alock.Unlock()
+    defer func() {
+        alock.Unlock()
+    }()
 
     versions, err := listUserDirectories(asset_dir)
     if err != nil {
@@ -289,7 +298,6 @@ func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_d
         }
 
         if time.Now().Sub(as_time) > expiry {
-            project_lock.Promote()
             err := rejectProbation(project_dir, version_dir, false)
             if err != nil {
                 all_errors = append(all_errors, err)

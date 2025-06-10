@@ -242,7 +242,6 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return nil
     }
 
-    // Now performing the deletion, adjusting for the total usage and latest version afterwards.
     version_usage, version_usage_err := computeVersionUsage(version_dir)
     if version_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %s; %v", version_dir, version_usage_err)
@@ -256,27 +255,6 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     err = os.RemoveAll(version_dir)
     if err != nil {
         return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
-    }
-
-    if version_usage_err == nil {
-        err := plock.Promote()
-        if err != nil {
-            return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
-        }
-
-        project_usage, err := readUsage(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
-        }
-
-        project_usage.Total -= version_usage
-        if project_usage.Total < 0 {
-            project_usage.Total = 0
-        }
-        err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
-        if err != nil {
-            return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
-        }
     }
 
     if summ_err == nil && (summ.OnProbation == nil || !(*summ.OnProbation)) {
@@ -306,6 +284,29 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         _, latest_err := refreshLatest(asset_dir)
         if latest_err != nil && !force_deletion {
             return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, latest_err)
+        }
+    }
+
+    if version_usage_err == nil {
+        // Release the asset directory lock before attempting promotion, to avoid deadlock.
+        alock.Unlock()
+        err := plock.Promote()
+        if err != nil {
+            return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
+        }
+
+        project_usage, err := readUsage(project_dir)
+        if err != nil {
+            return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+        }
+
+        project_usage.Total -= version_usage
+        if project_usage.Total < 0 {
+            project_usage.Total = 0
+        }
+        err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
+        if err != nil {
+            return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
         }
     }
 
