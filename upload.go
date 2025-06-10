@@ -108,23 +108,24 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     req_user := request.User
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
-    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
+    rlock.Demote()
 
-    err = lockDirectoryShared(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryPromoted(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockDirectory(globals, project_dir)
+    defer plock.Unlock()
 
     perms, err := readPermissions(project_dir)
     if err != nil {
@@ -155,29 +156,18 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     if !asset_exists {
         // Pushing this inside a closure so that the promoted lock is released as soon as the directory is created;
         // this frees up the project for further creation of new asset directories.
-        err := func() error {
-            err := lockDirectoryUnshared(globals, project_dir, 10 * time.Second)
-            if err != nil {
-                return fmt.Errorf("failed to promote lock on project directory %q; %w", project_dir, err)
-            }
-            defer unlockDirectoryUnshared(globals, project_dir)
-
-            err = os.Mkdir(asset_dir, 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
-            }
-            return nil
-        }()
+        err = os.Mkdir(asset_dir, 0755)
         if err != nil {
-            return err
+            return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
         }
     }
+    plock.Demote()
 
-    err = lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+    alock, err := lockDirectoryStrong(globals, asset_dir)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
-    defer unlockDirectory(globals, asset_dir)
+    defer alock.Unlock()
 
     if use_global_write { // adding asset-level permissions.
         asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
@@ -247,6 +237,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     {
+        plock.Promote()
         extra, err := computeVersionUsage(version_dir)
         if err != nil {
             return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)

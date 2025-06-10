@@ -117,35 +117,37 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         }
     }
 
-    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
     if err != nil {
-        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
+    rlock.Demote()
 
-    err = lockDirectoryShared(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryPromoted(globals, project_dir)
     if err != nil {
-        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+        return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockDirectory(globals, project_dir)
+    defer plock.Unlock()
 
     asset := *(incoming.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return nil, err
     }
+    plock.Demote()
 
-    err = lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+    alock, err := lockDirectoryStrong(globals, asset_dir)
     if err != nil {
-        return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+        return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
-    defer unlockDirectory(globals, asset_dir)
+    defer alock.Unlock()
 
     output, err := refreshLatest(asset_dir)
     return output, err

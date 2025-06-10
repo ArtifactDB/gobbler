@@ -5,7 +5,6 @@ import (
     "encoding/json"
     "fmt"
     "path/filepath"
-    "time"
     "net/http"
 )
 
@@ -132,23 +131,24 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
-    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
     if err != nil {
-        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
+    rlock.Demote()
 
-    err = lockDirectoryExclusive(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryStrong(globals, project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer unlockDirectory(globals, project_dir)
+    defer plock.Unlock()
 
     new_usage, err := computeProjectUsage(project_dir)
     if err != nil {

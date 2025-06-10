@@ -85,7 +85,7 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
     }
 }
 
-func (pl* pathLocks) Unlock(path, name string) {
+func (pl* pathLocks) Unlock(path string) {
     pl.UseLock.Lock()
     defer pl.UseLock.Unlock()
 
@@ -102,27 +102,84 @@ func (pl* pathLocks) Unlock(path, name string) {
     delete(pl.InUse, path)
 }
 
-func lockDirectoryShared(globals *globalConfiguration, dir string, timeout time.Duration) error {
+/* A strong lock allows the process to read, delete, create, and modify files or subdirectories or their children within 'dir'.
+ *
+ * A weak lock only guarantees that any existing subdirectories in 'dir' will not be deleted. 
+ * The guarantee only applies to the immediate children of 'dir' and is not recursive.
+ *
+ * A promoted weak lock allows the process to read, create and modify files or subdirectories within 'dir'.
+ * These permissions are not recursive.
+ *
+ * - If we want to go to a subdirectory, the process is a bit involved.
+ *   First, we acquire a promoted lock on the directory, check if the subdirectory exists, and possibly create it if it doesn't.
+ *   Then, we demote the promoted lock to a weak lock to free up other processes, and proceed to the subdirectory.
+ * - If we want to modify subdirectories without acquiring a promoted lock on each one, we can just acquire a strong lock on the parent directory.
+ *   This is because only strong locks apply recursively.
+ * - If we realize that we wanted to modify a file in a directory, we can promote the directory's weak lock to a promoted lock.
+ *   Keep in mind that the promotion may be contended, so a process's modification may occur after other modifications on the same file.
+ */
+
+type directoryLock struct {
+    Globals *globalConfiguration
+    Dir string
+    Promoted bool
+}
+
+func lockDirectoryWeak(globals *globalConfiguration, dir string) (*directoryLock, error) {
     path := filepath.Join(dir, "..LOCK")
-    return globals.Locks.Lock(dir, timeout, false)
+    err := globals.Locks.Lock(path, 10 * time.Second, false)
+    if err != nil {
+        return nil, err
+    }
+    return &directoryLock{ Globals: globals, Dir: dir, Promoted: false }, nil
 }
 
-func lockDirectoryExclusive(globals *globalConfiguration, dir string, timeout time.Duration) error {
+func lockDirectoryStrong(globals *globalConfiguration, dir string) (*directoryLock, error) {
     path := filepath.Join(dir, "..LOCK")
-    return globals.Locks.Lock(dir, timeout, true)
+    err := globals.Locks.Lock(path, 10 * time.Second, true)
+    if err != nil {
+        return nil, err
+    }
+    return &directoryLock{ Globals: globals, Dir: dir, Promoted: false }, nil
 }
 
-func unlockDirectory(globals *globalConfiguration, dir string) {
-    path := filepath.Join(dir, "..LOCK")
-    globals.Locks.Unlock(dir)
+func lockDirectoryPromoted(globals *globalConfiguration, dir string) (*directoryLock, error) {
+    dlock, err := lockDirectoryWeak(globals, dir)
+    if err != nil {
+        return nil, err
+    }
+    err = dlock.Promote()
+    if err != nil {
+        return nil, err
+    }
+    return dlock, nil
 }
 
-func lockDirectoryUnshared(globals *globalConfiguration, dir string, timeout time.Duration) error {
-    path := filepath.Join(dir, "..LOCK_EXTRA")
-    return globals.Locks.Lock(path, timeout, true)
+func (dlock *directoryLock) Promote() error {
+    path := filepath.Join(dlock.Dir, "..LOCK_EXTRA")
+    err := dlock.Globals.Locks.Lock(path, 10 * time.Second, true)
+    if err != nil {
+        return err
+    }
+    dlock.Promoted = true
+    return nil
 }
 
-func unlockDirectoryUnshared(globals *globalConfiguration, dir string) {
-    path := filepath.Join(dir, "..LOCK_EXTRA")
-    globals.Locks.Unlock(path)
+func (dlock *directoryLock) Demote() {
+    if !dlock.Promoted {
+        return
+    }
+    path := filepath.Join(dlock.Dir, "..LOCK_EXTRA")
+    dlock.Globals.Locks.Unlock(path)
+    dlock.Promoted = false
+    return
+}
+
+func (dlock *directoryLock) Unlock() {
+    if dlock.Promoted {
+        dlock.Demote()
+    }
+    path := filepath.Join(dlock.Dir, "..LOCK")
+    dlock.Globals.Locks.Unlock(path)
+    return
 }

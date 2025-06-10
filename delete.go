@@ -5,7 +5,6 @@ import (
     "fmt"
     "encoding/json"
     "path/filepath"
-    "time"
     "errors"
     "net/http"
 )
@@ -39,12 +38,11 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    // Locking the entire registry to avoid confusion from concurrent uploads to the to-be-deleted project.
-    err = lockDirectoryExclusive(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryStrong(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
@@ -105,23 +103,23 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    // Acquiring the various locks first.
-    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
+    rlock.Demote()
 
-    err = lockDirectoryExclusive(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryStrong(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockDirectory(globals, project_dir)
+    defer plock.Unlock()
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
@@ -209,34 +207,35 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    // Acquiring the various locks.
-    err = lockDirectoryShared(globals, globals.Registry, 10 * time.Second)
+    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer unlockDirectory(globals, globals.Registry)
+    defer rlock.Unlock()
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
+    rlock.Demote()
 
-    err = lockDirectoryShared(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryPromoted(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockDirectory(globals, project_dir)
+    defer plock.Unlock()
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
+    plock.Demote()
 
-    err = lockDirectoryExclusive(globals, asset_dir, 10 * time.Second)
+    alock, err := lockDirectoryStrong(globals, asset_dir)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
-    defer unlockDirectory(globals, asset_dir)
+    defer alock.Unlock()
 
     version_dir := filepath.Join(asset_dir, *(incoming.Version))
     if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
@@ -260,11 +259,10 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if version_usage_err == nil {
-        err := lockDirectoryUnshared(globals, project_dir, 10 * time.Second)
+        err := plock.Promote()
         if err != nil {
             return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
         }
-        defer unlockDirectoryUnshared(globals, project_dir)
 
         project_usage, err := readUsage(project_dir)
         if err != nil {
