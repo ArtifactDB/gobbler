@@ -298,7 +298,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         asset_perms := &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
         asset_perm_path := filepath.Join(asset_dir, permissionsFileName)
 
-        _, err := os.Stat(asset_dir)
+        _, err = os.Stat(asset_dir)
         if err == nil {
             alock, err := lockDirectoryExclusive(globals, asset_dir)
             if err != nil {

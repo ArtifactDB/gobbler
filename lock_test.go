@@ -6,17 +6,15 @@ import (
     "strings"
     "os"
     "sync"
-    "path/filepath"
 )
 
 func TestLock(t *testing.T) {
-    dir, err := os.MkdirTemp("", "")
+    path, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create a mock directory; %v", err)
     }
 
     t.Run("exclusive", func(t *testing.T) {
-        path := filepath.Join(dir, "..LOCK")
         pl := newPathLocks()
         err = pl.Lock(path, 10 * time.Second, true)
         if err != nil {
@@ -43,8 +41,6 @@ func TestLock(t *testing.T) {
     })
 
     t.Run("shared", func(t *testing.T) {
-        path := filepath.Join(dir, "..LOCK")
-
         pl := newPathLocks()
         err = pl.Lock(path, 10 * time.Second, false)
         if err != nil {
@@ -73,8 +69,6 @@ func TestLock(t *testing.T) {
     })
 
     t.Run("retry", func(t *testing.T) {
-        path := filepath.Join(dir, "..LOCK")
-
         pl := newPathLocks()
         err = pl.Lock(path, 10 * time.Second, true)
         if err != nil {

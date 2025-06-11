@@ -277,7 +277,7 @@ func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_d
     // As a result of the reacquisition, we need to check that the asset directory actually still exists, and quit if it doesn't.
     // This is because something could have deleted it in between the listUserDirectories() call and the reacquisition of the lock.
     if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
-        return []string{}
+        return []error{}
     }
 
     versions, err := listUserDirectories(asset_dir)

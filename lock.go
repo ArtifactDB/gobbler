@@ -121,7 +121,7 @@ func (pl* pathLocks) Unlock(path string) {
  * The above rules imply that, when promoting a lock from shared to exclusive, all locks on subdirectories should be released.
  */
 
-type directoryLock {
+type directoryLock struct {
     Globals *globalConfiguration
     Dir string
     Exclusive bool
@@ -133,7 +133,7 @@ func lockDirectoryExclusive(globals *globalConfiguration, dir string) (*director
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: true, Active: true }
+    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: true, Active: true }, nil
 }
 
 func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLock, error) {
@@ -141,11 +141,11 @@ func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLo
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: false, Active: true }
+    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: false, Active: true }, nil
 }
 
 func (dlock *directoryLock) Unlock() {
     if dlock.Active {
-        dlock.Globals.Locks.Unlock(dir)
+        dlock.Globals.Locks.Unlock(dlock.Dir)
     }
 }
