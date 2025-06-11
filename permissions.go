@@ -245,7 +245,9 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    // Holding an exclusive lock as we may need to create an asset directory.
+    // If Asset is provided, we could consider holding a shared lock to improve parallelism.
+    // However, this gets complicated if the asset directory does not exist, in which case we need to reacquire an exclusive lock to create the directory.
+    // It's just simpler to hold an exclusive lock to start with, the handler should finish up pretty quickly so any contention is limited.
     plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
@@ -320,13 +322,16 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
             asset_perms.Uploaders = san
         }
 
-        if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
-            err = os.Mkdir(asset_dir, 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create new asset directory %q; %w", asset_dir, err)
+        _, err = os.Stat(asset_dir)
+        if err != nil {
+            if errors.Is(err, os.ErrNotExist) {
+                err := os.Mkdir(asset_dir, 0755)
+                if err != nil {
+                    return fmt.Errorf("failed to create new asset directory %q; %w", asset_dir, err)
+                }
+            } else {
+                return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
             }
-        } else if err != nil {
-            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
         }
 
         err = dumpJson(asset_perm_path, asset_perms)

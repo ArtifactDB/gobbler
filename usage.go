@@ -31,28 +31,6 @@ func readUsage(path string) (*usageMetadata, error) {
     return &output, nil
 }
 
-func adjustUsage(globals *globalConfiguration, path string, val int64) error {
-    ulock, err := lockDirectoryWriteUsage(globals, path)
-    if err != nil {
-        return fmt.Errorf("failed to lock usage file in %q; %w", path, err)
-    }
-    defer ulock.Unlock(globals)
-
-    usage, err := readUsage(path)
-    if err != nil {
-        return fmt.Errorf("failed to read existing usage for %q; %w", path, err)
-    }
-    usage.Total += val
-
-    usage_path := filepath.Join(path, usageFileName)
-    err = dumpJson(usage_path, &usage)
-    if err != nil {
-        return fmt.Errorf("failed to save usage for %q; %w", path, err)
-    }
-
-    return nil
-}
-
 func computeProjectUsage(path string) (int64, error) {
     var total int64
     total = 0
@@ -121,6 +99,28 @@ func computeVersionUsage(path string) (int64, error) {
     }
 
     return total, err
+}
+
+func editUsage(globals *globalConfiguration, project_dir string, val int64) error {
+    ulock, err := lockDirectoryWriteUsage(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to lock usage file in %q; %w", project_dir, err)
+    }
+    defer ulock.Unlock(globals)
+
+    usage, err := readUsage(project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read existing usage for %q; %w", project_dir, err)
+    }
+    usage.Total += val
+
+    usage_path := filepath.Join(project_dir, usageFileName)
+    err = dumpJson(usage_path, &usage)
+    if err != nil {
+        return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
+    }
+
+    return nil
 }
 
 func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMetadata, error) {

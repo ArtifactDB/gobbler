@@ -120,80 +120,73 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    asset := *(request.Asset)
-    asset_dir := filepath.Join(project_dir, asset)
-
-    err = func() error {
-        // Acquiring a complete lock for safety during asset directory creation and reading/setting asset-level permissions.
-        // For global writes, the asset directory needs to be created and filled with permissions without any lock reacquisition, otherwise another process could intervene.
-        plock, err := lockDirectoryExclusive(globals, project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
-        }
-        defer plock.Unlock(globals)
-
-        perms, err := readPermissions(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read permissions for %q; %w", project, err)
-        }
-
-        asset_exists := false
-        _, err = os.Stat(asset_dir)
-        if err == nil {
-            asset_exists = true
-        } else if !errors.Is(err, os.ErrNotExist) {
-            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
-        }
-
-        use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
-        if !use_global_write {
-            asset_perms, err := addAssetPermissionsForUpload(perms, asset_dir, asset)
-            if err != nil {
-                return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
-            }
-
-            ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, asset_perms, request.Asset, request.Version)
-            if !ok {
-                return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
-            }
-            if !trusted {
-                on_probation = true
-            }
-        }
-
-        if !asset_exists {
-            err = os.Mkdir(asset_dir, 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
-            }
-        }
-
-        if use_global_write { // adding asset-level permissions.
-            asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
-            perm_path := filepath.Join(asset_dir, permissionsFileName)
-            err := dumpJson(perm_path, asset_permissions)
-            if err != nil {
-                return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
-            }
-        }
-
-        return nil
-    }()
+    // Acquiring a complete lock for safety during asset directory creation and reading/setting asset-level permissions.
+    // For global writes, the asset directory needs to be created and filled with permissions without any lock reacquisition, otherwise another process could intervene.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
-        return err
-    }
-
-    // Now switching to a shared project-level lock to improve parallelism for multiple upload requests.
-    plock, err := lockDirectoryShared(globals, project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
     defer plock.Unlock(globals)
 
-    version := *(request.Version)
-    version_dir := filepath.Join(asset_dir, version)
+    perms, err := readPermissions(project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read permissions for %q; %w", project, err)
+    }
 
-    // Re-checking that the asset directory still exists, in case some other handler deleted it after lock re-acquisition.
+    asset := *(request.Asset)
+    asset_dir := filepath.Join(project_dir, asset)
+    asset_exists := false
+    _, err = os.Stat(asset_dir)
+    if err == nil {
+        asset_exists = true
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
+    }
+
+    use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
+    if !use_global_write {
+        asset_perms, err := addAssetPermissionsForUpload(perms, asset_dir, asset)
+        if err != nil {
+            return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
+        }
+
+        ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, asset_perms, request.Asset, request.Version)
+        if !ok {
+            return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
+        }
+        if !trusted {
+            on_probation = true
+        }
+    }
+
+    if !asset_exists {
+        err = os.Mkdir(asset_dir, 0755)
+        if err != nil {
+            return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
+        }
+    }
+
+    if use_global_write { // adding asset-level permissions.
+        asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
+        perm_path := filepath.Join(asset_dir, permissionsFileName)
+        err := dumpJson(perm_path, asset_permissions)
+        if err != nil {
+            return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
+        }
+    }
+
+    // Now switching to a shared project-level lock to improve parallelism for multiple upload requests.
+    plock.Unlock(globals)
+    plock2, err := lockDirectoryShared(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
+    }
+    defer plock2.Unlock(globals)
+
+    // The lock switch above means that there is a brief period of time where the project is unlocked and other processes could just change things.
+    // By and large, this is fine as the filesystem is still in a valid state, even with an empty asset subdirectory.
+    // However, it is possible for deleteAssetHandler to wipe out the asset that we're trying to create.
+    // So when we reacquire the project lock, we need to confirm that the asset directory still exists before taking a lock on it.
     if _, err := os.Stat(asset_dir); err != nil {
         return fmt.Errorf("cannot access asset directory %q; %w", asset_dir, err)
     }
@@ -204,8 +197,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
     defer alock.Unlock(globals)
 
-    if _, err := os.Stat(version_dir); err == nil {
+    version := *(request.Version)
+    version_dir := filepath.Join(asset_dir, version)
+    _, err = os.Stat(version_dir)
+    if err == nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("version %q already exists in %q", version, asset_dir))
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat version directory %q; %w", version_dir, err)
     }
 
     err = os.Mkdir(version_dir, 0755)
@@ -213,7 +211,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to create a new version directory at %q; %w", version_dir, err)
     }
 
-    // Set up an abort loop to remove failed uploads from the globals.Registry, lest they clutter things up.
+    // Remove failed uploads from the globals.Registry, lest they clutter things up.
     has_failed := true
     defer func() {
         if has_failed {
@@ -234,25 +232,36 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
             LinkWhitelist: globals.LinkWhitelist,
         },
     )
-
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
     upload_finish := time.Now()
-    summary := summaryMetadata {
-        UploadUserId: req_user,
-        UploadStart: upload_start.Format(time.RFC3339),
-        UploadFinish: upload_finish.Format(time.RFC3339),
-    }
-    if on_probation {
-        summary.OnProbation = &on_probation
+    {
+        summary := summaryMetadata {
+            UploadUserId: req_user,
+            UploadStart: upload_start.Format(time.RFC3339),
+            UploadFinish: upload_finish.Format(time.RFC3339),
+        }
+        if on_probation {
+            summary.OnProbation = &on_probation
+        }
+
+        summary_path := filepath.Join(version_dir, summaryFileName)
+        err := dumpJson(summary_path, &summary)
+        if err != nil {
+            return fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
+        }
     }
 
-    summary_path := filepath.Join(version_dir, summaryFileName)
-    err = dumpJson(summary_path, &summary)
+    extra_usage, err := computeVersionUsage(version_dir)
     if err != nil {
-        return fmt.Errorf("failed to save summary for %q; %w", asset_dir, err)
+        return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
+    }
+
+    err = editUsage(globals, project_dir, extra_usage)
+    if err != nil {
+        return err
     }
 
     if !on_probation {
@@ -275,16 +284,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         if err != nil {
             return fmt.Errorf("failed to save log file; %w", err)
         }
-    }
-
-    extra_usage, err := computeVersionUsage(version_dir)
-    if err != nil {
-        return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
-    }
-
-    err = adjustUsage(globals, project_dir, extra_usage)
-    if err != nil {
-        return err
     }
 
     has_failed = false

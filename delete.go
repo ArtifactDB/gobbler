@@ -45,9 +45,15 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     defer rlock.Unlock(globals)
 
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
-    if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
-        return nil
+    _, err = os.Stat(project_dir)
+    if err != nil {
+        if errors.Is(err, os.ErrNotExist) {
+            return nil
+        } else {
+            return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
+        }
     }
+
     err = os.RemoveAll(project_dir)
     if err != nil {
         return fmt.Errorf("failed to delete %s; %v", project_dir, err)
@@ -115,7 +121,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         if errors.Is(err, os.ErrNotExist) {
             return nil
         } else {
-            return fmt.Errorf("failed to check project directory %q; %w", project_dir, err)
+            return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
         }
     }
 
@@ -131,7 +137,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         if errors.Is(err, os.ErrNotExist) {
             return nil
         } else {
-            return fmt.Errorf("failed to check asset directory %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
         }
     }
 
@@ -146,7 +152,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if asset_usage_err == nil {
-        err := adjustUsage(globals, project_dir, -asset_usage)
+        err := editUsage(globals, project_dir, -asset_usage)
         if err != nil {
             return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
         }
@@ -219,7 +225,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         if errors.Is(err, os.ErrNotExist) {
             return nil
         } else {
-            return fmt.Errorf("failed to check project directory %q; %w", project_dir, err)
+            return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
         }
     }
 
@@ -235,7 +241,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         if errors.Is(err, os.ErrNotExist) {
             return nil
         } else {
-            return fmt.Errorf("failed to check asset directory %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
         }
     }
 
@@ -251,7 +257,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         if errors.Is(err, os.ErrNotExist) {
             return nil
         } else {
-            return fmt.Errorf("failed to check version directory %q; %w", version_dir, err)
+            return fmt.Errorf("failed to stat version directory %q; %w", version_dir, err)
         }
     }
 
@@ -271,7 +277,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if version_usage_err == nil {
-        err := adjustUsage(globals, project_dir, -version_usage)
+        err := editUsage(globals, project_dir, -version_usage)
         if err != nil {
             return err
         }

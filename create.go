@@ -56,8 +56,11 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
     defer rlock.Unlock(globals)
 
     project_dir := filepath.Join(globals.Registry, project)
-    if _, err = os.Stat(project_dir); !errors.Is(err, os.ErrNotExist) {
+    _, err = os.Stat(project_dir)
+    if err == nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("project %q already exists", project))
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
     }
 
     err = os.MkdirAll(project_dir, 0755)

@@ -107,11 +107,7 @@ func (pl* pathLocks) Unlock(path string) {
  * A shared lock guarantees that the contents of 'dir' will not be modified or deleted (with the exception of the project usage file) and no new files/directories will be added.
  * The guarantee only applies to the immediate children of 'dir' and is not recursive.
  *
- * The usage lock allows the function to read and write the project usage file.
- * It should only be acquired after a shared or exclusive lock is acquired on the directory, and released before that directory lock is released.
- * To avoid deadlocks, no attempt should be made to acquire another lock while holding a usage lock (but locks that have already been acquired are fine).
- * 
- * To enter an existing subdirectory, it is typically necessary to acquire a lock, to check whether or not the directory exists first.
+ * To enter an existing subdirectory, it is typically necessary to acquire a lock on it, to check whether or not the directory exists first.
  *
  * To modify the contents of a directory 'a/b/c', a shared lock should be acquired in each of 'a' and 'b', and an exclusive lock should be acquired on 'c'.
  * Alternatively, we could acquire an exclusive lock on 'b', in which case no lock on 'c' is necessary;
@@ -149,6 +145,29 @@ func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLo
     return &directoryLock{ LockFile: lockfile, Active: true }, nil
 }
 
+func (dlock *directoryLock) Unlock(globals *globalConfiguration) {
+    if dlock.Active {
+        globals.Locks.Unlock(dlock.LockFile)
+        dlock.Active = false
+    }
+}
+
+/* The usage lock is a special beast: it allows the function to read and write the project usage file.
+ * It should only be acquired after a shared or exclusive lock is acquired on the project directory, and released before that project directory lock is released.
+ * To avoid deadlocks, no attempt should be made to acquire another lock (e.g., the asset directory lock) while holding a usage lock.
+ * However, locks that have already been acquired are fine.
+ *
+ * The concept of the usage lock is based on the expectation that the order of deltas to the project usage is not important.
+ * All of uploadHandler(), deleteAssetHandler(), deleteProjectHandler() and rejectProbationHandler() will contribute edits to the usage.
+ * Contention for the usage lock means that the edits may be performed in a different order to the actual modifications on the filesystem,
+ * e.g., the usage may be momentarily negative if a newly uploaded version was deleted and the deletion's reduction in usage was processed before the upload's addition.
+ * This is acceptable as long as all edits are eventually processed to give the correct value. 
+ *
+ * The usage lock does not need to be acquired while holding the exclusive lock that was used to protect the filesystem modification.
+ * However, it assumes that the calculation of the usage delta is performed under the same exclusive lock as the modification.
+ * This ensures that the correct delta is applied to the project usage, even after an arbitrarily long period of contention for the usage lock.
+ * Otherwise, if the delta is computed outside of the exclusive lock, some other process could have altered the filesystem once the exclusive lock is released.
+ */
 func lockDirectoryWriteUsage(globals *globalConfiguration, dir string) (*directoryLock, error) {
     lockfile := filepath.Join(dir, "..LOCK_USAGE")
     err := globals.Locks.Lock(lockfile, 10 * time.Second, true)
@@ -156,11 +175,4 @@ func lockDirectoryWriteUsage(globals *globalConfiguration, dir string) (*directo
         return nil, err
     }
     return &directoryLock{ LockFile: lockfile, Active: true }, nil
-}
-
-func (dlock *directoryLock) Unlock(globals *globalConfiguration) {
-    if dlock.Active {
-        globals.Locks.Unlock(dlock.LockFile)
-        dlock.Active = false
-    }
 }
