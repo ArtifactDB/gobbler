@@ -25,6 +25,7 @@ func newPathLocks() pathLocks {
 }
 
 func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) error {
+    lockfile := filepath.Join(path, "..LOCK")
     var lock_mode int
     if exclusive { 
         lock_mode = syscall.LOCK_EX
@@ -62,7 +63,7 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
             }
 
             // Place an advisory lock across multiple gobbler processes. 
-            file, err := os.OpenFile(path, os.O_RDWR | os.O_CREATE, 0666)
+            file, err := os.OpenFile(lockfile, os.O_RDWR | os.O_CREATE, 0666)
             if err != nil { // Maybe we failed to write it because the handle was opened by some other process.
                 return true
             }
@@ -102,94 +103,49 @@ func (pl* pathLocks) Unlock(path string) {
     delete(pl.InUse, path)
 }
 
-/* A strong lock allows the process to read, delete, create, and modify files or subdirectories or their children within 'dir'.
+/* An exclusive lock allows the function to read, delete, create, and modify files or subdirectories or their children within 'dir'.
  *
- * A weak lock only guarantees that any existing subdirectories in 'dir' will not be deleted. 
+ * A shared lock guarantees that the contents of 'dir' will not be altered, i.e., no modified files, no new/deleted files or subdirectories.
  * The guarantee only applies to the immediate children of 'dir' and is not recursive.
  *
- * A promoted weak lock allows the process to read, create and modify files or subdirectories within 'dir'.
- * These permissions are not recursive.
+ * To modify the contents of a directory 'a/b/c', a shared lock should be acquired in each of 'a' and 'b', and an exclusive lock should be acquired on 'c'.
+ * Alternatively, we could acquire an exclusive lock on 'b', in which case no lock on 'c' is necessary;
+ * or an exclusive lock on 'a', in which case the locks on 'b' and 'c' are also unnecessary.
+ * The latter are more powerful but limit parallelism with other functions.
  *
- * - If we want to go inside a subdirectory, the process is a bit involved.
- *   First, we acquire a promoted lock on the directory, check if the subdirectory exists, and possibly create it if it doesn't.
- *   Then, we demote the promoted lock to a weak lock to free up other processes, and proceed to the subdirectory.
- *   Alternatively we can acquire a strong lock on the directory if we don't care about freeing up other processes.
- * - Only one "lineage" of locks should be acquired by a process at any given time,
- *   i.e., all locks held by that process should apply to directories that are children/parents of other locked directories.
- *   This ensures that multiple processes are only ever contending for a single lock at their "lowest common ancestor", to avoid deadlocks.
- * - If we want to modify subdirectories without acquiring a promoted lock on each one, we can just acquire a strong lock on the parent directory.
- *   This is because only strong locks apply recursively.
- * - If we realize that we wanted to modify a file in a directory, we can promote the directory's weak lock to a promoted lock.
- *   This should only be done if no other locks are held on any subdirectories, so as to avoid deadlocks.
- *   Also keep in mind that the promotion may be contended, so a process's modification may occur after other modifications on the same file.
+ * Only one "lineage" of locks should be acquired by a function at any given time,
+ * i.e., all locks held by that process should apply to directories that are children/parents of other locked directories.
+ * Moreover, a lock should be acquired on each parent directory before attempting to acquire a lock on a subdirectory.
+ * This ensures that multiple processes are only ever contending for a single lock at their "lowest common ancestor", to avoid deadlocks.
+ *
+ * The above rules imply that, when promoting a lock from shared to exclusive, all locks on subdirectories should be released.
  */
 
-type directoryLock struct {
+type directoryLock {
     Globals *globalConfiguration
     Dir string
+    Exclusive bool
     Active bool
-    Promoted bool
 }
 
-func lockDirectoryWeak(globals *globalConfiguration, dir string) (*directoryLock, error) {
-    path := filepath.Join(dir, "..LOCK")
-    err := globals.Locks.Lock(path, 10 * time.Second, false)
+func lockDirectoryExclusive(globals *globalConfiguration, dir string) (*directoryLock, error) {
+    err := globals.Locks.Lock(dir, 10 * time.Second, true)
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Active: true, Promoted: false }, nil
+    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: true, Active: true }
 }
 
-func lockDirectoryStrong(globals *globalConfiguration, dir string) (*directoryLock, error) {
-    path := filepath.Join(dir, "..LOCK")
-    err := globals.Locks.Lock(path, 10 * time.Second, true)
+func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLock, error) {
+    err := globals.Locks.Lock(dir, 10 * time.Second, false)
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Active: true, Promoted: false }, nil
-}
-
-func lockDirectoryPromoted(globals *globalConfiguration, dir string) (*directoryLock, error) {
-    dlock, err := lockDirectoryWeak(globals, dir)
-    if err != nil {
-        return nil, err
-    }
-    err = dlock.Promote()
-    if err != nil {
-        return nil, err
-    }
-    return dlock, nil
-}
-
-func (dlock *directoryLock) Promote() error {
-    path := filepath.Join(dlock.Dir, "..LOCK_EXTRA")
-    err := dlock.Globals.Locks.Lock(path, 10 * time.Second, true)
-    if err != nil {
-        return err
-    }
-    dlock.Promoted = true
-    return nil
-}
-
-func (dlock *directoryLock) Demote() {
-    if !dlock.Promoted {
-        return
-    }
-    path := filepath.Join(dlock.Dir, "..LOCK_EXTRA")
-    dlock.Globals.Locks.Unlock(path)
-    dlock.Promoted = false
-    return
+    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: false, Active: true }
 }
 
 func (dlock *directoryLock) Unlock() {
-    if !dlock.Active {
-        return
+    if dlock.Active {
+        dlock.Globals.Locks.Unlock(dir)
     }
-    if dlock.Promoted {
-        dlock.Demote()
-    }
-    path := filepath.Join(dlock.Dir, "..LOCK")
-    dlock.Globals.Locks.Unlock(path)
-    dlock.Active = false
-    return
 }

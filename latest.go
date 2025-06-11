@@ -117,7 +117,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         }
     }
 
-    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -128,9 +128,8 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
-    rlock.Demote()
 
-    plock, err := lockDirectoryPromoted(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -141,9 +140,8 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return nil, err
     }
-    plock.Demote()
 
-    alock, err := lockDirectoryStrong(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }

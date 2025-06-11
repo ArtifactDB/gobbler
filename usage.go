@@ -131,7 +131,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
-    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -142,9 +142,8 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
-    rlock.Demote()
 
-    plock, err := lockDirectoryStrong(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }

@@ -49,7 +49,7 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
         return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name; %w", err))
     }
 
-    rlock, err := lockDirectoryStrong(globals, globals.Registry)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }

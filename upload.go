@@ -108,7 +108,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     req_user := request.User
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
-    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -119,9 +119,9 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
-    rlock.Demote()
 
-    plock, err := lockDirectoryPromoted(globals, project_dir)
+    // Acquiring an exclusive lock to simplify management of the asset directory creation and asset-level permissions.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -134,8 +134,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     asset := *(request.Asset)
     asset_dir := filepath.Join(project_dir, asset)
+    asset_exists := false
     _, err = os.Stat(asset_dir)
-    asset_exists := !(err != nil && errors.Is(err, os.ErrNotExist))
+    if err == nil {
+        asset_exists = true
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
+    }
 
     use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
     if !use_global_write {
@@ -154,16 +159,24 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if !asset_exists {
-        // Pushing this inside a closure so that the promoted lock is released as soon as the directory is created;
-        // this frees up the project for further creation of new asset directories.
         err = os.Mkdir(asset_dir, 0755)
         if err != nil {
             return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
         }
     }
-    plock.Demote()
 
-    alock, err := lockDirectoryStrong(globals, asset_dir)
+    // Demoting project-level lock to improve parallelism.
+    // This requires a check that the asset directory still exists.
+    plock.Unlock()
+    plock2, err = lockDirectoryShared(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
+    }
+    if _, err := os.Stat(asset_dir); err != nil {
+        return fmt.Errorf("asset directory %q no longer exists; %w", project_dir, err)
+    }
+
+    alock, err := lockDirectoryExclusive(globals, asset_dir)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }

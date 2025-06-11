@@ -38,7 +38,7 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    rlock, err := lockDirectoryStrong(globals, globals.Registry)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
@@ -103,7 +103,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -113,9 +113,8 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    rlock.Demote()
 
-    plock, err := lockDirectoryStrong(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -126,7 +125,6 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         return nil
     }
 
-    // Now performing the deletion, adjusting for the total usage afterwards.
     asset_usage, asset_usage_err := computeAssetUsage(asset_dir)
     if asset_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %s; %v", asset_dir, asset_usage_err)
@@ -207,7 +205,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryPromoted(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -217,9 +215,10 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(project_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    rlock.Demote()
 
-    plock, err := lockDirectoryPromoted(globals, project_dir)
+    // Technically, we could acquire a shared lock here, and then promote it to an exclusive lock when editing the project usage.
+    // However, to avoid having to reason about lock reacquisition, we will just acquire an exclusive lock up-front. 
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -229,13 +228,6 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
         return nil
     }
-    plock.Demote()
-
-    alock, err := lockDirectoryStrong(globals, asset_dir)
-    if err != nil {
-        return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
-    }
-    defer alock.Unlock()
 
     version_dir := filepath.Join(asset_dir, *(incoming.Version))
     if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
@@ -288,24 +280,11 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if version_usage_err == nil {
-        // Release the asset directory lock before attempting promotion, to avoid deadlock.
-        alock.Unlock()
-        err := plock.Promote()
-        if err != nil {
-            return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
-        }
-
         project_usage, err := readUsage(project_dir)
         if err != nil {
             return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
         }
 
-        // Allow usage to be temporarily negative, to accommodate contention with the uploadHandler().
-        // This needs to be considered as there is a small gap where the asset lock is released but the promoted project lock has not been acquired.
-        // In such cases, uploadHandler() might have finished the transfer but is stuck contending for the promoted project lock.
-        // At the same time, deleteAssetHandler() might have deleted the just-uploaded version directory and acquired the promoted lock.
-        // Then, we would attempt to subtract the version's usage that hasn't been added yet, resulting in a negative usage.
-        // This is auto-correcting as the uploadHandler() will eventually add the same usage back once it acquires its lock.
         project_usage.Total -= version_usage
 
         err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
