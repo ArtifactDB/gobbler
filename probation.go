@@ -267,7 +267,7 @@ func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project
 func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_dir string, asset_dir string, expiry time.Duration) []error {
     // Re-acquiring the project-level lock for each asset, to give other processes a chance to contend and sneak in operations.
     // Otherwise there would just be a big block of time where a promoted lock is held during the scan of a project's contents.
-    // We need an exclusive lock so that the usage file can be updated inside the loop below.
+    // We need an exclusive lock so that the usage file can be updated by the rejectProbation() call inside the loop below.
     plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }

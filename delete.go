@@ -216,108 +216,83 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         return nil
     }
 
-    var version_usage int64
-    var version_usage_err error
-    err = func() error {
-        // First we acquire an exclusive lock of the asset to delete the version.
-        plock, err := lockDirectoryShared(globals, project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
-        }
-        defer plock.Unlock()
-
-        asset_dir := filepath.Join(project_dir, *(incoming.Asset))
-        if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
-            return nil
-        }
-
-        alock, err := lockDirectoryShared(globals, asset_dir)
-        if err != nil {
-            return fmt.Errorf("failed to lock asset directory %q; %w", project_dir, err)
-        }
-        defer alock.Unlock()
-
-        version_dir := filepath.Join(asset_dir, *(incoming.Version))
-        if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
-            return nil
-        }
-
-        version_usage, version_usage_err = computeVersionUsage(version_dir)
-        if version_usage_err != nil && !force_deletion {
-            return fmt.Errorf("failed to compute usage for %s; %v", version_dir, version_usage_err)
-        }
-
-        summ, summ_err := readSummary(version_dir)
-        if summ_err != nil && !force_deletion {
-            return fmt.Errorf("failed to read summary for %s; %v", version_dir, summ_err)
-        }
-
-        err = os.RemoveAll(version_dir)
-        if err != nil {
-            return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
-        }
-
-        if summ_err == nil && (summ.OnProbation == nil || !(*summ.OnProbation)) {
-            // Only need to make a log if the version is non-probational.
-            prev, err := readLatest(asset_dir)
-            was_latest := false
-            if err == nil {
-                was_latest = (prev.Version == *(incoming.Version))
-            } else if !errors.Is(err, os.ErrNotExist) {
-                return fmt.Errorf("failed to read the latest version for %s; %v", asset_dir, err)
-            }
-
-            payload := map[string]interface{} { 
-                "type": "delete-version", 
-                "project": *(incoming.Project),
-                "asset": *(incoming.Asset),
-                "version": *(incoming.Version),
-                "latest": was_latest,
-            }
-
-            err = dumpLog(globals.Registry, &payload)
-            if err != nil {
-                return fmt.Errorf("failed to create log for version deletion; %w", err)
-            }
-
-            // Also refreshing the latest version.
-            _, latest_err := refreshLatest(asset_dir)
-            if latest_err != nil && !force_deletion {
-                return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, latest_err)
-            }
-        }
-
-        return nil
-    }()
+    // Yes, the choice of an exclusive lock is deliberate here as we need to edit the project usage.
+    // If we acquire a shared lock here, and then try to reacquire an exclusive lock when editing the usage file,
+    // we could end up in a race with the rejectProbationHandler when it also tries to edit the usage file. 
+    // The rejectProbationHandler could subtract the rejected version's usage while the deleteAssetHandler is waiting to reacquire the lock;
+    // once the latter acquires the lock, it would incorrectly repeat that deletion.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
-        return err
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+    }
+    defer plock.Unlock()
+
+    asset_dir := filepath.Join(project_dir, *(incoming.Asset))
+    if _, err := os.Stat(asset_dir); errors.Is(err, os.ErrNotExist) {
+        return nil
+    }
+
+    version_dir := filepath.Join(asset_dir, *(incoming.Version))
+    if _, err := os.Stat(version_dir); errors.Is(err, os.ErrNotExist) {
+        return nil
+    }
+
+    version_usage, version_usage_err := computeVersionUsage(version_dir)
+    if version_usage_err != nil && !force_deletion {
+        return fmt.Errorf("failed to compute usage for %s; %v", version_dir, version_usage_err)
+    }
+
+    summ, summ_err := readSummary(version_dir)
+    if summ_err != nil && !force_deletion {
+        return fmt.Errorf("failed to read summary for %s; %v", version_dir, summ_err)
+    }
+
+    err = os.RemoveAll(version_dir)
+    if err != nil {
+        return fmt.Errorf("failed to delete %s; %v", asset_dir, err)
+    }
+
+    if summ_err == nil && (summ.OnProbation == nil || !(*summ.OnProbation)) {
+        // Only need to make a log if the version is non-probational.
+        prev, err := readLatest(asset_dir)
+        was_latest := false
+        if err == nil {
+            was_latest = (prev.Version == *(incoming.Version))
+        } else if !errors.Is(err, os.ErrNotExist) {
+            return fmt.Errorf("failed to read the latest version for %s; %v", asset_dir, err)
+        }
+
+        payload := map[string]interface{} { 
+            "type": "delete-version", 
+            "project": *(incoming.Project),
+            "asset": *(incoming.Asset),
+            "version": *(incoming.Version),
+            "latest": was_latest,
+        }
+
+        err = dumpLog(globals.Registry, &payload)
+        if err != nil {
+            return fmt.Errorf("failed to create log for version deletion; %w", err)
+        }
+
+        // Also refreshing the latest version.
+        _, latest_err := refreshLatest(asset_dir)
+        if latest_err != nil && !force_deletion {
+            return fmt.Errorf("failed to update the latest version for %s; %v", asset_dir, latest_err)
+        }
     }
 
     if version_usage_err == nil {
-        err := func() error {
-            // Then we promote the shared lock to an exclusive lock and edit the project-level usage.
-            plock, err := lockDirectoryExclusive(globals, project_dir)
-            if err != nil {
-                return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
-            }
-            defer plock.Unlock()
-
-            project_usage, err := readUsage(project_dir)
-            if err != nil {
-                return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
-            }
-
-            project_usage.Total -= version_usage
-
-            err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
-            if err != nil {
-                return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
-            }
-
-            return nil
-        }()
+        project_usage, err := readUsage(project_dir)
         if err != nil {
-            return err
+            return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
+        }
+
+        project_usage.Total -= version_usage
+
+        err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
+        if err != nil {
+            return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
         }
     }
 
