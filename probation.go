@@ -27,10 +27,8 @@ func rejectProbation(project_dir, version_dir string, force_deletion bool) error
             return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
         }
 
+        // Allow usage to be temporarily negative, in case we are rejecting probation of a version that just got uploaded.
         project_usage.Total -= version_usage
-        if project_usage.Total < 0 { // just in case.
-            project_usage.Total = 0
-        }
 
         usage_path := filepath.Join(project_dir, usageFileName)
         err = dumpJson(usage_path, &project_usage)

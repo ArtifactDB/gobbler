@@ -300,10 +300,14 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
             return fmt.Errorf("failed to read usage for %s; %v", project_dir, err)
         }
 
+        // Allow usage to be temporarily negative, to accommodate contention with the uploadHandler().
+        // This needs to be considered as there is a small gap where the asset lock is released but the promoted project lock has not been acquired.
+        // In such cases, uploadHandler() might have finished the transfer but is stuck contending for the promoted project lock.
+        // At the same time, deleteAssetHandler() might have deleted the just-uploaded version directory and acquired the promoted lock.
+        // Then, we would attempt to subtract the version's usage that hasn't been added yet, resulting in a negative usage.
+        // This is auto-correcting as the uploadHandler() will eventually add the same usage back once it acquires its lock.
         project_usage.Total -= version_usage
-        if project_usage.Total < 0 {
-            project_usage.Total = 0
-        }
+
         err = dumpJson(filepath.Join(project_dir, usageFileName), &project_usage)
         if err != nil {
             return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)

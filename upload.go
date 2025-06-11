@@ -216,8 +216,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
-    // Writing out the various pieces of metadata. This should be, in theory,
-    // the 'no-throw' section as no user-supplied values are involved here.
+    // Writing out the various pieces of metadata. This should be, in theory, the 'no-throw' section as no user-supplied values are involved here.
     upload_finish := time.Now()
     {
         summary := summaryMetadata {
@@ -237,10 +236,9 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if !on_probation {
-        // Doing this as late as possible to reduce the chances of an error
-        // triggering an abort _after_ the latest version has been updated.
-        // I suppose we could try to reset to the previous value; but if the
-        // writes failed there's no guarantee that a reset would work either.
+        // Doing this as late as possible to reduce the chances of an error triggering an abort _after_ the latest version has been updated.
+        // I suppose we could try to reset to the previous value; but if the writes failed there's no guarantee that a reset would work either.
+        // Note that we can't do this write after the usage update as that requires us to release the asset lock.
         latest := latestMetadata { Version: version }
         latest_path := filepath.Join(asset_dir, latestFileName)
         err := dumpJson(latest_path, &latest)
@@ -269,11 +267,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
 
         // Release the asset lock before promoting the project lock to avoid deadlocks.
-        // Technically, this is not quite safe as another process could acquire the free asset lock, delete the just-added version and update the usage, before the project lock is promoted.
-        // Then, our addition of the usage would be incorrect as the version directory no longer exists.
-        // However, that kind of discrepancy should be pretty rare, and it's harmless and easy to fix by just refreshing the usage, so whatever.
+        // There is a small window where the just-uploaded version could be deleted by deleteAssetHandler() or rejectProbationHandler() before we get to add the usage.
+        // This should result in a usage deficit that will be corrected once we eventually add the usage back.
         alock.Unlock()
-        plock.Promote()
+        err = plock.Promote()
+        if err != nil {
+            return fmt.Errorf("failed to promote the lock on the project directory %q; %w", project_dir, err)
+        }
 
         usage, err := readUsage(project_dir)
         if err != nil {
@@ -281,8 +281,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
         usage.Total += extra
 
-        // Try to do this write later to reduce the chance of an error
-        // triggering an abort after the usage total has been updated.
         usage_path := filepath.Join(project_dir, usageFileName)
         err = dumpJson(usage_path, &usage)
         if err != nil {
