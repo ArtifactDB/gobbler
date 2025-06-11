@@ -316,7 +316,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {

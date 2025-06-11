@@ -10,7 +10,7 @@ import (
     "net/http"
 )
 
-func rejectProbation(project_dir, version_dir string, force_deletion bool) error {
+func rejectProbation(globals *globalConfiguration, project_dir, version_dir string, force_deletion bool) error {
     version_usage, version_usage_err := computeVersionUsage(version_dir)
     if version_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %q; %w", version_dir, version_usage_err)
@@ -22,19 +22,9 @@ func rejectProbation(project_dir, version_dir string, force_deletion bool) error
     }
 
     if version_usage_err == nil {
-        project_usage, err := readUsage(project_dir)
+        err := adjustUsage(globals, project_dir, -version_usage)
         if err != nil {
-            return fmt.Errorf("failed to read the usage statistics for %q; %w", project_dir, err)
-        }
-
-        // This function assumes that an exclusive project-level lock has been acquired.
-        // So, it should be impossible for the running usage to be temporarily negative.
-        project_usage.Total -= version_usage
-
-        usage_path := filepath.Join(project_dir, usageFileName)
-        err = dumpJson(usage_path, &project_usage)
-        if err != nil {
-            return fmt.Errorf("failed to update project usage at %q; %w", usage_path, err)
+            return err
         }
     }
 
@@ -84,7 +74,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
@@ -92,18 +82,11 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return err
     }
 
-    var plock *directoryLock
-    var plock_err error
-    if approve  {
-        plock, plock_err = lockDirectoryShared(globals, project_dir)
-    } else {
-        // If we're rejecting, we need an exclusive lock to update the usage. 
-        plock, plock_err = lockDirectoryExclusive(globals, project_dir)
-    }
-    if plock_err != nil {
+    plock, err := lockDirectoryShared(globals, project_dir)
+    if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer plock.Unlock()
+    defer plock.Unlock(globals)
 
     existing, err := readPermissions(project_dir)
     if err != nil {
@@ -123,7 +106,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
-    defer alock.Unlock()
+    defer alock.Unlock(globals)
 
     version := *(incoming.Version)
     version_dir := filepath.Join(asset_dir, version)
@@ -196,7 +179,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
 
     } else {
         force_deletion := incoming.Force != nil && *(incoming.Force)
-        err = rejectProbation(project_dir, version_dir, force_deletion)
+        err = rejectProbation(globals, project_dir, version_dir, force_deletion)
         if err != nil {
             return err
         }
@@ -218,7 +201,7 @@ func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Durat
     if err != nil {
         return []error{ fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err) }
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     projects, err := listUserDirectories(globals.Registry)
     if err != nil {
@@ -236,77 +219,47 @@ func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Durat
 }
 
 func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project_dir string, expiry time.Duration) []error {
-    assets, err := func() ([]string, error) {
-        // We only lock here to safely obtain the list of assets; we will be reacquiring the lock inside the loop.
-        plock, err := lockDirectoryShared(globals, project_dir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
-        }
-        defer plock.Unlock()
-
-        assets, err := listUserDirectories(project_dir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to list assets in project directory %q; %w", project_dir, err)
-        }
-        return assets, nil
-    }()
+    plock, err := lockDirectoryShared(globals, project_dir)
     if err != nil {
-        return []error{ err }
+        return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
+    }
+    defer plock.Unlock(globals)
+
+    assets, err := listUserDirectories(project_dir)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to list assets in project directory %q; %w", project_dir, err) }
     }
 
     all_errors := []error{}
     for _, asset := range assets {
         asset_dir := filepath.Join(project_dir, asset)
-        cur_errors := purgeOldProbationalVersionsForAsset(globals, project_dir, asset_dir, expiry)
-        all_errors = append(all_errors, cur_errors...)
-    }
-
-    return all_errors
-}
-
-func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_dir string, asset_dir string, expiry time.Duration) []error {
-    // Re-acquiring the project-level lock for each asset, to give other processes a chance to contend and sneak in operations.
-    // Otherwise there would just be a big block of time where a promoted lock is held during the scan of a project's contents.
-    // We need an exclusive lock so that the usage file can be updated by the rejectProbation() call inside the loop below.
-    plock, err := lockDirectoryExclusive(globals, project_dir)
-    if err != nil {
-        return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
-    }
-    defer plock.Unlock()
-
-    // As a result of the reacquisition, we need to check that the asset directory actually still exists, and quit if it doesn't.
-    // This is because something could have deleted it in between the listUserDirectories() call and the reacquisition of the lock.
-    if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
-        return []error{}
-    }
-
-    versions, err := listUserDirectories(asset_dir)
-    if err != nil {
-        return []error{ fmt.Errorf("failed to list versions in asset directory %q; %w", asset_dir, err) }
-    }
-
-    all_errors := []error{}
-    for _, version := range versions {
-        version_dir := filepath.Join(asset_dir, version)
-        summ, err := readSummary(version_dir)
+        versions, err := listUserDirectories(asset_dir)
         if err != nil {
-            all_errors = append(all_errors, fmt.Errorf("failed to open summary file at %s; %w", version_dir, err))
-            continue
-        }
-        if summ.OnProbation == nil || !*(summ.OnProbation) {
-            continue
+            return []error{ fmt.Errorf("failed to list versions in asset directory %q; %w", asset_dir, err) }
         }
 
-        as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
-        if err != nil {
-            all_errors = append(all_errors, fmt.Errorf("failed to open parse upload time for summary file at %s; %w", version_dir, err))
-            continue
-        }
-
-        if time.Now().Sub(as_time) > expiry {
-            err := rejectProbation(project_dir, version_dir, false)
+        for _, version := range versions {
+            version_dir := filepath.Join(asset_dir, version)
+            summ, err := readSummary(version_dir)
             if err != nil {
-                all_errors = append(all_errors, err)
+                all_errors = append(all_errors, fmt.Errorf("failed to open summary file at %s; %w", version_dir, err))
+                continue
+            }
+            if summ.OnProbation == nil || !*(summ.OnProbation) {
+                continue
+            }
+
+            as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+            if err != nil {
+                all_errors = append(all_errors, fmt.Errorf("failed to open parse upload time for summary file at %s; %w", version_dir, err))
+                continue
+            }
+
+            if time.Now().Sub(as_time) > expiry {
+                err := rejectProbation(globals, project_dir, version_dir, false)
+                if err != nil {
+                    all_errors = append(all_errors, err)
+                }
             }
         }
     }

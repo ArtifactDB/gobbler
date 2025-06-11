@@ -121,7 +121,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
@@ -133,7 +133,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer plock.Unlock()
+    defer plock.Unlock(globals)
 
     asset := *(incoming.Asset)
     asset_dir := filepath.Join(project_dir, asset)
@@ -145,7 +145,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
     if err != nil {
         return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
-    defer alock.Unlock()
+    defer alock.Unlock(globals)
 
     output, err := refreshLatest(asset_dir)
     return output, err

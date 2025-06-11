@@ -237,7 +237,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
@@ -245,18 +245,19 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
+    // Holding an exclusive lock as we may need to create an asset directory.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
+    }
+    defer plock.Unlock(globals)
+
+    project_perms, err := readPermissions(project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read permissions for %q; %w", project, err)
+    }
+
     if incoming.Asset == nil {
-        plock, err := lockDirectoryExclusive(globals, project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
-        }
-        defer plock.Unlock()
-
-        project_perms, err := readPermissions(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read permissions for %q; %w", project, err)
-        }
-
         if !isAuthorizedToMaintain(source_user, globals.Administrators, project_perms.Owners) {
             return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for %q", source_user, project))
         }
@@ -282,64 +283,27 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         }
 
     } else {
-        plock, err := lockDirectoryShared(globals, project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
-        }
-        defer plock.Unlock()
-
-        project_perms, err := readPermissions(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read permissions for %q; %w", project, err)
-        }
-
         asset := *(incoming.Asset)
         asset_dir := filepath.Join(project_dir, asset)
-        asset_perms := &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
+        var asset_perms *permissionsMetadata
+
         asset_perm_path := filepath.Join(asset_dir, permissionsFileName)
-
-        _, err = os.Stat(asset_dir)
+        _, err := os.Stat(asset_perm_path)
         if err == nil {
-            alock, err := lockDirectoryExclusive(globals, asset_dir)
+            existing, err := readPermissions(asset_dir)
             if err != nil {
-                return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+                return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
             }
-            defer alock.Unlock()
-
-            _, err = os.Stat(asset_perm_path)
-            if err == nil {
-                existing, err := readPermissions(asset_dir)
-                if err != nil {
-                    return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
-                }
-                asset_perms = existing
-            } else if !errors.Is(err, os.ErrNotExist) {
-                return fmt.Errorf("failed to stat asset permissions in %q; %w", asset_dir, err)
-            }
-
-            combined_owners := append(project_perms.Owners, (asset_perms.Owners)...)
-            if !isAuthorizedToMaintain(source_user, globals.Administrators, combined_owners) {
-                return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for asset %q in %q", source_user, asset, project))
-            }
-
+            asset_perms = existing
         } else if errors.Is(err, os.ErrNotExist) {
-            if !isAuthorizedToMaintain(source_user, globals.Administrators, project_perms.Owners) {
-                return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for asset %q in %q", source_user, asset, project))
-            }
-
-            err = os.Mkdir(asset_dir, 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
-            }
-
-            alock, err := lockDirectoryExclusive(globals, asset_dir)
-            if err != nil {
-                return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
-            }
-            defer alock.Unlock()
-
+            asset_perms = &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
         } else {
-            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
+            return fmt.Errorf("failed to stat asset permissions in %q; %w", asset_dir, err)
+        }
+
+        combined_owners := append(project_perms.Owners, (asset_perms.Owners)...)
+        if !isAuthorizedToMaintain(source_user, globals.Administrators, combined_owners) {
+            return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify permissions for asset %q in %q", source_user, asset, project))
         }
 
         if incoming.Permissions.Owners != nil {
@@ -354,6 +318,15 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
                 san[i].Asset = nil
             }
             asset_perms.Uploaders = san
+        }
+
+        if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
+            err = os.Mkdir(asset_dir, 0755)
+            if err != nil {
+                return fmt.Errorf("failed to create new asset directory %q; %w", asset_dir, err)
+            }
+        } else if err != nil {
+            return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
         }
 
         err = dumpJson(asset_perm_path, asset_perms)

@@ -25,7 +25,6 @@ func newPathLocks() pathLocks {
 }
 
 func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) error {
-    lockfile := filepath.Join(path, "..LOCK")
     var lock_mode int
     if exclusive { 
         lock_mode = syscall.LOCK_EX
@@ -63,7 +62,7 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
             }
 
             // Place an advisory lock across multiple gobbler processes. 
-            file, err := os.OpenFile(lockfile, os.O_RDWR | os.O_CREATE, 0666)
+            file, err := os.OpenFile(path, os.O_RDWR | os.O_CREATE, 0666)
             if err != nil { // Maybe we failed to write it because the handle was opened by some other process.
                 return true
             }
@@ -105,8 +104,14 @@ func (pl* pathLocks) Unlock(path string) {
 
 /* An exclusive lock allows the function to read, delete, create, and modify files or subdirectories or their children within 'dir'.
  *
- * A shared lock guarantees that the contents of 'dir' will not be altered, i.e., no modified files, no new/deleted files or subdirectories.
+ * A shared lock guarantees that the contents of 'dir' will not be modified or deleted (with the exception of the project usage file) and no new files/directories will be added.
  * The guarantee only applies to the immediate children of 'dir' and is not recursive.
+ *
+ * The usage lock allows the function to read and write the project usage file.
+ * It should only be acquired after a shared or exclusive lock is acquired on the directory, and released before that directory lock is released.
+ * To avoid deadlocks, no attempt should be made to acquire another lock while holding a usage lock (but locks that have already been acquired are fine).
+ * 
+ * To enter an existing subdirectory, it is typically necessary to acquire a lock, to check whether or not the directory exists first.
  *
  * To modify the contents of a directory 'a/b/c', a shared lock should be acquired in each of 'a' and 'b', and an exclusive lock should be acquired on 'c'.
  * Alternatively, we could acquire an exclusive lock on 'b', in which case no lock on 'c' is necessary;
@@ -118,34 +123,44 @@ func (pl* pathLocks) Unlock(path string) {
  * Moreover, a lock should be acquired on each parent directory before attempting to acquire a lock on a subdirectory.
  * This ensures that multiple processes are only ever contending for a single lock at their "lowest common ancestor", to avoid deadlocks.
  *
- * The above rules imply that, when promoting a lock from shared to exclusive, all locks on subdirectories should be released.
+ * The above rules imply that, when switching a lock from shared to exclusive or vice versa, all locks on subdirectories should be released.
  */
 
 type directoryLock struct {
-    Globals *globalConfiguration
-    Dir string
-    Exclusive bool
+    LockFile string
     Active bool
 }
 
 func lockDirectoryExclusive(globals *globalConfiguration, dir string) (*directoryLock, error) {
-    err := globals.Locks.Lock(dir, 10 * time.Second, true)
+    lockfile := filepath.Join(dir, "..LOCK")
+    err := globals.Locks.Lock(lockfile, 10 * time.Second, true)
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: true, Active: true }, nil
+    return &directoryLock{ LockFile: lockfile, Active: true }, nil
 }
 
 func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLock, error) {
-    err := globals.Locks.Lock(dir, 10 * time.Second, false)
+    lockfile := filepath.Join(dir, "..LOCK")
+    err := globals.Locks.Lock(lockfile, 10 * time.Second, false)
     if err != nil {
         return nil, err
     }
-    return &directoryLock{ Globals: globals, Dir: dir, Exclusive: false, Active: true }, nil
+    return &directoryLock{ LockFile: lockfile, Active: true }, nil
 }
 
-func (dlock *directoryLock) Unlock() {
+func lockDirectoryWriteUsage(globals *globalConfiguration, dir string) (*directoryLock, error) {
+    lockfile := filepath.Join(dir, "..LOCK_USAGE")
+    err := globals.Locks.Lock(lockfile, 10 * time.Second, true)
+    if err != nil {
+        return nil, err
+    }
+    return &directoryLock{ LockFile: lockfile, Active: true }, nil
+}
+
+func (dlock *directoryLock) Unlock(globals *globalConfiguration) {
     if dlock.Active {
-        dlock.Globals.Locks.Unlock(dlock.Dir)
+        globals.Locks.Unlock(dlock.LockFile)
+        dlock.Active = false
     }
 }

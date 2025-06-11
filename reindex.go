@@ -74,7 +74,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", globals.Registry, err)
     }
-    defer rlock.Unlock()
+    defer rlock.Unlock(globals)
 
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
     project := *(request.Project)
@@ -87,7 +87,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer plock.Unlock()
+    defer plock.Unlock(globals)
 
     perms, err := readPermissions(project_dir)
     if err != nil {
@@ -109,7 +109,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", asset_dir, err)
     }
-    defer alock.Unlock()
+    defer alock.Unlock(globals)
 
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)
