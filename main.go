@@ -72,7 +72,11 @@ func main() {
     }
 
     log_dir := filepath.Join(globals.Registry, logDirName)
-    if _, err := os.Stat(log_dir); errors.Is(err, os.ErrNotExist) {
+    _, err := os.Stat(log_dir)
+    if err != nil {
+        if !errors.Is(err, os.ErrNotExist) {
+            log.Fatal("failed to stat the log subdirectory; ", err)
+        }
         err := os.Mkdir(log_dir, 0755)
         if err != nil {
             log.Fatal("failed to create a log subdirectory; ", err)

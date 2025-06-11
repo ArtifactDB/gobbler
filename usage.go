@@ -5,7 +5,6 @@ import (
     "encoding/json"
     "fmt"
     "path/filepath"
-    "time"
     "net/http"
 )
 
@@ -102,6 +101,28 @@ func computeVersionUsage(path string) (int64, error) {
     return total, err
 }
 
+func editUsage(globals *globalConfiguration, project_dir string, val int64) error {
+    ulock, err := lockDirectoryWriteUsage(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to lock usage file in %q; %w", project_dir, err)
+    }
+    defer ulock.Unlock(globals)
+
+    usage, err := readUsage(project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to read existing usage for %q; %w", project_dir, err)
+    }
+    usage.Total += val
+
+    usage_path := filepath.Join(project_dir, usageFileName)
+    err = dumpJson(usage_path, &usage)
+    if err != nil {
+        return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
+    }
+
+    return nil
+}
+
 func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMetadata, error) {
     source_user, err := identifyUser(reqpath)
     if err != nil {
@@ -132,17 +153,23 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer plock.Unlock(globals)
 
     new_usage, err := computeProjectUsage(project_dir)
     if err != nil {

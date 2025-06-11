@@ -233,17 +233,26 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    // If Asset is provided, we could consider holding a shared lock to improve parallelism.
+    // However, this gets complicated if the asset directory does not exist, in which case we need to reacquire an exclusive lock to create the directory.
+    // It's just simpler to hold an exclusive lock to start with, the handler should finish up pretty quickly so any contention is limited.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
-        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+        return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer plock.Unlock(globals)
 
     project_perms, err := readPermissions(project_dir)
     if err != nil {
@@ -278,17 +287,20 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     } else {
         asset := *(incoming.Asset)
         asset_dir := filepath.Join(project_dir, asset)
-
         var asset_perms *permissionsMetadata
-        perm_path := filepath.Join(asset_dir, permissionsFileName)
-        if _, err = os.Stat(perm_path); err != nil && errors.Is(err, os.ErrNotExist) {
-            asset_perms = &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
-        } else {
+
+        asset_perm_path := filepath.Join(asset_dir, permissionsFileName)
+        _, err := os.Stat(asset_perm_path)
+        if err == nil {
             existing, err := readPermissions(asset_dir)
             if err != nil {
                 return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
             }
             asset_perms = existing
+        } else if errors.Is(err, os.ErrNotExist) {
+            asset_perms = &permissionsMetadata{ Owners: []string{}, Uploaders: []uploaderEntry{} }
+        } else {
+            return fmt.Errorf("failed to stat asset permissions in %q; %w", asset_dir, err)
         }
 
         combined_owners := append(project_perms.Owners, (asset_perms.Owners)...)
@@ -310,13 +322,19 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
             asset_perms.Uploaders = san
         }
 
-        if _, err := os.Stat(asset_dir); err != nil && errors.Is(err, os.ErrNotExist) {
-            err = os.Mkdir(asset_dir, 0755)
-            if err != nil {
-                return fmt.Errorf("failed to create new asset directory at %q; %w", asset_dir, err)
+        _, err = os.Stat(asset_dir)
+        if err != nil {
+            if errors.Is(err, os.ErrNotExist) {
+                err := os.Mkdir(asset_dir, 0755)
+                if err != nil {
+                    return fmt.Errorf("failed to create new asset directory %q; %w", asset_dir, err)
+                }
+            } else {
+                return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
             }
         }
-        err = dumpJson(perm_path, asset_perms)
+
+        err = dumpJson(asset_perm_path, asset_perms)
         if err != nil {
             return fmt.Errorf("failed to write asset-level permissions for %q; %w", asset_dir, err)
         }

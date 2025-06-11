@@ -49,16 +49,18 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
         return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name; %w", err))
     }
 
-    // Locking the entire registry to avoid confusion from concurrent additions of the same project.
-    err = lockRegistry(globals, 10 * time.Second)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
     if err != nil {
-        return fmt.Errorf("failed to acquire the lock on the registry; %w", err)
+        return fmt.Errorf("failed to lock the registry; %w", err)
     }
-    defer unlockRegistry(globals)
+    defer rlock.Unlock(globals)
 
     project_dir := filepath.Join(globals.Registry, project)
-    if _, err = os.Stat(project_dir); !errors.Is(err, os.ErrNotExist) {
+    _, err = os.Stat(project_dir)
+    if err == nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("project %q already exists", project))
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
     }
 
     err = os.MkdirAll(project_dir, 0755)

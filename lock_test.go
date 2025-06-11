@@ -6,13 +6,15 @@ import (
     "strings"
     "os"
     "sync"
+    "path/filepath"
 )
 
 func TestLock(t *testing.T) {
-    path, err := os.MkdirTemp("", "")
+    dir, err := os.MkdirTemp("", "")
     if err != nil {
         t.Fatalf("failed to create a mock directory; %v", err)
     }
+    path := filepath.Join(dir, "..LOCK")
 
     t.Run("exclusive", func(t *testing.T) {
         pl := newPathLocks()

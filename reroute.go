@@ -6,7 +6,6 @@ import (
     "encoding/json"
     "path/filepath"
     "net/http"
-    "time"
 )
 
 type deleteTask struct {
@@ -313,11 +312,11 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     }
 
     // Obtaining an all-of-registry lock before we identify the rerouting actions.
-    err = lockRegistry(globals, 10 * time.Second)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
-    defer unlockRegistry(globals)
+    defer rlock.Unlock(globals)
 
     to_delete_versions, err := listToBeDeletedVersions(globals.Registry, all_incoming.ToDelete)
     if err != nil {

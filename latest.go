@@ -117,25 +117,35 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         }
     }
 
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
 
-    // Technically we only need a lock on the asset directory, but all
-    // mutating operations will lock the project directory, so we respect that.
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryShared(globals, project_dir)
     if err != nil {
-        return nil, fmt.Errorf("failed to acquire the lock on the project directory %q; %w", project_dir, err)
+        return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer plock.Unlock(globals)
 
     asset := *(incoming.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return nil, err
     }
+
+    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+    }
+    defer alock.Unlock(globals)
 
     output, err := refreshLatest(asset_dir)
     return output, err

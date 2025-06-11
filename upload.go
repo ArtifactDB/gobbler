@@ -108,18 +108,25 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     req_user := request.User
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
-    // Configuring the project; we apply a lock to the project to avoid concurrent changes.
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rlock.Unlock(globals)
+
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    // Acquiring a complete lock for safety during asset directory creation and reading/setting asset-level permissions.
+    // For global writes, the asset directory needs to be created and filled with permissions without any lock reacquisition, otherwise another process could intervene.
+    plock, err := lockDirectoryExclusive(globals, project_dir)
     if err != nil {
-        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer plock.Unlock(globals)
 
     perms, err := readPermissions(project_dir)
     if err != nil {
@@ -128,8 +135,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     asset := *(request.Asset)
     asset_dir := filepath.Join(project_dir, asset)
+    asset_exists := false
     _, err = os.Stat(asset_dir)
-    asset_exists := !(err != nil && errors.Is(err, os.ErrNotExist))
+    if err == nil {
+        asset_exists = true
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
+    }
 
     use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
     if !use_global_write {
@@ -147,7 +159,6 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    // Configuring the asset and version.
     if !asset_exists {
         err = os.Mkdir(asset_dir, 0755)
         if err != nil {
@@ -164,10 +175,35 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
+    // Now switching to a shared project-level lock to improve parallelism for multiple upload requests.
+    plock.Unlock(globals)
+    plock2, err := lockDirectoryShared(globals, project_dir)
+    if err != nil {
+        return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
+    }
+    defer plock2.Unlock(globals)
+
+    // The lock switch above means that there is a brief period of time where the project is unlocked and other processes could just change things.
+    // By and large, this is fine as the filesystem is still in a valid state, even with an empty asset subdirectory.
+    // However, it is possible for deleteAssetHandler to wipe out the asset that we're trying to create.
+    // So when we reacquire the project lock, we need to confirm that the asset directory still exists before taking a lock on it.
+    if _, err := os.Stat(asset_dir); err != nil {
+        return fmt.Errorf("cannot access asset directory %q; %w", asset_dir, err)
+    }
+
+    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    if err != nil {
+        return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+    }
+    defer alock.Unlock(globals)
+
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)
-    if _, err := os.Stat(version_dir); err == nil {
+    _, err = os.Stat(version_dir)
+    if err == nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("version %q already exists in %q", version, asset_dir))
+    } else if !errors.Is(err, os.ErrNotExist) {
+        return fmt.Errorf("failed to stat version directory %q; %w", version_dir, err)
     }
 
     err = os.Mkdir(version_dir, 0755)
@@ -175,8 +211,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to create a new version directory at %q; %w", version_dir, err)
     }
 
-    // Now transferring all the files. This involves setting up an abort loop
-    // to remove failed uploads from the globals.Registry, lest they clutter things up.
+    // Remove failed uploads from the globals.Registry, lest they clutter things up.
     has_failed := true
     defer func() {
         if has_failed {
@@ -197,13 +232,10 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
             LinkWhitelist: globals.LinkWhitelist,
         },
     )
-
     if err != nil {
         return fmt.Errorf("failed to transfer files from %q; %w", source, err)
     }
 
-    // Writing out the various pieces of metadata. This should be, in theory,
-    // the 'no-throw' section as no user-supplied values are involved here.
     upload_finish := time.Now()
     {
         summary := summaryMetadata {
@@ -222,32 +254,17 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    {
-        extra, err := computeVersionUsage(version_dir)
-        if err != nil {
-            return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
-        }
+    extra_usage, err := computeVersionUsage(version_dir)
+    if err != nil {
+        return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
+    }
 
-        usage, err := readUsage(project_dir)
-        if err != nil {
-            return fmt.Errorf("failed to read existing usage for project %q; %w", project, err)
-        }
-        usage.Total += extra
-
-        // Try to do this write later to reduce the chance of an error
-        // triggering an abort after the usage total has been updated.
-        usage_path := filepath.Join(project_dir, usageFileName)
-        err = dumpJson(usage_path, &usage)
-        if err != nil {
-            return fmt.Errorf("failed to save usage for %q; %w", project_dir, err)
-        }
+    err = editUsage(globals, project_dir, extra_usage)
+    if err != nil {
+        return err
     }
 
     if !on_probation {
-        // Doing this as late as possible to reduce the chances of an error
-        // triggering an abort _after_ the latest version has been updated.
-        // I suppose we could try to reset to the previous value; but if the
-        // writes failed there's no guarantee that a reset would work either.
         latest := latestMetadata { Version: version }
         latest_path := filepath.Join(asset_dir, latestFileName)
         err := dumpJson(latest_path, &latest)

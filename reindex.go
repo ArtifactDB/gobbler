@@ -2,7 +2,6 @@ package main
 
 import (
     "fmt"
-    "time"
     "path/filepath"
     "os"
     "encoding/json"
@@ -71,6 +70,12 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
+    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", globals.Registry, err)
+    }
+    defer rlock.Unlock(globals)
+
     // Configuring the project; we apply a lock to the project to avoid concurrent changes.
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
@@ -78,13 +83,12 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    err = lockProject(globals, project_dir, 10 * time.Second)
+    plock, err := lockDirectoryShared(globals, project_dir)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
-    defer unlockProject(globals, project_dir)
+    defer plock.Unlock(globals)
 
-    // Check if this reindexing request is properly authorized. 
     perms, err := readPermissions(project_dir)
     if err != nil {
         return fmt.Errorf("failed to read permissions for %q; %w", project, err)
@@ -95,12 +99,17 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + request.User + "' is not authorized to reindex '" + project + "'"))
     }
 
-    // Configuring the asset and version.
     asset := *(request.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return err
     }
+
+    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", asset_dir, err)
+    }
+    defer alock.Unlock(globals)
 
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)
