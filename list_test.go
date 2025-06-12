@@ -7,6 +7,7 @@ import (
     "sort"
     "strings"
     "net/http"
+    "context"
 )
 
 func TestListFiles(t *testing.T) {
@@ -33,9 +34,11 @@ func TestListFiles(t *testing.T) {
         t.Fatalf("failed to create a mock file; %v", err)
     }
 
+    ctx := context.Background()
+
     t.Run("simple", func(t *testing.T) {
         // Checking that we pull out all the files.
-        all, err := listFiles(dir, true)
+        all, err := listFiles(dir, true, ctx)
         if (err != nil) {
             t.Fatal(err)
         }
@@ -46,7 +49,7 @@ func TestListFiles(t *testing.T) {
         }
 
         // Checking that the directories are properly listed.
-        all, err = listFiles(dir, false)
+        all, err = listFiles(dir, false, ctx)
         if (err != nil) {
             t.Fatal(err)
         }
@@ -54,6 +57,13 @@ func TestListFiles(t *testing.T) {
         sort.Strings(all)
         if len(all) != 2 || all[0] != "A" || all[1] != "sub/" {
             t.Errorf("unexpected results from the listing (%q)", all)
+        }
+
+        // Checking that cancellation works as expected.
+        expired, _ := context.WithTimeout(context.Background(), 0)
+        _, err = listFiles(dir, true, expired)
+        if err == nil || !strings.Contains(err.Error(), "cancelled") {
+            t.Errorf("expected an error from a cancelled context")
         }
     })
 

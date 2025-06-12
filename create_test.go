@@ -6,6 +6,7 @@ import (
     "fmt"
     "os/user"
     "strings"
+    "context"
 )
 
 func TestCreateProjectSimple(t *testing.T) {
@@ -14,6 +15,8 @@ func TestCreateProjectSimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
 
     self, err := user.Current()
     if err != nil {
@@ -28,7 +31,7 @@ func TestCreateProjectSimple(t *testing.T) {
         t.Fatalf("failed to create 'create_project' request; %v", err)
     }
 
-    err = createProjectHandler(reqname, &globals)
+    err = createProjectHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to create project; %v", err)
     }
@@ -49,6 +52,8 @@ func TestCreateProjectFailures(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg)
 
+    ctx := context.Background()
+
     {
         project := "foo"
         req_string := fmt.Sprintf(`{ "project": "%s"}`, project)
@@ -57,7 +62,7 @@ func TestCreateProjectFailures(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("creation should have failed without no permissions; %v", err)
         }
@@ -77,7 +82,7 @@ func TestCreateProjectFailures(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid project name") {
             t.Fatalf("creation should have failed with an invalid project; %v", err)
         }
@@ -91,12 +96,12 @@ func TestCreateProjectFailures(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("project creation failed; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "already exists") {
             t.Fatalf("duplicate project creation should have failed; %v", err)
         }
@@ -109,6 +114,8 @@ func TestCreateProjectNewPermissions(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
 
     self, err := user.Current()
     if err != nil {
@@ -126,7 +133,7 @@ func TestCreateProjectNewPermissions(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to create a project; %v", err)
         }
@@ -154,7 +161,7 @@ func TestCreateProjectNewPermissions(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to create a project; %v", err)
         }
@@ -180,7 +187,7 @@ func TestCreateProjectNewPermissions(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatalf("expected project creation to fail from invalid 'uploaders'")
         }
@@ -195,7 +202,7 @@ func TestCreateProjectNewPermissions(t *testing.T) {
             t.Fatalf("failed to create 'create_project' request; %v", err)
         }
 
-        err = createProjectHandler(reqname, &globals)
+        err = createProjectHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatalf("expected project creation to fail from invalid 'uploaders'")
         }

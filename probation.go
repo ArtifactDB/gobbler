@@ -8,9 +8,10 @@ import (
     "time"
     "errors"
     "net/http"
+    "context"
 )
 
-func rejectProbation(globals *globalConfiguration, project_dir, version_dir string, force_deletion bool) error {
+func rejectProbation(globals *globalConfiguration, project_dir, version_dir string, force_deletion bool, ctx context.Context) error {
     // Assumes that we have an exclusive asset-level lock and a shared project-level lock.
     version_usage, version_usage_err := computeVersionUsage(version_dir)
     if version_usage_err != nil && !force_deletion {
@@ -23,7 +24,7 @@ func rejectProbation(globals *globalConfiguration, project_dir, version_dir stri
     }
 
     if version_usage_err == nil {
-        err := editUsage(globals, project_dir, -version_usage)
+        err := editUsage(globals, project_dir, -version_usage, ctx)
         if err != nil {
             return fmt.Errorf("failed to update usage for project directory %q; %w", project_dir, err)
         }
@@ -32,7 +33,7 @@ func rejectProbation(globals *globalConfiguration, project_dir, version_dir stri
     return nil
 }
 
-func baseProbationHandler(reqpath string, globals *globalConfiguration, approve bool) error {
+func baseProbationHandler(reqpath string, globals *globalConfiguration, approve bool, ctx context.Context) error {
     incoming := struct {
         Project *string `json:"project"`
         Asset *string `json:"asset"`
@@ -71,7 +72,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -83,7 +84,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return err
     }
 
-    plock, plock_err := lockDirectoryShared(globals, project_dir)
+    plock, plock_err := lockDirectoryShared(globals, project_dir, ctx)
     if plock_err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -103,7 +104,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
         return err
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
@@ -180,7 +181,7 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
 
     } else {
         force_deletion := incoming.Force != nil && *(incoming.Force)
-        err = rejectProbation(globals, project_dir, version_dir, force_deletion)
+        err = rejectProbation(globals, project_dir, version_dir, force_deletion, ctx)
         if err != nil {
             return err
         }
@@ -189,16 +190,17 @@ func baseProbationHandler(reqpath string, globals *globalConfiguration, approve 
     return nil
 }
 
-func approveProbationHandler(reqpath string, globals *globalConfiguration) error {
-    return baseProbationHandler(reqpath, globals, true)
+func approveProbationHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
+    return baseProbationHandler(reqpath, globals, true, ctx)
 }
 
-func rejectProbationHandler(reqpath string, globals *globalConfiguration) error {
-    return baseProbationHandler(reqpath, globals, false)
+func rejectProbationHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
+    return baseProbationHandler(reqpath, globals, false, ctx)
 }
 
 func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Duration) []error {
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    ctx := context.Background()
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err) }
     }
@@ -213,17 +215,17 @@ func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Durat
     all_errors := []error{}
     for _, project := range projects {
         project_dir := filepath.Join(globals.Registry, project)
-        cur_errors := purgeOldProbationalVersionsForProject(globals, project_dir, expiry)
+        cur_errors := purgeOldProbationalVersionsForProject(globals, project_dir, expiry, ctx)
         all_errors = append(all_errors, cur_errors...)
     }
 
     return all_errors
 }
 
-func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project_dir string, expiry time.Duration) []error {
+func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project_dir string, expiry time.Duration, ctx context.Context) []error {
     // Re-acquiring the registry lock for each project, to give other processes a chance to contend and sneak in operations.
     // Otherwise there would just be a big block of time where a lock is held during the scan of a registry's contents.
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock registry %q; %w", globals.Registry, err) }
     }
@@ -239,7 +241,7 @@ func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project
         }
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
     }
@@ -254,17 +256,17 @@ func purgeOldProbationalVersionsForProject(globals *globalConfiguration, project
     all_errors := []error{}
     for _, asset := range assets {
         asset_dir := filepath.Join(project_dir, asset)
-        cur_errors := purgeOldProbationalVersionsForAsset(globals, project_dir, asset_dir, expiry)
+        cur_errors := purgeOldProbationalVersionsForAsset(globals, project_dir, asset_dir, expiry, ctx)
         all_errors = append(all_errors, cur_errors...)
     }
 
     return all_errors
 }
 
-func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_dir string, asset_dir string, expiry time.Duration) []error {
+func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_dir string, asset_dir string, expiry time.Duration, ctx context.Context) []error {
     // Re-acquiring the project-level lock for each asset, to give other processes a chance to contend and sneak in operations.
     // Otherwise there would just be a big block of time where a lock is held during the scan of a project's contents.
-    plock, err := lockDirectoryShared(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
     }
@@ -280,7 +282,7 @@ func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_d
         }
     }
 
-    alock, err := lockDirectoryShared(globals, asset_dir)
+    alock, err := lockDirectoryShared(globals, asset_dir, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err) }
     }
@@ -310,7 +312,7 @@ func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_d
         }
 
         if time.Now().Sub(as_time) > expiry {
-            err := rejectProbation(globals, project_dir, version_dir, false)
+            err := rejectProbation(globals, project_dir, version_dir, false, ctx)
             if err != nil {
                 all_errors = append(all_errors, err)
             }

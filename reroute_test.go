@@ -8,6 +8,7 @@ import (
     "errors"
     "encoding/json"
     "strings"
+    "context"
 )
 
 func mockRegistryForReroute(registry, project, asset string) error {
@@ -15,6 +16,8 @@ func mockRegistryForReroute(registry, project, asset string) error {
     if err != nil {
         return fmt.Errorf("failed to create the temporary directory; %w", err)
     }
+
+    ctx := context.Background()
 
     // First import.
     {
@@ -28,7 +31,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "animation", transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "animation", ctx, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -57,7 +60,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "natural", transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "natural", ctx, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -91,7 +94,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "origination", transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "origination", ctx, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -117,7 +120,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "avvenire", transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "avvenire", ctx, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -942,6 +945,8 @@ func TestRerouteLinksHandler(t *testing.T) {
         t.Fatalf("failed to identify self; %v", err)
     }
 
+    ctx := context.Background()
+
     t.Run("basic", func(t *testing.T) {
         registry, err := os.MkdirTemp("", "")
         if err != nil {
@@ -966,7 +971,7 @@ func TestRerouteLinksHandler(t *testing.T) {
 
         globals := newGlobalConfiguration(registry)
         globals.Administrators = append(globals.Administrators, self)
-        changes, err := rerouteLinksHandler(reqpath, &globals)
+        changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatal(err)
         }
@@ -1051,7 +1056,7 @@ func TestRerouteLinksHandler(t *testing.T) {
 
         globals := newGlobalConfiguration(registry)
         globals.Administrators = append(globals.Administrators, self)
-        changes, err := rerouteLinksHandler(reqpath, &globals)
+        changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatal(err)
         }
@@ -1154,7 +1159,7 @@ func TestRerouteLinksHandler(t *testing.T) {
 
         globals := newGlobalConfiguration(registry)
         globals.Administrators = append(globals.Administrators, self)
-        changes, err := rerouteLinksHandler(reqpath, &globals)
+        changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatal(err)
         }
@@ -1239,7 +1244,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         }
 
         globals := newGlobalConfiguration(registry)
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Error("unexpected authorization for non-admin")
         }
@@ -1265,7 +1270,7 @@ func TestRerouteLinksHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "'to_delete'") {
             t.Error("expected failure when to_delete isn't present")
         }
@@ -1274,25 +1279,25 @@ func TestRerouteLinksHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'project'") {
             t.Error("expected failure from invalid project")
         }
 
         reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "" } ] }`)
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'asset'") {
             t.Error("expected failure from invalid asset")
         }
 
         reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "asset": "anime", "version": "" } ] }`)
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'version'") {
             t.Error("expected failure from invalid version")
         }
 
         reqpath, err = dumpRequest("reroute_links", `{ "to_delete": [ { "project": "ARIA", "version": "origination" } ] }`)
-        _, err = rerouteLinksHandler(reqpath, &globals)
+        _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "requires the 'asset'") {
             t.Error("expected failure from version without asset")
         }

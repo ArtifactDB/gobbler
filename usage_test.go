@@ -7,6 +7,7 @@ import (
     "strings"
     "fmt"
     "os/user"
+    "context"
 )
 
 func TestReadUsage(t *testing.T) {
@@ -82,6 +83,8 @@ func TestComputeUsage(t *testing.T) {
         t.Fatalf("failed to create mock file; %v", err)
     }
 
+    ctx := context.Background()
+
     // Executing the transfer and computing the size.
     reg, err := os.MkdirTemp("", "")
     if err != nil {
@@ -91,7 +94,7 @@ func TestComputeUsage(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "yellow"
-    err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -114,7 +117,7 @@ func TestComputeUsage(t *testing.T) {
     }
 
     version = "green"
-    err = transferDirectory(src, reg, project, asset, version, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -137,6 +140,8 @@ func TestRefreshUsageHandler(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg)
 
+    ctx := context.Background()
+
     project_name := "foobar"
     project_dir := filepath.Join(reg, project_name)
     err = os.Mkdir(project_dir, 0755)
@@ -157,7 +162,7 @@ func TestRefreshUsageHandler(t *testing.T) {
             t.Fatalf("failed to write a mock file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project_name, asset, "v1", transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project_name, asset, "v1", ctx, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -171,7 +176,7 @@ func TestRefreshUsageHandler(t *testing.T) {
         t.Fatalf("failed to write the request; %v", err)
     }
 
-    _, err = refreshUsageHandler(reqpath, &globals)
+    _, err = refreshUsageHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")
     }
@@ -183,7 +188,7 @@ func TestRefreshUsageHandler(t *testing.T) {
     self_name := self.Username
 
     globals.Administrators = append(globals.Administrators, self_name)
-    res, err := refreshUsageHandler(reqpath, &globals)
+    res, err := refreshUsageHandler(reqpath, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the refresh; %v", err)
     }

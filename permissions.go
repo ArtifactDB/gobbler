@@ -11,6 +11,7 @@ import (
     "encoding/json"
     "time"
     "net/http"
+    "context"
 )
 
 type uploaderEntry struct {
@@ -194,7 +195,7 @@ type unsafePermissionsMetadata struct {
     GlobalWrite *bool `json:"global_write"`
 }
 
-func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
+func setPermissionsHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     incoming := struct {
         Project *string `json:"project"`
         Asset *string `json:"asset"`
@@ -233,7 +234,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -248,7 +249,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration) error {
     // If Asset is provided, we could consider holding a shared lock to improve parallelism.
     // However, this gets complicated if the asset directory does not exist, in which case we need to reacquire an exclusive lock to create the directory.
     // It's just simpler to hold an exclusive lock to start with, the handler should finish up pretty quickly so any contention is limited.
-    plock, err := lockDirectoryExclusive(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }

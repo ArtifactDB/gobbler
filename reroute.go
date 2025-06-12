@@ -6,6 +6,7 @@ import (
     "encoding/json"
     "path/filepath"
     "net/http"
+    "context"
 )
 
 type deleteTask struct {
@@ -259,7 +260,7 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
     return recreateLinkFiles(full_version_dir, man)
 }
 
-func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerouteAction, error) {
+func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx context.Context) ([]rerouteAction, error) {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -312,7 +313,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     }
 
     // Obtaining an all-of-registry lock before we identify the rerouting actions.
-    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
@@ -358,6 +359,11 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
             }
 
             for _, version := range versions {
+                err := ctx.Err()
+                if err != nil {
+                    return nil, fmt.Errorf("reroute request cancelled; %w", err)
+                }
+
                 version_dir := filepath.Join(project, asset, version)
                 if _, found := to_delete_versions[version_dir]; found { // no need to process version directories that are about to be deleted.
                     continue
@@ -394,11 +400,17 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration) ([]rerout
     // improves the atomicity of the rerouting operation as any failures in the
     // first pass won't leave the registry in a half-mutated state.
     for vpath, info := range all_changes {
+        err := ctx.Err()
+        if err != nil {
+            return nil, fmt.Errorf("reroute request cancelled; %w", err)
+        }
+
         actions = append(actions, (info.Actions)...)
         if dry_run {
             continue
         }
-        err := executeLinkReroutes(globals.Registry, vpath, info)
+
+        err = executeLinkReroutes(globals.Registry, vpath, info)
         if err != nil {
             return nil, err
         }

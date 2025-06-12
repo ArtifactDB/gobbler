@@ -7,6 +7,7 @@ import (
     "os"
     "syscall"
     "path/filepath"
+    "context"
 )
 
 type pathLock struct {
@@ -24,7 +25,7 @@ func newPathLocks() pathLocks {
     return pathLocks{ InUse: map[string]*pathLock{} }
 }
 
-func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) error {
+func (pl *pathLocks) Lock(path string, ctx context.Context, timeout time.Duration, exclusive bool) error {
     var lock_mode int
     if exclusive { 
         lock_mode = syscall.LOCK_EX
@@ -41,6 +42,11 @@ func (pl *pathLocks) Lock(path string, timeout time.Duration, exclusive bool) er
             init = false
         } else if time.Since(t) > timeout {
             return fmt.Errorf("timed out waiting for the lock to be acquired on %q", path)
+        }
+
+        err := ctx.Err()
+        if err != nil {
+            return fmt.Errorf("lock request cancelled; %w", err)
         }
 
         already_locked := func() bool {
@@ -127,18 +133,18 @@ type directoryLock struct {
     Active bool
 }
 
-func lockDirectoryExclusive(globals *globalConfiguration, dir string) (*directoryLock, error) {
+func lockDirectoryExclusive(globals *globalConfiguration, dir string, ctx context.Context) (*directoryLock, error) {
     lockfile := filepath.Join(dir, "..LOCK")
-    err := globals.Locks.Lock(lockfile, 10 * time.Second, true)
+    err := globals.Locks.Lock(lockfile, ctx, 60 * time.Second, true)
     if err != nil {
         return nil, err
     }
     return &directoryLock{ LockFile: lockfile, Active: true }, nil
 }
 
-func lockDirectoryShared(globals *globalConfiguration, dir string) (*directoryLock, error) {
+func lockDirectoryShared(globals *globalConfiguration, dir string, ctx context.Context) (*directoryLock, error) {
     lockfile := filepath.Join(dir, "..LOCK")
-    err := globals.Locks.Lock(lockfile, 10 * time.Second, false)
+    err := globals.Locks.Lock(lockfile, ctx, 60 * time.Second, false)
     if err != nil {
         return nil, err
     }
@@ -168,9 +174,9 @@ func (dlock *directoryLock) Unlock(globals *globalConfiguration) {
  * This ensures that the correct delta is applied to the project usage, even after an arbitrarily long period of contention for the usage lock.
  * Otherwise, if the delta is computed outside of the exclusive lock, some other process could have altered the filesystem once the exclusive lock is released.
  */
-func lockDirectoryWriteUsage(globals *globalConfiguration, dir string) (*directoryLock, error) {
+func lockDirectoryWriteUsage(globals *globalConfiguration, dir string, ctx context.Context) (*directoryLock, error) {
     lockfile := filepath.Join(dir, "..LOCK_USAGE")
-    err := globals.Locks.Lock(lockfile, 10 * time.Second, true)
+    err := globals.Locks.Lock(lockfile, ctx, 60 * time.Second, true)
     if err != nil {
         return nil, err
     }

@@ -7,6 +7,7 @@ import (
     "os"
     "sync"
     "path/filepath"
+    "context"
 )
 
 func TestLock(t *testing.T) {
@@ -16,25 +17,27 @@ func TestLock(t *testing.T) {
     }
     path := filepath.Join(dir, "..LOCK")
 
+    ctx := context.Background()
+
     t.Run("exclusive", func(t *testing.T) {
         pl := newPathLocks()
-        err = pl.Lock(path, 10 * time.Second, true)
+        err = pl.Lock(path, ctx, 10 * time.Second, true)
         if err != nil {
             t.Fatalf("failed to acquire the lock; %v", err)
         }
 
-        err = pl.Lock(path, 0 * time.Second, true)
+        err = pl.Lock(path, ctx, 0 * time.Second, true)
         if err == nil || !strings.Contains(err.Error(), "timed out") {
             t.Fatal("should have failed to acquire another exclusive lock")
         }
 
-        err = pl.Lock(path, 0 * time.Second, false)
+        err = pl.Lock(path, ctx, 0 * time.Second, false)
         if err == nil || !strings.Contains(err.Error(), "timed out") {
             t.Fatal("should have failed to acquire a shared lock")
         }
 
         pl.Unlock(path)
-        err = pl.Lock(path, 0 * time.Second, true)
+        err = pl.Lock(path, ctx, 0 * time.Second, true)
         if err != nil {
             t.Fatalf("failed to acquire the lock with a zero timeout; %v", err)
         }
@@ -44,25 +47,25 @@ func TestLock(t *testing.T) {
 
     t.Run("shared", func(t *testing.T) {
         pl := newPathLocks()
-        err = pl.Lock(path, 10 * time.Second, false)
+        err = pl.Lock(path, ctx, 10 * time.Second, false)
         if err != nil {
             t.Fatalf("failed to acquire the lock; %v", err)
         }
 
-        err = pl.Lock(path, 0 * time.Second, false)
+        err = pl.Lock(path, ctx, 0 * time.Second, false)
         if err != nil {
             t.Fatalf("failed to acquire the lock with a zero timeout; %v", err)
         }
 
         // Can't acquire another exclusive lock.
-        err = pl.Lock(path, 10 * time.Millisecond, true)
+        err = pl.Lock(path, ctx, 10 * time.Millisecond, true)
         if err == nil || !strings.Contains(err.Error(), "timed out") {
             t.Errorf("should have failed to acquire an exclusive lock")
         }
 
         // Still can't acquire an exclusive lock until all shared locks are released.
         pl.Unlock(path)
-        err = pl.Lock(path, 10 * time.Millisecond, true)
+        err = pl.Lock(path, ctx, 10 * time.Millisecond, true)
         if err == nil || !strings.Contains(err.Error(), "timed out") {
             t.Errorf("should have failed to acquire an exclusive lock")
         }
@@ -72,7 +75,7 @@ func TestLock(t *testing.T) {
 
     t.Run("retry", func(t *testing.T) {
         pl := newPathLocks()
-        err = pl.Lock(path, 10 * time.Second, true)
+        err = pl.Lock(path, ctx, 10 * time.Second, true)
         if err != nil {
             t.Fatalf("failed to acquire the lock; %v", err)
         }
@@ -81,7 +84,7 @@ func TestLock(t *testing.T) {
         var waiter sync.WaitGroup
         waiter.Add(1)
         go func() {
-            wait_err = pl.Lock(path, time.Second, true)
+            wait_err = pl.Lock(path, ctx, time.Second, true)
             waiter.Done()
         }()
 
@@ -93,4 +96,15 @@ func TestLock(t *testing.T) {
             t.Error("second lock should have retried until first was released")
         }
     })
+
+    t.Run("cancelled", func(t *testing.T) {
+        expired, _ := context.WithTimeout(ctx, 0)
+
+        pl := newPathLocks()
+        err = pl.Lock(path, expired, 10 * time.Second, true)
+        if err == nil || !strings.Contains(err.Error(), "cancelled") {
+            t.Errorf("expected a cancellation error; %v", err)
+        }
+    })
+
 }

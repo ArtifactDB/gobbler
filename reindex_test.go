@@ -7,6 +7,7 @@ import (
     "fmt"
     "os/user"
     "strings"
+    "context"
 )
 
 func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, version string) error {
@@ -15,7 +16,7 @@ func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, 
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, nil, self.Username, globals)
+    err = createProject(project, nil, self.Username, globals, context.Background())
     if err != nil {
         return err
     }
@@ -63,6 +64,8 @@ func TestReindexHandlerSimple(t *testing.T) {
         t.Fatalf("failed to set up project directory; %v", err)
     }
 
+    ctx := context.Background()
+
     // Performing the request.
     req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
     reqname, err := dumpRequest("reindex", req_string)
@@ -70,7 +73,7 @@ func TestReindexHandlerSimple(t *testing.T) {
         t.Fatalf("failed to create reindex request; %v", err)
     }
 
-    err = reindexHandler(reqname, &globals)
+    err = reindexHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the reindexing; %v", err)
     }
@@ -130,6 +133,8 @@ func TestReindexHandlerLatest(t *testing.T) {
         t.Fatal(err)
     }
 
+    ctx := context.Background()
+
     // Performing the request.
     req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
     reqname, err := dumpRequest("reindex", req_string)
@@ -137,7 +142,7 @@ func TestReindexHandlerLatest(t *testing.T) {
         t.Fatalf("failed to create reindex request; %v", err)
     }
 
-    err = reindexHandler(reqname, &globals)
+    err = reindexHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the reindexing; %v", err)
     }
@@ -180,13 +185,15 @@ func TestReindexHandlerProbation(t *testing.T) {
 }`), 0644)
 
     // Performing the request.
+    ctx := context.Background()
+
     req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
     reqname, err := dumpRequest("reindex", req_string)
     if err != nil {
         t.Fatalf("failed to create reindex request; %v", err)
     }
 
-    err = reindexHandler(reqname, &globals)
+    err = reindexHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the reindexing; %v", err)
     }
@@ -223,12 +230,14 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         t.Fatalf("failed to set up project directory; %v", err)
     }
 
+    ctx := context.Background()
+
     t.Run("bad project", func(t *testing.T) {
         reqname, err := dumpRequest("reindex", `{ "asset": "foo", "version": "bar" }`)
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected a 'project'") {
             t.Fatal("configuration should fail for missing project")
         }
@@ -237,7 +246,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid project name") {
             t.Fatal("configuration should fail for invalid project name")
         }
@@ -248,7 +257,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected an 'asset'") {
             t.Fatal("configuration should fail for missing asset")
         }
@@ -257,7 +266,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
             t.Fatal("configuration should fail for invalid asset name")
         }
@@ -268,7 +277,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected a 'version'") {
             t.Fatal("configuration should fail for missing version")
         }
@@ -277,7 +286,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create reindex request; %v", err)
         }
-        err = reindexHandler(reqname, &globals)
+        err = reindexHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid version name") {
             t.Fatal("configuration should fail for invalid version name")
         }
@@ -294,6 +303,7 @@ func TestReindexHandlerUnauthorized(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+    ctx := context.Background()
 
     err = setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
@@ -312,7 +322,7 @@ func TestReindexHandlerUnauthorized(t *testing.T) {
         t.Fatalf("failed to create reindex request; %v", err)
     }
 
-    err = reindexHandler(reqname, &globals)
+    err = reindexHandler(reqname, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to reject reindex from non-authorized user")
     }

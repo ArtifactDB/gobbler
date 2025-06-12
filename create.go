@@ -9,9 +9,10 @@ import (
     "strconv"
     "errors"
     "net/http"
+    "context"
 )
 
-func createProjectHandler(reqpath string, globals *globalConfiguration) error {
+func createProjectHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -40,16 +41,16 @@ func createProjectHandler(reqpath string, globals *globalConfiguration) error {
     }
     project := *(request.Project)
 
-    return createProject(project, request.Permissions, req_user, globals)
+    return createProject(project, request.Permissions, req_user, globals, ctx)
 }
 
-func createProject(project string, inperms *unsafePermissionsMetadata, req_user string, globals *globalConfiguration) error {
+func createProject(project string, inperms *unsafePermissionsMetadata, req_user string, globals *globalConfiguration, ctx context.Context) error {
     err := isBadName(project)
     if err != nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name; %w", err))
     }
 
-    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry; %w", err)
     }

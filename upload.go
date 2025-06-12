@@ -8,6 +8,7 @@ import (
     "encoding/json"
     "errors"
     "net/http"
+    "context"
 )
 
 type uploadRequest struct {
@@ -97,7 +98,7 @@ func uploadPreflight(reqpath string) (*uploadRequest, error) {
     return &request, nil
 }
 
-func uploadHandler(reqpath string, globals *globalConfiguration) error {
+func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     upload_start := time.Now()
 
     request, err := uploadPreflight(reqpath)
@@ -108,7 +109,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
     req_user := request.User
     on_probation := request.OnProbation != nil && *(request.OnProbation)
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -122,7 +123,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     // Acquiring a complete lock for safety during asset directory creation and reading/setting asset-level permissions.
     // For global writes, the asset directory needs to be created and filled with permissions without any lock reacquisition, otherwise another process could intervene.
-    plock, err := lockDirectoryExclusive(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -177,7 +178,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
 
     // Now switching to a shared project-level lock to improve parallelism for multiple upload requests.
     plock.Unlock(globals)
-    plock2, err := lockDirectoryShared(globals, project_dir)
+    plock2, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
     }
@@ -191,7 +192,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("cannot access asset directory %q; %w", asset_dir, err)
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
@@ -226,6 +227,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         project,
         asset,
         version,
+        ctx,
         transferDirectoryOptions{
             TryMove: (request.Consume != nil && *(request.Consume)),
             IgnoreDot: (request.IgnoreDot != nil && *(request.IgnoreDot)),
@@ -259,7 +261,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration) error {
         return fmt.Errorf("failed to compute usage for the new version at %q; %w", version_dir, err)
     }
 
-    err = editUsage(globals, project_dir, extra_usage)
+    err = editUsage(globals, project_dir, extra_usage, ctx)
     if err != nil {
         return err
     }

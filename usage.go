@@ -6,6 +6,7 @@ import (
     "fmt"
     "path/filepath"
     "net/http"
+    "context"
 )
 
 type usageMetadata struct {
@@ -101,8 +102,8 @@ func computeVersionUsage(path string) (int64, error) {
     return total, err
 }
 
-func editUsage(globals *globalConfiguration, project_dir string, val int64) error {
-    ulock, err := lockDirectoryWriteUsage(globals, project_dir)
+func editUsage(globals *globalConfiguration, project_dir string, val int64, ctx context.Context) error {
+    ulock, err := lockDirectoryWriteUsage(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock usage file in %q; %w", project_dir, err)
     }
@@ -123,7 +124,7 @@ func editUsage(globals *globalConfiguration, project_dir string, val int64) erro
     return nil
 }
 
-func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMetadata, error) {
+func refreshUsageHandler(reqpath string, globals *globalConfiguration, ctx context.Context) (*usageMetadata, error) {
     source_user, err := identifyUser(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -153,7 +154,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         }
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -165,7 +166,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration) (*usageMe
         return nil, err
     }
 
-    plock, err := lockDirectoryExclusive(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }

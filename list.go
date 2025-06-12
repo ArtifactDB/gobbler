@@ -9,14 +9,20 @@ import (
     "strings"
     "net/url"
     "net/http"
+    "context"
 )
 
-func listFiles(dir string, recursive bool) ([]string, error) {
+func listFiles(dir string, recursive bool, ctx context.Context) ([]string, error) {
     to_report := []string{}
 
     err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
             return err
+        }
+
+        err = ctx.Err()
+        if err != nil {
+            return fmt.Errorf("list request cancelled; %w", err)
         }
 
         is_dir := info.IsDir()
@@ -65,7 +71,7 @@ func listFilesHandler(r *http.Request, registry string) ([]string, error) {
         path = filepath.Join(registry, path)
     }
 
-    all, err := listFiles(path, recursive)
+    all, err := listFiles(path, recursive, r.Context())
     return all, err
 }
 

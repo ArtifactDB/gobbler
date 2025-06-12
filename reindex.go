@@ -7,6 +7,7 @@ import (
     "encoding/json"
     "net/http"
     "errors"
+    "context"
 )
 
 type reindexRequest struct {
@@ -64,13 +65,13 @@ func reindexPreflight(reqpath string) (*reindexRequest, error) {
     return &request, nil
 }
 
-func reindexHandler(reqpath string, globals *globalConfiguration) error {
+func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     request, err := reindexPreflight(reqpath)
     if err != nil {
         return err
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", globals.Registry, err)
     }
@@ -83,7 +84,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
@@ -105,7 +106,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", asset_dir, err)
     }
@@ -117,7 +118,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration) error {
         return err
     }
 
-    err = reindexDirectory(globals.Registry, project, asset, version, globals.LinkWhitelist)
+    err = reindexDirectory(globals.Registry, project, asset, version, globals.LinkWhitelist, ctx)
     if err != nil {
         return fmt.Errorf("failed to reindex project; %w", err)
     }

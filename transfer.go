@@ -12,6 +12,7 @@ import (
     "errors"
     "strconv"
     "strings"
+    "context"
 )
 
 func copyFile(src, dest string) error {
@@ -363,7 +364,7 @@ type processDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-func processDirectory(source, registry, project, asset, version string, options processDirectoryOptions) error {
+func processDirectory(source, registry, project, asset, version string, ctx context.Context, options processDirectoryOptions) error {
     var last_dedup map[string]linkMetadata 
     var err error
     if options.Transfer {
@@ -383,6 +384,10 @@ func processDirectory(source, registry, project, asset, version string, options 
     err = filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
+        }
+        err = ctx.Err()
+        if err != nil {
+            return fmt.Errorf("directory processing cancelled; %w", err)
         }
 
         base := filepath.Base(src_path)
@@ -499,6 +504,11 @@ func processDirectory(source, registry, project, asset, version string, options 
     /*** Second pass performs a copy/move of files. ***/
     if options.Transfer {
         for _, path := range transferrable {
+            err := ctx.Err()
+            if err != nil {
+                return fmt.Errorf("directory processing cancelled; %w", err)
+            }
+
             final := filepath.Join(destination, path)
             src_path := filepath.Join(source, path)
 
@@ -513,7 +523,7 @@ func processDirectory(source, registry, project, asset, version string, options 
                 }
             }
 
-            err := copyFile(src_path, final)
+            err = copyFile(src_path, final)
             if err != nil {
                 return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
             }
@@ -533,6 +543,11 @@ func processDirectory(source, registry, project, asset, version string, options 
     probation_cache := map[string]bool{}
 
     for path, target := range registry_links {
+        err := ctx.Err()
+        if err != nil {
+            return fmt.Errorf("directory processing cancelled; %w", err)
+        }
+
         tstat, err := os.Stat(filepath.Join(registry, target))
         if err != nil {
             return fmt.Errorf("failed to stat link target %q inside registry; %w", target, err)
@@ -555,6 +570,11 @@ func processDirectory(source, registry, project, asset, version string, options 
 
     /*** Final pass to resolve local links within the newly uploaded directory. ***/
     for path, target := range local_links {
+        err := ctx.Err()
+        if err != nil {
+            return fmt.Errorf("directory processing cancelled; %w", err)
+        }
+
         man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
         if err != nil {
             return err
@@ -581,13 +601,14 @@ type transferDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-func transferDirectory(source, registry, project, asset, version string, options transferDirectoryOptions) error {
+func transferDirectory(source, registry, project, asset, version string, ctx context.Context, options transferDirectoryOptions) error {
     return processDirectory(
         source,
         registry,
         project,
         asset,
         version,
+        ctx,
         processDirectoryOptions{
             Transfer: true,
             TryMove: options.TryMove,
@@ -597,13 +618,17 @@ func transferDirectory(source, registry, project, asset, version string, options
     )
 }
 
-func reindexDirectory(registry, project, asset, version string, link_whitelist []string) error {
+func reindexDirectory(registry, project, asset, version string, link_whitelist []string, ctx context.Context) error {
     source := filepath.Join(registry, project, asset, version)
 
     // Doing a preliminary pass to create correct symlinks from any existing ..link files.
     err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
+        }
+        err = ctx.Err()
+        if err != nil {
+            return fmt.Errorf("directory processing cancelled; %w", err)
         }
 
         base := filepath.Base(src_path)
@@ -657,6 +682,7 @@ func reindexDirectory(registry, project, asset, version string, link_whitelist [
         project,
         asset,
         version,
+        ctx,
         processDirectoryOptions{
             Transfer: false,
             LinkWhitelist: link_whitelist,

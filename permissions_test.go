@@ -9,6 +9,7 @@ import (
     "time"
     "fmt"
     "strings"
+    "context"
 )
 
 func TestIdentifyUser(t *testing.T) {
@@ -263,6 +264,8 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
+    ctx := context.Background()
+
     self, err := identifyUser(reg)
     if err != nil {
         t.Fatalf("failed to identify self; %v", err)
@@ -295,7 +298,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -331,7 +334,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to set permissions; %v", err)
         }
@@ -367,7 +370,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatal("expected a permissions failure for invalid uploaders")
         }
@@ -380,7 +383,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid 'permissions.uploaders'") {
             t.Fatal("expected a permissions failure for invalid uploaders")
         }
@@ -404,7 +407,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatalf("unexpected authorization for a non-owner")
         }
@@ -428,7 +431,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to write permissions with global write; %v", err)
         }
@@ -467,7 +470,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to write asset-level permissions; %v", err)
         }
@@ -498,7 +501,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to rewrite asset-level permissions; %v", err)
         }
@@ -536,7 +539,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatal("changes to asset-level permissions should be forbidden")
         }
@@ -555,7 +558,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = setPermissionsHandler(reqpath, &globals)
+        err = setPermissionsHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatal(err)
         }

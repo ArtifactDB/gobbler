@@ -9,6 +9,7 @@ import (
     "errors"
     "time"
     "sort"
+    "context"
 )
 
 func mockProbationVersion(reg, project, asset, version string) error {
@@ -60,7 +61,7 @@ func mockProbationVersion(reg, project, asset, version string) error {
         return fmt.Errorf("failed to create some mock files; %w", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, []string{})
+    err = reindexDirectory(reg, project, asset, version, []string{}, context.Background())
     if err != nil {
         return fmt.Errorf("failed to reindex the directory; %w", err)
     }
@@ -79,6 +80,8 @@ func TestApproveProbationHandler(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
+    ctx := context.Background()
+
     project := "dawn"
     asset := "sinnoh"
     version := "foo"
@@ -94,7 +97,7 @@ func TestApproveProbationHandler(t *testing.T) {
 
     // Lack of authorization fails.
     globals := newGlobalConfiguration(reg)
-    err = approveProbationHandler(reqpath, &globals)
+    err = approveProbationHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to approve probation; %v", err)
     }
@@ -104,7 +107,7 @@ func TestApproveProbationHandler(t *testing.T) {
         t.Fatalf("failed to identify self; %v", err)
     }
     globals.Administrators = append(globals.Administrators, self)
-    err = approveProbationHandler(reqpath, &globals)
+    err = approveProbationHandler(reqpath, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to approve probation; %v", err)
     }
@@ -142,13 +145,15 @@ func TestApproveProbationHandler(t *testing.T) {
     }
 
     // Repeated approval attempts fail.
-    err = approveProbationHandler(reqpath, &globals)
+    err = approveProbationHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not on probation") {
         t.Fatal("expected failure for non-probational version")
     }
 }
 
 func TestApproveProbationHandlerNotLatest(t *testing.T) {
+    ctx := context.Background()
+
     for _, other_latest := range []bool{ true, false } {
         reg, err := constructMockRegistry()
         if err != nil {
@@ -211,7 +216,7 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
         }
         globals := newGlobalConfiguration(reg)
         globals.Administrators = append(globals.Administrators, self)
-        err = approveProbationHandler(reqpath, &globals)
+        err = approveProbationHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to approve probation; %v", err)
         }
@@ -259,6 +264,8 @@ func TestRejectProbationHandler(t *testing.T) {
     }
     globals.Administrators = append(globals.Administrators, self)
 
+    ctx := context.Background()
+
     t.Run("simple", func(t *testing.T) {
         project := "dawn"
         asset := "sinnoh"
@@ -272,8 +279,7 @@ func TestRejectProbationHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-
-        err = rejectProbationHandler(reqpath, &globals)
+        err = rejectProbationHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to reject probation; %v", err)
         }
@@ -310,7 +316,7 @@ func TestRejectProbationHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        err = rejectProbationHandler(reqpath, &globals)
+        err = rejectProbationHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "manifest") {
             t.Error("expected request to fail when manifest is removed")
         }
@@ -319,7 +325,7 @@ func TestRejectProbationHandler(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to dump a request type; %v", err)
         }
-        err = rejectProbationHandler(reqpath, &globals)
+        err = rejectProbationHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Error(err)
         }
@@ -332,6 +338,8 @@ func TestRejectProbationHandler(t *testing.T) {
 func TestPurgeOldProbationalVersions(t *testing.T) {
     project := "dawn"
     asset := "sinnoh"
+
+    ctx := context.Background()
 
     mockProbationalRegistry := func(reg string) error {
         project_dir := filepath.Join(reg, project)
@@ -406,7 +414,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
                 return fmt.Errorf("failed to create some mock files; %w", err)
             }
 
-            err = reindexDirectory(reg, project, asset, version, []string{})
+            err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
             if err != nil {
                 return fmt.Errorf("failed to reindex the directory; %w", err)
             }

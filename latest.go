@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "time"
     "net/http"
+    "context"
 )
 
 type latestMetadata struct {
@@ -81,7 +82,7 @@ func refreshLatest(asset_dir string) (*latestMetadata, error) {
     }
 }
 
-func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latestMetadata, error) {
+func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx context.Context) (*latestMetadata, error) {
     source_user, err := identifyUser(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -117,7 +118,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         }
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -129,7 +130,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         return nil, err
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -141,7 +142,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration) (*latest
         return nil, err
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }

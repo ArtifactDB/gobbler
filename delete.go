@@ -7,9 +7,10 @@ import (
     "path/filepath"
     "errors"
     "net/http"
+    "context"
 )
 
-func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
+func deleteProjectHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -38,7 +39,7 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    rlock, err := lockDirectoryExclusive(globals, globals.Registry)
+    rlock, err := lockDirectoryExclusive(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry; %w", err)
     }
@@ -71,7 +72,7 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration) error {
     return nil
 }
 
-func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
+func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -109,7 +110,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -125,7 +126,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    plock, err := lockDirectoryExclusive(globals, project_dir)
+    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
@@ -152,7 +153,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if asset_usage_err == nil {
-        err := editUsage(globals, project_dir, -asset_usage)
+        err := editUsage(globals, project_dir, -asset_usage, ctx)
         if err != nil {
             return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
         }
@@ -171,7 +172,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration) error {
     return nil
 }
 
-func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
+func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     req_user, err := identifyUser(reqpath)
     if err != nil {
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
@@ -213,7 +214,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry)
+    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -229,7 +230,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir)
+    plock, err := lockDirectoryShared(globals, project_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -245,7 +246,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
         }
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
@@ -277,7 +278,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration) error {
     }
 
     if version_usage_err == nil {
-        err := editUsage(globals, project_dir, -version_usage)
+        err := editUsage(globals, project_dir, -version_usage, ctx)
         if err != nil {
             return err
         }

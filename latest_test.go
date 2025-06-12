@@ -10,6 +10,7 @@ import (
     "strings"
     "os/user"
     "errors"
+    "context"
 )
 
 func TestReadLatest(t *testing.T) {
@@ -43,6 +44,8 @@ func TestRefreshLatestHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+
+    ctx := context.Background()
 
     project_name := "foobar"
     project_dir := filepath.Join(reg, project_name)
@@ -84,7 +87,7 @@ func TestRefreshLatestHandler(t *testing.T) {
     }
 
     globals := newGlobalConfiguration(reg)
-    _, err = refreshLatestHandler(reqpath, &globals)
+    _, err = refreshLatestHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")
     }
@@ -94,9 +97,8 @@ func TestRefreshLatestHandler(t *testing.T) {
         t.Fatalf("failed to find the current user; %v", err)
     }
     self_name := self.Username
-
     globals.Administrators = append(globals.Administrators, self_name)
-    res, err := refreshLatestHandler(reqpath, &globals)
+    res, err := refreshLatestHandler(reqpath, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the refresh; %v", err)
     }
@@ -127,7 +129,7 @@ func TestRefreshLatestHandler(t *testing.T) {
             t.Fatalf("failed to update version summary; %v", err)
         }
 
-        res, err := refreshLatestHandler(reqpath, &globals)
+        res, err := refreshLatestHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }
@@ -160,7 +162,7 @@ func TestRefreshLatestHandler(t *testing.T) {
             }
         }
 
-        res, err := refreshLatestHandler(reqpath, &globals)
+        res, err := refreshLatestHandler(reqpath, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the refresh; %v", err)
         }

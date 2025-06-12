@@ -10,6 +10,7 @@ import (
     "errors"
     "encoding/json"
     "strings"
+    "context"
 )
 
 func setupSourceForUploadTest() (string, error) {
@@ -37,7 +38,7 @@ func setupProjectForUploadTest(project string, globals *globalConfiguration) err
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, nil, self.Username, globals)
+    err = createProject(project, nil, self.Username, globals, context.Background())
     if err != nil {
         return err
     }
@@ -66,13 +67,15 @@ func TestUploadHandlerSimple(t *testing.T) {
         t.Fatalf("failed to set up project directory; %v", err)
     }
 
+    ctx := context.Background()
+
     req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
     reqname, err := dumpRequest("upload", req_string)
     if err != nil {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    err = uploadHandler(reqname, &globals)
+    err = uploadHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the upload; %v", err)
     }
@@ -198,6 +201,8 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
+    ctx := context.Background()
+
     t.Run("bad source", func(t *testing.T) {
         project := "test"
         asset := "gastly"
@@ -214,7 +219,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
             if err != nil {
                 t.Fatalf("failed to create upload request; %v", err)
             }
-            err = uploadHandler(reqname, &globals)
+            err = uploadHandler(reqname, &globals, ctx)
             if err == nil || !strings.Contains(err.Error(), "expected a 'source'") {
                 t.Fatalf("configuration should have failed without a source")
             }
@@ -227,7 +232,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
                 t.Fatalf("failed to create upload request; %v", err)
             }
 
-            err = uploadHandler(reqname, &globals)
+            err = uploadHandler(reqname, &globals, ctx)
             if err == nil || !strings.Contains(err.Error(), "not a path") {
                 t.Fatalf("configuration should have failed if the source is a path instead of a name")
             }
@@ -249,7 +254,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
             if err != nil {
                 t.Fatalf("failed to create upload request; %v", err)
             }
-            err = uploadHandler(reqname, &globals)
+            err = uploadHandler(reqname, &globals, ctx)
             if err == nil || !strings.Contains(err.Error(), "failed to stat") {
                 t.Fatal("configuration should have failed if the source does not exist")
             }
@@ -269,7 +274,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
             if err != nil {
                 t.Fatalf("failed to create upload request; %v", err)
             }
-            err = uploadHandler(reqname, &globals)
+            err = uploadHandler(reqname, &globals, ctx)
             if err == nil || !strings.Contains(err.Error(), "be a directory") {
                 t.Fatal("configuration should have failed if the source is not a directory")
             }
@@ -282,7 +287,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected a 'project'") {
             t.Fatal("configuration should fail for missing project")
         }
@@ -292,7 +297,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid project name") {
             t.Fatal("configuration should fail for invalid project name")
         }
@@ -304,7 +309,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected an 'asset'") {
             t.Fatal("configuration should fail for missing asset")
         }
@@ -314,7 +319,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
             t.Fatal("configuration should fail for invalid asset name")
         }
@@ -326,7 +331,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "expected a 'version'") {
             t.Fatal("configuration should fail for missing version")
         }
@@ -336,7 +341,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create upload request; %v", err)
         }
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "invalid version name") {
             t.Fatal("configuration should fail for invalid version name")
         }
@@ -353,6 +358,8 @@ func TestUploadHandlerUpdate(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -373,7 +380,7 @@ func TestUploadHandlerUpdate(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -400,7 +407,7 @@ func TestUploadHandlerUpdate(t *testing.T) {
             t.Fatalf("failed to update the 'evolution' file; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -462,7 +469,7 @@ func TestUploadHandlerUpdate(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "already exists") {
             t.Fatal("configuration should fail for an existing version")
         }
@@ -475,7 +482,7 @@ func setupProjectForUploadTestWithPermissions(project string, owners []string, u
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, &unsafePermissionsMetadata{ Owners: owners, Uploaders: uploaders }, self.Username, globals) 
+    err = createProject(project, &unsafePermissionsMetadata{ Owners: owners, Uploaders: uploaders }, self.Username, globals, context.Background())
     if err != nil {
         return err
     }
@@ -489,6 +496,8 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -511,7 +520,7 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    err = uploadHandler(reqname, &globals)
+    err = uploadHandler(reqname, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to reject upload from non-authorized user")
     }
@@ -523,6 +532,8 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
     globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -537,7 +548,7 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
     }
 
     global_write := true
-    err = createProject(project, &unsafePermissionsMetadata{ Owners: []string{}, Uploaders: nil, GlobalWrite: &global_write }, self.Username, &globals) 
+    err = createProject(project, &unsafePermissionsMetadata{ Owners: []string{}, Uploaders: nil, GlobalWrite: &global_write }, self.Username, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to create the project; %v", err)
     }
@@ -551,7 +562,7 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform a global write upload; %v", err)
         }
@@ -581,7 +592,7 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform another upload to the same asset; %v", err)
         }
@@ -601,7 +612,7 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Fatal("global write should have failed if asset already exists")
         }
@@ -620,6 +631,8 @@ func TestUploadHandlerProbation(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
+    ctx := context.Background()
+
     project := "setsuna"
     asset := "yuki"
     version := "nakagawa"
@@ -635,7 +648,7 @@ func TestUploadHandlerProbation(t *testing.T) {
         t.Fatalf("failed to create upload request; %v", err)
     }
 
-    err = uploadHandler(reqname, &globals)
+    err = uploadHandler(reqname, &globals, ctx)
     if err != nil {
         t.Fatalf("failed to perform the upload; %v", err)
     }
@@ -677,6 +690,8 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
         t.Fatalf("failed to set up test directories; %v", err)
     }
 
+    ctx := context.Background()
+
     self, err := user.Current()
     if err != nil {
         t.Fatalf("could not identify the current user; %v", err)
@@ -699,7 +714,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -731,7 +746,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -753,7 +768,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -784,7 +799,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -825,6 +840,8 @@ func TestUploadHandlerConsume(t *testing.T) {
         return reg, globals, src
     }
 
+    ctx := context.Background()
+
     t.Run("no consume", func(t *testing.T) {
         _, globals, src := quickSetup()
 
@@ -834,7 +851,7 @@ func TestUploadHandlerConsume(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -854,7 +871,7 @@ func TestUploadHandlerConsume(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -894,6 +911,8 @@ func TestUploadHandlerIgnoreDot(t *testing.T) {
         t.Fatalf("failed to write a hidden file; %v", err)
     }
 
+    ctx := context.Background()
+
     t.Run("with dots", func(t *testing.T) {
         version := "lavender"
         req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": %q, "ignore_dot": false }`, filepath.Base(src), project, asset, version)
@@ -902,7 +921,7 @@ func TestUploadHandlerIgnoreDot(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }
@@ -922,7 +941,7 @@ func TestUploadHandlerIgnoreDot(t *testing.T) {
             t.Fatalf("failed to create upload request; %v", err)
         }
 
-        err = uploadHandler(reqname, &globals)
+        err = uploadHandler(reqname, &globals, ctx)
         if err != nil {
             t.Fatalf("failed to perform the upload; %v", err)
         }

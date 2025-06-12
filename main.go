@@ -115,10 +115,10 @@ func main() {
         reqtype := strings.TrimPrefix(path, "request-")
 
         if strings.HasPrefix(reqtype, "upload-") {
-            reportable_err = uploadHandler(reqpath, &globals)
+            reportable_err = uploadHandler(reqpath, &globals, r.Context())
 
         } else if strings.HasPrefix(reqtype, "refresh_latest-") {
-            res, err0 := refreshLatestHandler(reqpath, &globals)
+            res, err0 := refreshLatestHandler(reqpath, &globals, r.Context())
             if err0 == nil {
                 if res != nil {
                     payload["version"] = res.Version
@@ -128,7 +128,7 @@ func main() {
             }
 
         } else if strings.HasPrefix(reqtype, "refresh_usage-") {
-            res, err0 := refreshUsageHandler(reqpath, &globals)
+            res, err0 := refreshUsageHandler(reqpath, &globals, r.Context())
             if err0 == nil {
                 payload["total"] = res.Total
             } else {
@@ -136,22 +136,22 @@ func main() {
             }
 
         } else if strings.HasPrefix(reqtype, "set_permissions-") {
-            reportable_err = setPermissionsHandler(reqpath, &globals)
+            reportable_err = setPermissionsHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "approve_probation-") {
-            reportable_err = approveProbationHandler(reqpath, &globals)
+            reportable_err = approveProbationHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "reject_probation-") {
-            reportable_err = rejectProbationHandler(reqpath, &globals)
+            reportable_err = rejectProbationHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "create_project-") {
-            reportable_err = createProjectHandler(reqpath, &globals)
+            reportable_err = createProjectHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "delete_project-") {
-            reportable_err = deleteProjectHandler(reqpath, &globals)
+            reportable_err = deleteProjectHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "delete_asset-") {
-            reportable_err = deleteAssetHandler(reqpath, &globals)
+            reportable_err = deleteAssetHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "delete_version-") {
-            reportable_err = deleteVersionHandler(reqpath, &globals)
+            reportable_err = deleteVersionHandler(reqpath, &globals, r.Context())
 
         } else if strings.HasPrefix(reqtype, "reroute_links-") {
-            res, err0 := rerouteLinksHandler(reqpath, &globals)
+            res, err0 := rerouteLinksHandler(reqpath, &globals, r.Context())
             if err0 == nil {
                 payload["changes"] = res
             } else {
@@ -159,7 +159,7 @@ func main() {
             }
 
         } else if strings.HasPrefix(reqtype, "reindex_version-") {
-            reportable_err = reindexHandler(reqpath, &globals)
+            reportable_err = reindexHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "health_check-") { // TO-BE-DEPRECATED, see /check below.
             reportable_err = nil
         } else {
