@@ -17,6 +17,11 @@ func TestIsLinkWhitelisted(t *testing.T) {
     if isLinkWhitelisted("/foo/bar", []string{ "/bar/" }) {
         t.Error("expected link to not be whitelisted")
     }
+
+    // Still works if nil.
+    if isLinkWhitelisted("/foo/bar", nil) {
+        t.Error("expected link to be whitelisted")
+    }
 }
 
 func TestLoadLinkWhitelist(t *testing.T) {
