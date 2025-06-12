@@ -1396,7 +1396,7 @@ func TestReindexDirectorySimple(t *testing.T) {
         t.Fatalf("failed to strip all double dots; %v", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to reindex directory; %v", err)
     }
@@ -1457,7 +1457,7 @@ func TestReindexDirectorySkipInternal(t *testing.T) {
     }
 
     // Now reindexing after without purging all the internal files.
-    err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to reindex directory; %v", err)
     }
@@ -1567,7 +1567,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to reindex directory; %v", err)
         }
@@ -1608,7 +1608,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to reindex directory; %v", err)
         }
@@ -1669,7 +1669,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
             t.Fatalf("failed to strip all double dots; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "outside the registry") {
             t.Errorf("expected reindexing failure for files outside the registry; %v", err)
         }
@@ -1723,7 +1723,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatalf("failed to strip all double dots; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
         if err != nil {
             t.Fatal(err)
         }
@@ -1800,7 +1800,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
         if err != nil {
             t.Fatal(err)
         }
@@ -1866,7 +1866,7 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
         t.Fatalf("failed to strip all double dots; %v", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, []string{ filepath.Dir(other_name) }, ctx)
+    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{ LinkWhitelist: []string{ filepath.Dir(other_name) } })
     if err != nil { 
         t.Fatal(err)
     }

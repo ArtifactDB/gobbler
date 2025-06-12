@@ -118,7 +118,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return err
     }
 
-    err = reindexDirectory(globals.Registry, project, asset, version, globals.LinkWhitelist, ctx)
+    err = reindexDirectory(globals.Registry, project, asset, version, ctx, reindexDirectoryOptions{ LinkWhitelist: globals.LinkWhitelist })
     if err != nil {
         return fmt.Errorf("failed to reindex project; %w", err)
     }

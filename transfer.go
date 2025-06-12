@@ -618,7 +618,11 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
     )
 }
 
-func reindexDirectory(registry, project, asset, version string, link_whitelist []string, ctx context.Context) error {
+type reindexDirectoryOptions struct {
+    LinkWhitelist []string
+}
+
+func reindexDirectory(registry, project, asset, version string, ctx context.Context, options reindexDirectoryOptions) error {
     source := filepath.Join(registry, project, asset, version)
 
     // Doing a preliminary pass to create correct symlinks from any existing ..link files.
@@ -685,7 +689,9 @@ func reindexDirectory(registry, project, asset, version string, link_whitelist [
         ctx,
         processDirectoryOptions{
             Transfer: false,
-            LinkWhitelist: link_whitelist,
+            IgnoreDot: false,
+            TryMove: false, // not used during reindexing, just set for completeness only.
+            LinkWhitelist: options.LinkWhitelist,
         },
     )
 }

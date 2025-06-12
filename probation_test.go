@@ -61,7 +61,7 @@ func mockProbationVersion(reg, project, asset, version string) error {
         return fmt.Errorf("failed to create some mock files; %w", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, []string{}, context.Background())
+    err = reindexDirectory(reg, project, asset, version, context.Background(), reindexDirectoryOptions{})
     if err != nil {
         return fmt.Errorf("failed to reindex the directory; %w", err)
     }
@@ -414,7 +414,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
                 return fmt.Errorf("failed to create some mock files; %w", err)
             }
 
-            err = reindexDirectory(reg, project, asset, version, []string{}, ctx)
+            err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
             if err != nil {
                 return fmt.Errorf("failed to reindex the directory; %w", err)
             }
