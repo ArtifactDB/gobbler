@@ -234,7 +234,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration, ctx con
         return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -249,7 +249,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration, ctx con
     // If Asset is provided, we could consider holding a shared lock to improve parallelism.
     // However, this gets complicated if the asset directory does not exist, in which case we need to reacquire an exclusive lock to create the directory.
     // It's just simpler to hold an exclusive lock to start with, the handler should finish up pretty quickly so any contention is limited.
-    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
+    plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }

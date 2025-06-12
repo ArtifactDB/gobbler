@@ -118,7 +118,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx cont
         }
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -130,7 +130,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx cont
         return nil, err
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir, ctx)
+    plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -142,7 +142,7 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx cont
         return nil, err
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
+    alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }

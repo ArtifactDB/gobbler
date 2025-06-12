@@ -39,7 +39,7 @@ func deleteProjectHandler(reqpath string, globals *globalConfiguration, ctx cont
         }
     }
 
-    rlock, err := lockDirectoryExclusive(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryExclusive(globals.Registry, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry; %w", err)
     }
@@ -110,7 +110,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx contex
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -126,7 +126,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx contex
         }
     }
 
-    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
+    plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }
@@ -153,7 +153,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx contex
     }
 
     if asset_usage_err == nil {
-        err := editUsage(globals, project_dir, -asset_usage, ctx)
+        err := editUsage(project_dir, -asset_usage, globals, ctx)
         if err != nil {
             return fmt.Errorf("failed to update usage for %s; %v", project_dir, err)
         }
@@ -214,7 +214,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
 
     force_deletion := incoming.Force != nil && *(incoming.Force)
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -230,7 +230,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
         }
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir, ctx)
+    plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
@@ -246,7 +246,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
         }
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
+    alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
@@ -278,7 +278,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
     }
 
     if version_usage_err == nil {
-        err := editUsage(globals, project_dir, -version_usage, ctx)
+        err := editUsage(project_dir, -version_usage, globals, ctx)
         if err != nil {
             return err
         }

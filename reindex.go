@@ -71,7 +71,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return err
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", globals.Registry, err)
     }
@@ -84,7 +84,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return err
     }
 
-    plock, err := lockDirectoryShared(globals, project_dir, ctx)
+    plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
@@ -106,7 +106,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return err
     }
 
-    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
+    alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to acquire the lock on %q; %w", asset_dir, err)
     }

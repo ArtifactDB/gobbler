@@ -102,8 +102,8 @@ func computeVersionUsage(path string) (int64, error) {
     return total, err
 }
 
-func editUsage(globals *globalConfiguration, project_dir string, val int64, ctx context.Context) error {
-    ulock, err := lockDirectoryWriteUsage(globals, project_dir, ctx)
+func editUsage(project_dir string, val int64, globals *globalConfiguration, ctx context.Context) error {
+    ulock, err := lockDirectoryWriteUsage(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock usage file in %q; %w", project_dir, err)
     }
@@ -154,7 +154,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration, ctx conte
         }
     }
 
-    rlock, err := lockDirectoryShared(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
     }
@@ -166,7 +166,7 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration, ctx conte
         return nil, err
     }
 
-    plock, err := lockDirectoryExclusive(globals, project_dir, ctx)
+    plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to lock the project directory %q; %w", project_dir, err)
     }

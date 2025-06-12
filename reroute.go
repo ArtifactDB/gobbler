@@ -313,7 +313,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx conte
     }
 
     // Obtaining an all-of-registry lock before we identify the rerouting actions.
-    rlock, err := lockDirectoryExclusive(globals, globals.Registry, ctx)
+    rlock, err := lockDirectoryExclusive(globals.Registry, globals, ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to acquire the lock on the registry; %w", err)
     }
