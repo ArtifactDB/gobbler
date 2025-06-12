@@ -116,6 +116,12 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx contex
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     _, err = os.Stat(project_dir)
     if err != nil {
@@ -125,6 +131,7 @@ func deleteAssetHandler(reqpath string, globals *globalConfiguration, ctx contex
             return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
         }
     }
+    rnnlock.Unlock(globals) // once we know the directory exists, we don't need this anymore.
 
     plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
     if err != nil {
@@ -220,6 +227,12 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project_dir := filepath.Join(globals.Registry, *(incoming.Project))
     _, err = os.Stat(project_dir)
     if err != nil {
@@ -229,12 +242,19 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
             return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
         }
     }
+    rnnlock.Unlock(globals) // once we know the directory exists, we don't need this anymore.
 
     plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
     defer plock.Unlock(globals)
+
+    pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+    }
+    defer pnnlock.Unlock(globals)
 
     asset_dir := filepath.Join(project_dir, *(incoming.Asset))
     _, err = os.Stat(asset_dir)
@@ -245,6 +265,7 @@ func deleteVersionHandler(reqpath string, globals *globalConfiguration, ctx cont
             return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
         }
     }
+    pnnlock.Unlock(globals) // once we know the directory exists, we don't need this anymore.
 
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {

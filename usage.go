@@ -160,11 +160,18 @@ func refreshUsageHandler(reqpath string, globals *globalConfiguration, ctx conte
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
+    rnnlock.Unlock(globals) // no need for this lock once we know that the project directory exists.
 
     plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
     if err != nil {

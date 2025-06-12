@@ -115,19 +115,31 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
+    rnnlock.Unlock(globals) // no need for this thing once we know the project directory exists.
 
-    // Acquiring a complete lock for safety during asset directory creation and reading/setting asset-level permissions.
-    // For global writes, the asset directory needs to be created and filled with permissions without any lock reacquisition, otherwise another process could intervene.
-    plock, err := lockDirectoryExclusive(project_dir, globals, ctx)
+    plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
     defer plock.Unlock(globals)
+
+    // Acquiring an exclusive lock just in case we need to create the asset directory.
+    pnnlock, err := lockDirectoryNewDirExclusive(project_dir, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+    }
+    defer pnnlock.Unlock(globals)
 
     perms, err := readPermissions(project_dir)
     if err != nil {
@@ -161,35 +173,21 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
     }
 
     if !asset_exists {
+        // Note that we have an implicit exclusive lock on the asset directory at this point.
+        // We hold the newdir lock on the project directory, so no other process can even enter the asset directory if they're following correct procedure.
         err = os.Mkdir(asset_dir, 0755)
         if err != nil {
             return fmt.Errorf("failed to create a new asset directory inside %q; %w", asset_dir, err)
         }
-    }
 
-    if use_global_write { // adding asset-level permissions.
-        asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
-        perm_path := filepath.Join(asset_dir, permissionsFileName)
-        err := dumpJson(perm_path, asset_permissions)
-        if err != nil {
-            return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
+        if use_global_write {
+            asset_permissions := &permissionsMetadata{ Owners: []string{ req_user } }
+            perm_path := filepath.Join(asset_dir, permissionsFileName)
+            err := dumpJson(perm_path, asset_permissions)
+            if err != nil {
+                return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
+            }
         }
-    }
-
-    // Now switching to a shared project-level lock to improve parallelism for multiple upload requests.
-    plock.Unlock(globals)
-    plock2, err := lockDirectoryShared(project_dir, globals, ctx)
-    if err != nil {
-        return fmt.Errorf("failed to re-lock project directory %q; %w", project_dir, err)
-    }
-    defer plock2.Unlock(globals)
-
-    // The lock switch above means that there is a brief period of time where the project is unlocked and other processes could just change things.
-    // By and large, this is fine as the filesystem is still in a valid state, even with an empty asset subdirectory.
-    // However, it is possible for deleteAssetHandler to wipe out the asset that we're trying to create.
-    // So when we reacquire the project lock, we need to confirm that the asset directory still exists before taking a lock on it.
-    if _, err := os.Stat(asset_dir); err != nil {
-        return fmt.Errorf("cannot access asset directory %q; %w", asset_dir, err)
     }
 
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
@@ -197,6 +195,8 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
         return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
     }
     defer alock.Unlock(globals)
+
+    pnnlock.Unlock(globals) // at this point, we have safely secured the asset directory, so we can release this lock.
 
     version := *(request.Version)
     version_dir := filepath.Join(asset_dir, version)

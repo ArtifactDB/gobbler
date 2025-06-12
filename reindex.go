@@ -77,12 +77,18 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
     }
     defer rlock.Unlock(globals)
 
-    // Configuring the project; we apply a lock to the project to avoid concurrent changes.
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
+    rnnlock.Unlock(globals) // no need for this lock once we know that the project directory exists.
 
     plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
@@ -100,11 +106,18 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + request.User + "' is not authorized to reindex '" + project + "'"))
     }
 
+    pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
+    }
+    defer pnnlock.Unlock(globals)
+
     asset := *(request.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return err
     }
+    pnnlock.Unlock(globals) // no need for this lock once we know that the asset directory exists.
 
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {

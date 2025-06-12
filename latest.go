@@ -124,11 +124,18 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx cont
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return nil, err
     }
+    rnnlock.Unlock(globals) // no need to hold this lock once we have safely entered the subdirectory.
 
     plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
@@ -136,11 +143,18 @@ func refreshLatestHandler(reqpath string, globals *globalConfiguration, ctx cont
     }
     defer plock.Unlock(globals)
 
+    pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+    }
+    defer pnnlock.Unlock(globals)
+
     asset := *(incoming.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return nil, err
     }
+    pnnlock.Unlock(globals) // no need to hold this lock once we have safely entered the subdirectory.
 
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {

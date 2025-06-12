@@ -12,7 +12,7 @@ import (
 )
 
 func rejectProbation(project_dir, version_dir string, force_deletion bool, globals *globalConfiguration, ctx context.Context) error {
-    // Assumes that we have an exclusive asset-level lock and a shared project-level lock.
+    // Assumes that we have an exclusive asset-level lock. 
     version_usage, version_usage_err := computeVersionUsage(version_dir)
     if version_usage_err != nil && !force_deletion {
         return fmt.Errorf("failed to compute usage for %q; %w", version_dir, version_usage_err)
@@ -78,14 +78,21 @@ func baseProbationHandler(reqpath string, approve bool, globals *globalConfigura
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryNewDirShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err)
+    }
+    defer rnnlock.Unlock(globals)
+
     project := *(incoming.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
     }
+    rnnlock.Unlock(globals) // no need for this lock once we determine that the project directory exists.
 
-    plock, plock_err := lockDirectoryShared(project_dir, globals, ctx)
-    if plock_err != nil {
+    plock, err := lockDirectoryShared(project_dir, globals, ctx)
+    if err != nil {
         return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
     }
     defer plock.Unlock(globals)
@@ -98,11 +105,18 @@ func baseProbationHandler(reqpath string, approve bool, globals *globalConfigura
         return newHttpError(http.StatusForbidden, fmt.Errorf("user %q is not authorized to modify probation status in %q", username, project_dir))
     }
 
+    pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to lock project directory %q; %w", project_dir, err)
+    }
+    defer pnnlock.Unlock(globals)
+
     asset := *(incoming.Asset)
     asset_dir := filepath.Join(project_dir, asset)
     if err := checkAssetExists(asset_dir, asset, project); err != nil {
         return err
     }
+    pnnlock.Unlock(globals) // no need for this lock once we determine that the asset directory exists.
 
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {
@@ -200,17 +214,24 @@ func rejectProbationHandler(reqpath string, globals *globalConfiguration, ctx co
 
 func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Duration) []error {
     ctx := context.Background()
+
     rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err) }
     }
     defer rlock.Unlock(globals)
 
+    rnnlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to lock the registry %q; %w", globals.Registry, err) }
+    }
+    defer rnnlock.Unlock(globals)
+
     projects, err := listUserDirectories(globals.Registry)
     if err != nil {
         return []error{ fmt.Errorf("failed to list projects in registry; %w", err) }
     }
-    rlock.Unlock(globals) // we will be reacquiring the registry-level lock inside the loop.
+    rnnlock.Unlock(globals) // no need for this lock once we obtain a list of the current directories.
 
     all_errors := []error{}
     for _, project := range projects {
@@ -223,35 +244,23 @@ func purgeOldProbationalVersions(globals *globalConfiguration, expiry time.Durat
 }
 
 func purgeOldProbationalVersionsForProject(project_dir string, expiry time.Duration, globals *globalConfiguration, ctx context.Context) []error {
-    // Re-acquiring the registry lock for each project, to give other processes a chance to contend and sneak in operations.
-    // Otherwise there would just be a big block of time where a lock is held during the scan of a registry's contents.
-    rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
-    if err != nil {
-        return []error{ fmt.Errorf("failed to lock registry %q; %w", globals.Registry, err) }
-    }
-    defer rlock.Unlock(globals)
-
-    // As a result of the registry lock reacquisition, we need to check that the project directory actually still exists, and quit if it doesn't.
-    // This is because something could have deleted it in between the listUserDirectories() call and the reacquisition of the lock.
-    if _, err := os.Stat(project_dir); err != nil {
-        if errors.Is(err, os.ErrNotExist) {
-            return []error{}
-        } else {
-            return []error{ fmt.Errorf("failed to stat project directory %q; %w", project_dir, err) }
-        }
-    }
-
     plock, err := lockDirectoryShared(project_dir, globals, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
     }
     defer plock.Unlock(globals)
 
+    pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
+    if err != nil {
+        return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
+    }
+    defer pnnlock.Unlock(globals)
+
     assets, err := listUserDirectories(project_dir)
     if err != nil {
         return []error{ fmt.Errorf("failed to list assets in project directory %q; %w", project_dir, err) }
     }
-    plock.Unlock(globals) // we will be reacquiring the project-level lock inside the loop.
+    pnnlock.Unlock(globals) // no need for this lock once we obtain a list of the current directories.
 
     all_errors := []error{}
     for _, asset := range assets {
@@ -264,24 +273,6 @@ func purgeOldProbationalVersionsForProject(project_dir string, expiry time.Durat
 }
 
 func purgeOldProbationalVersionsForAsset(project_dir string, asset_dir string, expiry time.Duration, globals *globalConfiguration, ctx context.Context) []error {
-    // Re-acquiring the project-level lock for each asset, to give other processes a chance to contend and sneak in operations.
-    // Otherwise there would just be a big block of time where a lock is held during the scan of a project's contents.
-    plock, err := lockDirectoryShared(project_dir, globals, ctx)
-    if err != nil {
-        return []error{ fmt.Errorf("failed to lock project directory %q; %w", project_dir, err) }
-    }
-    defer plock.Unlock(globals)
-
-    // As a result of the project-level lock reacquisition, we need to check that the asset directory actually still exists, and quit if it doesn't.
-    // This is because something could have deleted it in between the listUserDirectories() call and the reacquisition of the lock.
-    if _, err := os.Stat(asset_dir); err != nil {
-        if errors.Is(err, os.ErrNotExist) {
-            return []error{}
-        } else {
-            return []error{ fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err) }
-        }
-    }
-
     alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err) }

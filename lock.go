@@ -108,12 +108,21 @@ func (pl* pathLocks) Unlock(path string) {
     delete(pl.InUse, path)
 }
 
-/* An exclusive lock allows the function to read, delete, create, and modify files or subdirectories or their children within 'dir'.
+/* An exclusive directory lock allows the function to read, delete, create, and modify files or subdirectories or their children within 'dir'.
  *
- * A shared lock guarantees that the contents of 'dir' will not be modified or deleted (with the exception of the project usage file) and no new files/directories will be added.
+ * A shared directory lock guarantees that the contents of 'dir' will not be modified or deleted (with the exception of the project usage file) and no new files will be added.
  * The guarantee only applies to the immediate children of 'dir' and is not recursive.
  *
- * To enter an existing subdirectory, it is typically necessary to acquire a lock on it, to check whether or not the directory exists first.
+ * An exclusive new-dir directory lock allows the function to create new subdirectories in 'dir'.
+ * The privilege only applies to the immediate children of 'dir' and is not recursive.
+ *
+ * A shared new-dir directory lock gurantees that no new subdirectories will be added to 'dir'.
+ * The guarantee only applies to the immediate children of 'dir' and is not recursive.
+ *
+ * To enter an existing subdirectory, it is necessary to acquire a shared lock on the directory.
+ * Then, the function must acquire a new-dir lock (exclusive or shared) to protect against race conditions with directory creation.
+ * Once this is done, the function can check whether or not the subdiirectory exists.
+ * Finally, the new-dir lock can be released to allow other functions to perform their checks.
  *
  * To modify the contents of a directory 'a/b/c', a shared lock should be acquired in each of 'a' and 'b', and an exclusive lock should be acquired on 'c'.
  * Alternatively, we could acquire an exclusive lock on 'b', in which case no lock on 'c' is necessary;
@@ -125,7 +134,14 @@ func (pl* pathLocks) Unlock(path string) {
  * Moreover, a lock should be acquired on each parent directory before attempting to acquire a lock on a subdirectory.
  * This ensures that multiple processes are only ever contending for a single lock at their "lowest common ancestor", to avoid deadlocks.
  *
- * The above rules imply that, when switching a lock from shared to exclusive or vice versa, all locks on subdirectories should be released.
+ * Acquiring a new-dir lock should only be performed once a shared lock on the associated directory is acquired.
+ * Moreover, it must be acquired before acquiring any locks on subdirectories, so as to avoid deadlocks.
+ * A new-dir lock can be released at any time before the shared lock on its directory is released.
+ *
+ * Consider a common situation where we acquire an exclusive new-dir lock, check that a directory does not exist, and create a new directory.
+ * This effectively gives us an exclusive lock on the newly created directory while we hold that new-dir lock.
+ * No other function can acquire a shared new-dir lock to check that the directory exists before entering it;
+ * and obviously, the directory would not have existed before we acquired the lock, so no function could have already entered it and released the new-dir lock.
  */
 
 type directoryLock struct {
@@ -156,6 +172,24 @@ func (dlock *directoryLock) Unlock(globals *globalConfiguration) {
         globals.Locks.Unlock(dlock.LockFile)
         dlock.Active = false
     }
+}
+
+func lockDirectoryNewDirShared(dir string, globals *globalConfiguration, ctx context.Context) (*directoryLock, error) {
+    lockfile := filepath.Join(dir, "..LOCK_NEWDIR")
+    err := globals.Locks.Lock(lockfile, ctx, 60 * time.Second, false)
+    if err != nil {
+        return nil, err
+    }
+    return &directoryLock{ LockFile: lockfile, Active: true }, nil
+}
+
+func lockDirectoryNewDirExclusive(dir string, globals *globalConfiguration, ctx context.Context) (*directoryLock, error) {
+    lockfile := filepath.Join(dir, "..LOCK_NEWDIR")
+    err := globals.Locks.Lock(lockfile, ctx, 60 * time.Second, true)
+    if err != nil {
+        return nil, err
+    }
+    return &directoryLock{ LockFile: lockfile, Active: true }, nil
 }
 
 /* The usage lock is a special beast: it allows the function to read and write the project usage file.
