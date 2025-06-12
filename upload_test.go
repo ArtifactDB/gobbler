@@ -38,7 +38,8 @@ func setupProjectForUploadTest(project string, globals *globalConfiguration) err
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, nil, self.Username, globals, context.Background())
+    project_dir := filepath.Join(globals.Registry, project)
+    err = createProject(project_dir, nil, self.Username)
     if err != nil {
         return err
     }
@@ -482,7 +483,8 @@ func setupProjectForUploadTestWithPermissions(project string, owners []string, u
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, &unsafePermissionsMetadata{ Owners: owners, Uploaders: uploaders }, self.Username, globals, context.Background())
+    project_dir := filepath.Join(globals.Registry, project)
+    err = createProject(project_dir, &unsafePermissionsMetadata{ Owners: owners, Uploaders: uploaders }, self.Username)
     if err != nil {
         return err
     }
@@ -533,8 +535,6 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg)
 
-    ctx := context.Background()
-
     src, err := setupSourceForUploadTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
@@ -548,10 +548,13 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
     }
 
     global_write := true
-    err = createProject(project, &unsafePermissionsMetadata{ Owners: []string{}, Uploaders: nil, GlobalWrite: &global_write }, self.Username, &globals, ctx)
+    project_dir := filepath.Join(globals.Registry, project)
+    err = createProject(project_dir, &unsafePermissionsMetadata{ Owners: []string{}, Uploaders: nil, GlobalWrite: &global_write }, self.Username)
     if err != nil {
         t.Fatalf("failed to create the project; %v", err)
     }
+
+    ctx := context.Background()
 
     t.Run("okay", func(t *testing.T) {
         asset := "BAR"

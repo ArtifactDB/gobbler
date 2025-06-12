@@ -40,15 +40,11 @@ func createProjectHandler(reqpath string, globals *globalConfiguration, ctx cont
         return newHttpError(http.StatusBadRequest, fmt.Errorf("expected a 'project' property in %q", reqpath))
     }
     project := *(request.Project)
-
-    return createProject(project, request.Permissions, req_user, globals, ctx)
-}
-
-func createProject(project string, inperms *unsafePermissionsMetadata, req_user string, globals *globalConfiguration, ctx context.Context) error {
-    err := isBadName(project)
+    err = isBadName(project)
     if err != nil {
         return newHttpError(http.StatusBadRequest, fmt.Errorf("invalid project name; %w", err))
     }
+    project_dir := filepath.Join(globals.Registry, project)
 
     rlock, err := lockDirectoryExclusive(globals.Registry, globals, ctx)
     if err != nil {
@@ -56,17 +52,20 @@ func createProject(project string, inperms *unsafePermissionsMetadata, req_user 
     }
     defer rlock.Unlock(globals)
 
-    project_dir := filepath.Join(globals.Registry, project)
-    _, err = os.Stat(project_dir)
+    return createProject(project_dir, request.Permissions, req_user)
+}
+
+func createProject(project_dir string, inperms *unsafePermissionsMetadata, req_user string) error {
+    _, err := os.Stat(project_dir)
     if err == nil {
-        return newHttpError(http.StatusBadRequest, fmt.Errorf("project %q already exists", project))
+        return newHttpError(http.StatusBadRequest, fmt.Errorf("project directory %q already exists", project_dir))
     } else if !errors.Is(err, os.ErrNotExist) {
         return fmt.Errorf("failed to stat project directory %q; %w", project_dir, err)
     }
 
     err = os.MkdirAll(project_dir, 0755)
     if err != nil {
-        return fmt.Errorf("failed to create a new project directory for %s; %w", project, err)
+        return fmt.Errorf("failed to create a new project directory %s; %w", project_dir, err)
     }
 
     perms := permissionsMetadata{}

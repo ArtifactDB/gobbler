@@ -16,12 +16,12 @@ func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, 
         return fmt.Errorf("failed to determine the current user; %w", err)
     }
 
-    err = createProject(project, nil, self.Username, globals, context.Background())
+    project_dir := filepath.Join(globals.Registry, project)
+    err = createProject(project_dir, nil, self.Username)
     if err != nil {
         return err
     }
 
-    project_dir := filepath.Join(globals.Registry, project)
     asset_dir := filepath.Join(project_dir, asset)
     dir := filepath.Join(asset_dir, version)
     err = os.MkdirAll(dir, 0755)
