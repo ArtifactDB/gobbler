@@ -282,7 +282,7 @@ func purgeOldProbationalVersionsForAsset(globals *globalConfiguration, project_d
         }
     }
 
-    alock, err := lockDirectoryShared(globals, asset_dir, ctx)
+    alock, err := lockDirectoryExclusive(globals, asset_dir, ctx)
     if err != nil {
         return []error{ fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err) }
     }
