@@ -513,19 +513,40 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
         t.Fatalf("failed to create the project; %v", err)
     }
 
-    // Now making the request.
-    asset := "BAR"
-    version := "whee"
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
-    reqname, err := dumpRequest("upload", req_string)
-    if err != nil {
-        t.Fatalf("failed to create upload request; %v", err)
-    }
+    t.Run("new", func(t *testing.T) {
+        asset := "BAR"
+        version := "whee"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
 
-    err = uploadHandler(reqname, &globals, ctx)
-    if err == nil || !strings.Contains(err.Error(), "not authorized") {
-        t.Fatalf("failed to reject upload from non-authorized user")
-    }
+        err = uploadHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatalf("failed to reject upload from non-authorized user")
+        }
+    })
+
+    t.Run("update", func(t *testing.T) {
+        asset := "FOO"
+        err := os.Mkdir(filepath.Join(reg, project, asset), 0755)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        version := "stuff"
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "not authorized") {
+            t.Fatalf("failed to reject upload from non-authorized user")
+        }
+    })
 }
 
 func TestUploadHandlerGlobalWrite(t *testing.T) {
@@ -636,49 +657,89 @@ func TestUploadHandlerProbation(t *testing.T) {
 
     ctx := context.Background()
 
-    project := "setsuna"
-    asset := "yuki"
-    version := "nakagawa"
+    t.Run("explicit", func(t *testing.T) {
+        project := "setsuna"
+        asset := "yuki"
+        version := "nakagawa"
 
-    err = setupProjectForUploadTest(project, &globals)
-    if err != nil {
-        t.Fatalf("failed to set up project directory; %v", err)
-    }
+        err = setupProjectForUploadTest(project, &globals)
+        if err != nil {
+            t.Fatalf("failed to set up project directory; %v", err)
+        }
 
-    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "on_probation": true }`, filepath.Base(src), project, asset, version)
-    reqname, err := dumpRequest("upload", req_string)
-    if err != nil {
-        t.Fatalf("failed to create upload request; %v", err)
-    }
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "on_probation": true }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
 
-    err = uploadHandler(reqname, &globals, ctx)
-    if err != nil {
-        t.Fatalf("failed to perform the upload; %v", err)
-    }
+        err = uploadHandler(reqname, &globals, ctx)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
 
-    // Summary file states that it's on probation.
-    summ, err := readSummary(filepath.Join(reg, project, asset, version))
-    if err != nil {
-        t.Fatalf("failed to read the summary; %v", err)
-    }
-    if !summ.IsProbational() {
-        t.Fatal("expected version to be on probation")
-    }
+        // Summary file states that it's on probation.
+        summ, err := readSummary(filepath.Join(reg, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to read the summary; %v", err)
+        }
+        if !summ.IsProbational() {
+            t.Fatal("expected version to be on probation")
+        }
 
-    // No latest file should be created for probational projects.
-    _, err = readLatest(filepath.Join(reg, project, asset))
-    if err == nil || !errors.Is(err, os.ErrNotExist) {
-        t.Fatal("no ..latest file should be created on probation")
-    }
+        // No latest file should be created for probational projects.
+        _, err = readLatest(filepath.Join(reg, project, asset))
+        if err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Fatal("no ..latest file should be created on probation")
+        }
 
-    // No logs should be created either.
-    logs, err := os.ReadDir(filepath.Join(reg, logDirName))
-    if err != nil {
-        t.Fatalf("failed to read the log directory")
-    }
-    if len(logs) != 0 {
-        t.Fatalf("no logs should be created on probation")
-    }
+        // No logs should be created either.
+        logs, err := os.ReadDir(filepath.Join(reg, logDirName))
+        if err != nil {
+            t.Fatalf("failed to read the log directory")
+        }
+        if len(logs) != 0 {
+            t.Fatalf("no logs should be created on probation")
+        }
+    })
+
+    t.Run("untrusted", func(t *testing.T) {
+        project := "asaka"
+        asset := "karin"
+        version := "diverdiva"
+
+        self, err := user.Current()
+        if err != nil {
+            t.Fatalf("failed to determine the current user; %v", err)
+        }
+        self_name := self.Username
+
+        err = setupProjectForUploadTestWithPermissions(project, []string{}, []unsafeUploaderEntry{ unsafeUploaderEntry{ Id: &self_name } }, &globals)
+        if err != nil {
+            t.Fatalf("failed to create the project; %v", err)
+        }
+
+        // Untrusted uploaders implicitly get put on probation.
+        req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s" }`, filepath.Base(src), project, asset, version)
+        reqname, err := dumpRequest("upload", req_string)
+        if err != nil {
+            t.Fatalf("failed to create upload request; %v", err)
+        }
+
+        err = uploadHandler(reqname, &globals, ctx)
+        if err != nil {
+            t.Fatalf("failed to perform the upload; %v", err)
+        }
+
+        // Summary file states that it's on probation.
+        summ, err := readSummary(filepath.Join(reg, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to read the summary; %v", err)
+        }
+        if !summ.IsProbational() {
+            t.Fatal("expected version to be on probation")
+        }
+    })
 }
 
 func TestUploadHandlerUpdateOnProbation(t *testing.T) {

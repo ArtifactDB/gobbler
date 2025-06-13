@@ -156,8 +156,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
         return fmt.Errorf("failed to stat asset directory %q; %w", asset_dir, err)
     }
 
-    use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite) && !asset_exists
-    if !use_global_write {
+    if asset_exists {
+        alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
+        if err != nil {
+            return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+        }
+        defer alock.Unlock(globals)
+
         asset_perms, err := addAssetPermissionsForUpload(perms, asset_dir, asset)
         if err != nil {
             return fmt.Errorf("failed to read permissions for asset %q in %q; %w", asset, project, err)
@@ -170,9 +175,19 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
         if !trusted {
             on_probation = true
         }
-    }
 
-    if !asset_exists {
+    } else {
+        use_global_write := perms.GlobalWrite != nil && *(perms.GlobalWrite)
+        if !use_global_write {
+            ok, trusted := isAuthorizedToUpload(req_user, globals.Administrators, perms, request.Asset, request.Version)
+            if !ok {
+                return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + req_user + "' is not authorized to upload to '" + project + "'"))
+            }
+            if !trusted {
+                on_probation = true
+            }
+        }
+
         // Note that we have an implicit exclusive lock on the asset directory at this point.
         // We hold the newdir lock on the project directory, so no other process can even enter the asset directory if they're following correct procedure.
         err = os.Mkdir(asset_dir, 0755)
@@ -188,13 +203,13 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
                 return fmt.Errorf("failed to create new permissions for asset %q in %q; %w", asset, project, err)
             }
         }
-    }
 
-    alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
-    if err != nil {
-        return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+        alock, err := lockDirectoryExclusive(asset_dir, globals, ctx)
+        if err != nil {
+            return fmt.Errorf("failed to lock asset directory %q; %w", asset_dir, err)
+        }
+        defer alock.Unlock(globals)
     }
-    defer alock.Unlock(globals)
 
     pnnlock.Unlock(globals) // at this point, we have safely secured the asset directory, so we can release this lock.
 
