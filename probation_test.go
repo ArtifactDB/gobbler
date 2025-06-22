@@ -333,6 +333,47 @@ func TestRejectProbationHandler(t *testing.T) {
             t.Error("expected probational version directory to be deleted")
         }
     })
+
+    t.Run("spoofing", func(t *testing.T) {
+        project := "may"
+        asset := "hoenn"
+        version := "whee"
+        err := mockProbationVersion(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to create a mock version; %v", err)
+        }
+
+        project_dir := filepath.Join(reg, project)
+        err = os.WriteFile(
+            filepath.Join(project_dir, permissionsFileName),
+            []byte(`{ "owners": [ "max" ], "uploaders": [] }`),
+            0644,
+        )
+        if err != nil {
+            t.Fatalf("failed to create some mock permissions; %v", err)
+        }
+
+        reqpath, err := dumpRequest("reject_probation", fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s", "spoof": "max" }`, project, asset, version))
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+
+        err = rejectProbationHandler(reqpath, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "not authorized to spoof") {
+            t.Errorf("expected failure to spoof; %v", err)
+        }
+
+        globals2 := newGlobalConfiguration(reg)
+        globals2.SpoofPermissions[self] = spoofPermissions{ All: false, Users: map[string]bool{ "max": true } }
+        err = rejectProbationHandler(reqpath, &globals2, ctx)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        if _, err := os.Stat(filepath.Join(project_dir, asset, version)); err == nil || !errors.Is(err, os.ErrNotExist) {
+            t.Fatal("failed to delete the probational directory")
+        }
+    })
 }
 
 func TestPurgeOldProbationalVersions(t *testing.T) {

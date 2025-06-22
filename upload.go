@@ -20,23 +20,24 @@ type uploadRequest struct {
     Consume *bool `json:"consume"`
     IgnoreDot *bool `json:"ignore_dot"`
     User string `json:"-"`
+    Spoof *string `json:"spoof"`
 }
 
-func uploadPreflight(reqpath string) (*uploadRequest, error) {
-    handle, err := os.ReadFile(reqpath)
+func uploadPreflight(reqpath string, globals *globalConfiguration) (*uploadRequest, error) {
+    payload, err := os.ReadFile(reqpath)
     if err != nil {
         return nil, fmt.Errorf("failed to read %q; %w", reqpath, err)
     }
 
-    req_user, err := identifyUser(reqpath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
-    }
-
     request := uploadRequest{}
-    err = json.Unmarshal(handle, &request)
+    err = json.Unmarshal(payload, &request)
     if err != nil {
         return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON from %q; %w", reqpath, err))
+    }
+
+    req_user, err := identifySpoofedUser(reqpath, request.Spoof, globals.SpoofPermissions)
+    if err != nil {
+        return nil, fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
     }
 
     if request.Source == nil {
@@ -58,7 +59,7 @@ func uploadPreflight(reqpath string) (*uploadRequest, error) {
         return nil, newHttpError(http.StatusBadRequest, fmt.Errorf("expected %q to be a directory", source_name))
     }
 
-    source_user, err := identifyUser(source)
+    source_user, err := identifySpoofedUser(source, request.Spoof, globals.SpoofPermissions)
     if err != nil {
         return nil, fmt.Errorf("failed to find owner of %q; %w", source, err)
     }
@@ -101,7 +102,7 @@ func uploadPreflight(reqpath string) (*uploadRequest, error) {
 func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Context) error {
     upload_start := time.Now()
 
-    request, err := uploadPreflight(reqpath)
+    request, err := uploadPreflight(reqpath, globals)
     if err != nil {
         return err
     }

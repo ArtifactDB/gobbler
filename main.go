@@ -50,6 +50,7 @@ func main() {
     port := flag.Int("port", 8080, "Port to listen to API requests")
     prefix := flag.String("prefix", "", "Prefix to add to each endpoint, excluding the first and last slashes (default \"\")")
     whitelist := flag.String("whitelist", "", "Whitelist of directories in which linked-to files are to be treated as real files (default none)")
+    spoof := flag.String("spoof", "", "List of users who are allowed to spoof the identities of other users in certain requests (default none)")
     probation := flag.Int("probation", -1, "Lifespan of probational versions, set to -1 to keep them until rejection")
     flag.Parse()
 
@@ -69,6 +70,13 @@ func main() {
             log.Fatal(err)
         }
         globals.LinkWhitelist = whitelist
+    }
+    if *spoof != "" {
+        sperms, err := loadSpoofPermissions(*spoof)
+        if err != nil {
+            log.Fatal(err)
+        }
+        globals.SpoofPermissions = sperms
     }
 
     log_dir := filepath.Join(globals.Registry, logDirName)

@@ -549,6 +549,55 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
     })
 }
 
+func TestUploadHandlerSpoof(t *testing.T) {
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg)
+
+    ctx := context.Background()
+
+    src, err := setupSourceForUploadTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    project := "aaron"
+    err = setupProjectForUploadTestWithPermissions(project, []string{ "serena" }, nil, &globals)
+    if err != nil {
+        t.Fatalf("failed to create the project; %v", err)
+    }
+
+    asset := "BAR"
+    version := "whee"
+    req_string := fmt.Sprintf(`{ "source": "%s", "project": "%s", "asset": "%s", "version": "%s", "spoof": "serena" }`, filepath.Base(src), project, asset, version)
+    reqname, err := dumpRequest("upload", req_string)
+    if err != nil {
+        t.Fatalf("failed to create upload request; %v", err)
+    }
+
+    err = uploadHandler(reqname, &globals, ctx)
+    if err == nil || !strings.Contains(err.Error(), "not authorized to spoof") {
+        t.Errorf("expected failure to spoof; %v", err)
+    }
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatal(err)
+    }
+    globals.SpoofPermissions[self.Username] = spoofPermissions{ Users: map[string]bool{ "serena": true } }
+    err = uploadHandler(reqname, &globals, ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    _, err = readManifest(filepath.Join(reg, project, asset, version))
+    if err != nil {
+        t.Fatalf("failed to read the manifest; %v", err)
+    }
+}
+
 func TestUploadHandlerGlobalWrite(t *testing.T) {
     reg, err := constructMockRegistry()
     if err != nil {

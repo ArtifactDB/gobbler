@@ -240,6 +240,8 @@ This file should be JSON-formatted with the following properties:
 - `consume` (optional): boolean specifying whether the Gobbler is allowed to attempt to move files from `source` into the registry.
   If successful, this consumes the files in the temporary directory, avoiding an extra copy but invalidating the contents of `source`.
   If not provided, this defaults to false.
+- `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
+  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the files will be transferred to the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -260,6 +262,8 @@ Users should create a file with the `request-set_permissions-` prefix, which sho
   Each of these properties has the same type as described [above](#permissions).
   If any property is missing, the value in the existing permissions is used.
   If `asset` is provided, only `uploaders` will be used.
+- `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
+  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the permissions in the registry are modified.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -292,6 +296,8 @@ This file should be JSON-formatted with the following properties:
   Occasionally necessary if the version contains corrupted summary or manifest files,
   in which case they will be deleted but the project usage will need to be refreshed manually.
   Defaults to false if not supplied.
+- `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
+  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the relevant version is removed from the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -538,6 +544,11 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
   Any symbolic link that targets a file in a whitelisted directory is treated as the file itself during upload and reindexing.
   This is useful for avoiding unnecessary copies from data archives.
   By default, no directories are whitelisted.
+- `-spoof` contains a path to a text file containing the spoofing permissions.
+  Each line should be formatted as `[spoofer]:[comma-separated list of users]`, where `spoofer` may perform requests on behalf of the listed users in supported endpoints.
+  Alternatively, a line may contain `[spoofer]:*` to indicate that `spoofer` is allowed to pretend to be any user.
+  Lines containing `[spoofer]:` without any users will be ignored.
+  By default, no spoofing is permitted.
 - `-probation` specifies the lifespan of probational versions in days, after which they will be automatically deleted.
   The default value of -1 will not perform any deletion. 
 

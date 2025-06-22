@@ -39,6 +39,7 @@ func baseProbationHandler(reqpath string, approve bool, globals *globalConfigura
         Asset *string `json:"asset"`
         Version *string `json:"version"`
         Force *bool `json:"force"`
+        Spoof *string `json:"spoof"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -67,9 +68,9 @@ func baseProbationHandler(reqpath string, approve bool, globals *globalConfigura
         }
     }
 
-    username, err := identifyUser(reqpath)
+    username, err := identifySpoofedUser(reqpath, incoming.Spoof, globals.SpoofPermissions)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return fmt.Errorf("failed to identify user; %w", err)
     }
 
     rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)

@@ -200,6 +200,7 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration, ctx con
         Project *string `json:"project"`
         Asset *string `json:"asset"`
         Permissions *unsafePermissionsMetadata `json:"permissions"`
+        Spoof *string `json:"spoof"`
     }{}
     {
         handle, err := os.ReadFile(reqpath)
@@ -229,9 +230,9 @@ func setPermissionsHandler(reqpath string, globals *globalConfiguration, ctx con
         }
     }
 
-    source_user, err := identifyUser(reqpath)
+    source_user, err := identifySpoofedUser(reqpath, incoming.Spoof, globals.SpoofPermissions)
     if err != nil {
-        return fmt.Errorf("failed to find owner of %q; %w", reqpath, err)
+        return fmt.Errorf("failed to identify user; %w", err)
     }
 
     rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)

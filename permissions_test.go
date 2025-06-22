@@ -571,4 +571,42 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Errorf("unexpected asset-level permissions after re-setting; %v", perms)
         }
     })
+
+    t.Run("spoofing", func(t *testing.T) {
+        err := os.WriteFile(
+            filepath.Join(project_dir, permissionsFileName),
+            []byte(`{ "owners": [ "sabrina" ], "uploaders": [] }`),
+            0644,
+        )
+        if err != nil {
+            t.Fatalf("failed to create some mock permissions; %v", err)
+        }
+
+        reqpath, err := dumpRequest(
+            "set_permissions",
+            fmt.Sprintf(`{ "project": "%s", "permissions": { "owners": [ "misty" ] }, "spoof": "sabrina" }`, project),
+        )
+        if err != nil {
+            t.Fatalf("failed to dump a request type; %v", err)
+        }
+        err = setPermissionsHandler(reqpath, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "not authorized to spoof") {
+            t.Errorf("expected failure to spoof; %v", err)
+        }
+
+        globals2 := newGlobalConfiguration(reg)
+        globals2.SpoofPermissions[self] = spoofPermissions{ All: false, Users: map[string]bool{ "sabrina": true } }
+        err = setPermissionsHandler(reqpath, &globals2, ctx)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        perms, err := readPermissions(project_dir)
+        if err != nil {
+            t.Fatalf("failed to read the new permissions; %v", err)
+        }
+        if len(perms.Owners) != 1 || perms.Owners[0] != "misty" {
+            t.Fatal("expected update to the owners")
+        }
+    })
 }

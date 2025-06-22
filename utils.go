@@ -18,6 +18,7 @@ type globalConfiguration struct {
     Administrators []string
     Locks pathLocks
     LinkWhitelist []string
+    SpoofPermissions map[string]spoofPermissions
 }
 
 func newGlobalConfiguration(registry string) globalConfiguration {
@@ -26,6 +27,7 @@ func newGlobalConfiguration(registry string) globalConfiguration {
         Administrators: []string{},
         Locks: newPathLocks(),
         LinkWhitelist: []string{},
+        SpoofPermissions: map[string]spoofPermissions{},
     }
 }
 
