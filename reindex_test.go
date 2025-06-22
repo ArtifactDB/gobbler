@@ -10,23 +10,23 @@ import (
     "context"
 )
 
-func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, version string) error {
+func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, version string) (string, error) {
     self, err := user.Current()
     if err != nil {
-        return fmt.Errorf("failed to determine the current user; %w", err)
+        return "", fmt.Errorf("failed to determine the current user; %w", err)
     }
 
     project_dir := filepath.Join(globals.Registry, project)
     err = createProject(project_dir, nil, self.Username)
     if err != nil {
-        return err
+        return "", err
     }
 
     asset_dir := filepath.Join(project_dir, asset)
     dir := filepath.Join(asset_dir, version)
     err = os.MkdirAll(dir, 0755)
     if err != nil {
-        return err
+        return "", err
     }
 
     err = os.WriteFile(filepath.Join(dir, summaryFileName), []byte(`{ 
@@ -37,15 +37,15 @@ func setupDirectoryForReindexTest(globals *globalConfiguration, project, asset, 
 
     err = os.WriteFile(filepath.Join(dir, "evolution"), []byte("haunter"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
 
     err = os.WriteFile(filepath.Join(dir, "moves"), []byte("lick,confuse_ray,shadow_ball,dream_eater"), 0644)
     if err != nil {
-        return err
+        return "", err
     }
 
-    return nil
+    return self.Username, nil
 }
 
 func TestReindexHandlerSimple(t *testing.T) {
@@ -59,10 +59,11 @@ func TestReindexHandlerSimple(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg)
 
-    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
+    globals.Administrators = append(globals.Administrators, self_user)
 
     ctx := context.Background()
 
@@ -120,12 +121,14 @@ func TestReindexHandlerLatest(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+
     globals := newGlobalConfiguration(reg)
 
-    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
+    globals.Administrators = append(globals.Administrators, self_user)
 
     asset_dir := filepath.Join(reg, project, asset)
     err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "version": "%s" }`, version)), 0644)
@@ -169,12 +172,14 @@ func TestReindexHandlerProbation(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+
     globals := newGlobalConfiguration(reg)
 
-    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
+    globals.Administrators = append(globals.Administrators, self_user)
 
     // Set it to be on probation.
     err = os.WriteFile(filepath.Join(globals.Registry, project, asset, version, summaryFileName), []byte(`{ 
@@ -223,12 +228,14 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
+
     globals := newGlobalConfiguration(reg)
 
-    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
+    globals.Administrators = append(globals.Administrators, self_user)
 
     ctx := context.Background()
 
@@ -305,15 +312,9 @@ func TestReindexHandlerUnauthorized(t *testing.T) {
     globals := newGlobalConfiguration(reg)
     ctx := context.Background()
 
-    err = setupDirectoryForReindexTest(&globals, project, asset, version)
+    _, err = setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
-    }
-
-    // Wiping the user.
-    err = os.WriteFile(filepath.Join(globals.Registry, project, permissionsFileName), []byte(`{ "owners": [], "uploaders": [] }`), 0644)
-    if err != nil {
-        t.Fatalf("failed to edit the owners; %v", err)
     }
 
     req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)

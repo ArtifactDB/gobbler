@@ -70,6 +70,11 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
     if err != nil {
         return err
     }
+    project := *(request.Project)
+    ok := isAuthorizedToAdmin(request.User, globals.Administrators)
+    if !ok {
+        return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + request.User + "' is not authorized to reindex '" + project + "'"))
+    }
 
     rlock, err := lockDirectoryShared(globals.Registry, globals, ctx)
     if err != nil {
@@ -83,7 +88,6 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
     }
     defer rnnlock.Unlock(globals)
 
-    project := *(request.Project)
     project_dir := filepath.Join(globals.Registry, project)
     if err := checkProjectExists(project_dir, project); err != nil {
         return err
@@ -95,16 +99,6 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         return fmt.Errorf("failed to acquire the lock on %q; %w", project_dir, err)
     }
     defer plock.Unlock(globals)
-
-    perms, err := readPermissions(project_dir)
-    if err != nil {
-        return fmt.Errorf("failed to read permissions for %q; %w", project, err)
-    }
-
-    ok := isAuthorizedToMaintain(request.User, globals.Administrators, perms.Owners)
-    if !ok {
-        return newHttpError(http.StatusForbidden, fmt.Errorf("user '" + request.User + "' is not authorized to reindex '" + project + "'"))
-    }
 
     pnnlock, err := lockDirectoryNewDirShared(project_dir, globals, ctx)
     if err != nil {
