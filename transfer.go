@@ -359,7 +359,7 @@ func resolveLocalSymlink(
 
 type processDirectoryOptions struct {
     Transfer bool
-    TryMove bool
+    Consume bool
     IgnoreDot bool
     LinkWhitelist []string
 }
@@ -512,17 +512,6 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             final := filepath.Join(destination, path)
             src_path := filepath.Join(source, path)
 
-            // We use a second pass so that Rename() doesn't break local links
-            // within the staging directory during the first pass. If Rename()
-            // is moved to a second pass, copyFile() also needs to be moved as
-            // it serves as the fallback if the renaming fails.
-            if options.TryMove {
-                err := os.Rename(src_path, final)
-                if err == nil {
-                    continue
-                }
-            }
-
             err = copyFile(src_path, final)
             if err != nil {
                 return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
@@ -534,6 +523,20 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             insum := manifest[path].Md5sum
             if finalsum != insum {
                 return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+            }
+
+            // The move ensures that we don't have two copies of all files in the staging
+            // and registry at once. This reduces storage consumption during the upload. 
+            //
+            // We use a copy-and-delete to mimic a move to ensure that our permissions of
+            // the new file are configured correctly, otherwise we might end up preserving
+            // the wrong permissions (especially ownership) of the moved file. This obviously
+            // comes at the cost of some performance but I don't see another way.
+            //
+            // We use a second pass so this deletion doesn't break local links
+            // within the staging directory during the first pass.
+            if options.Consume {
+                os.Remove(src_path)
             }
         }
     }
@@ -596,7 +599,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
 }
 
 type transferDirectoryOptions struct {
-    TryMove bool
+    Consume bool
     IgnoreDot bool
     LinkWhitelist []string
 }
@@ -611,7 +614,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         ctx,
         processDirectoryOptions{
             Transfer: true,
-            TryMove: options.TryMove,
+            Consume: options.Consume,
             IgnoreDot: options.IgnoreDot,
             LinkWhitelist: options.LinkWhitelist,
         },
@@ -690,7 +693,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         processDirectoryOptions{
             Transfer: false,
             IgnoreDot: false,
-            TryMove: false, // not used during reindexing, just set for completeness only.
+            Consume: false, // not used during reindexing, just set for completeness only.
             LinkWhitelist: options.LinkWhitelist,
         },
     )

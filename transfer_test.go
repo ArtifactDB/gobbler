@@ -334,15 +334,15 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
     })
 }
 
-func TestTransferDirectoryTryMove(t *testing.T) {
+func TestTransferDirectoryConsume(t *testing.T) {
     project := "pokemon"
     asset := "pikachu" 
     version := "yellow"
 
     ctx := context.Background()
 
-    // Executing the transfer; by default, nothing is moved, until TryMove=true.
-    t.Run("no move", func(t *testing.T) {
+    // Executing the transfer; by default, nothing is moved, until Consume=true.
+    t.Run("no consume", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -369,8 +369,8 @@ func TestTransferDirectoryTryMove(t *testing.T) {
         }
     })
 
-    // Until TryMove=true.
-    t.Run("with move", func(t *testing.T) {
+    // Until Consume=true.
+    t.Run("with consume", func(t *testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
@@ -381,7 +381,7 @@ func TestTransferDirectoryTryMove(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ TryMove: true })
+        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ Consume: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -424,7 +424,7 @@ func TestTransferDirectoryTryMove(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ TryMove: true })
+        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ Consume: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
