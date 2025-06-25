@@ -308,19 +308,11 @@ func resolveLocalSymlink(
     target string,
     local_links map[string]string,
     manifest map[string]manifestEntry,
-    manifest_lock sync.RWMutex,
     traversed map[string]bool,
 ) (*manifestEntry, error) {
 
-    var man_deets manifestEntry
-    var man_ok bool
-    func() {
-        manifest_lock.RLock()
-        defer manifest_lock.RUnlock()
-        man_deets, man_ok = manifest[target]
-    }()
-
     var target_deets *manifestEntry
+    man_deets, man_ok := manifest[target]
     if man_ok {
         target_deets = &man_deets
     } else {
@@ -339,7 +331,7 @@ func resolveLocalSymlink(
             return nil, fmt.Errorf("symlink at %q should point to a file in the manifest or another symlink", target)
         }
 
-        ancestor, err := resolveLocalSymlink(project, asset, version, target, next_target, local_links, manifest, manifest_lock, traversed)
+        ancestor, err := resolveLocalSymlink(project, asset, version, target, next_target, local_links, manifest, traversed)
         if err != nil {
             return nil, err
         }
@@ -369,8 +361,6 @@ func resolveLocalSymlink(
     // Modifying the manifest so that if multiple symlinks have the same target
     // that is also a symlink, only the first call to this function will
     // recurse; all others will just use the cached ancestor in the manifest.
-    manifest_lock.Lock()
-    defer manifest_lock.Unlock()
     manifest[path] = output
     return &output, nil
 }
@@ -733,7 +723,6 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
     }
 
     /*** Final pass to resolve local links within the newly uploaded directory. ***/
-    var manifest_lock2 sync.RWMutex
     for path, target := range local_links {
         err := ctx.Err()
         if err != nil {
@@ -745,40 +734,17 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return err
         }
 
-        handle := options.ConcurrencyThrottle.Wait()
-        wg.Add(1);
-        go func() {
-            defer options.ConcurrencyThrottle.Release(handle)
-            defer wg.Done();
-            err := func() error {
-                err := ctx.Err()
-                if err != nil {
-                    return fmt.Errorf("directory processing cancelled; %w", err)
-                }
+        // Don't try to parallelize this, as different local_links might have the same ancestors;
+        // this would result in redundant resolution and unnecessary work across multiple goroutines.
+        man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
+        if err != nil {
+            return err
+        }
 
-                err = safeCheckError()
-                if err != nil {
-                    return err
-                }
-
-
-                man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, manifest_lock2, nil)
-                if err != nil {
-                    return err
-                }
-
-                err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !options.Transfer)
-                if err != nil {
-                    return err
-                }
-
-                return nil
-            }()
-
-            if err != nil {
-                safeAddError(err)
-            }
-        }()
+        err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !options.Transfer)
+        if err != nil {
+            return err
+        }
     }
 
     wg.Wait()
