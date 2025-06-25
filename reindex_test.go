@@ -57,7 +57,7 @@ func TestReindexHandlerSimple(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
@@ -122,7 +122,7 @@ func TestReindexHandlerLatest(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
@@ -173,7 +173,7 @@ func TestReindexHandlerProbation(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
@@ -229,7 +229,7 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     self_user, err := setupDirectoryForReindexTest(&globals, project, asset, version)
     if err != nil {
@@ -309,7 +309,7 @@ func TestReindexHandlerUnauthorized(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
     ctx := context.Background()
 
     _, err = setupDirectoryForReindexTest(&globals, project, asset, version)

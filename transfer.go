@@ -197,9 +197,9 @@ func resolveRegistrySymlink(
     version string,
     target string,
     manifest_cache map[string]map[string]manifestEntry,
-    manifest_cache_lock sync.Mutex,
+    manifest_cache_lock *sync.Mutex,
     probation_cache map[string]bool,
-    probation_cache_lock sync.Mutex,
+    probation_cache_lock *sync.Mutex,
 ) (*manifestEntry, error) {
 
     fragments := []string{}
@@ -374,10 +374,9 @@ type processDirectoryOptions struct {
     Consume bool
     IgnoreDot bool
     LinkWhitelist []string
-    ConcurrencyThrottle concurrencyThrottle
 }
 
-func processDirectory(source, registry, project, asset, version string, ctx context.Context, options processDirectoryOptions) error {
+func processDirectory(source, registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options processDirectoryOptions) error {
     var last_dedup map[string]linkMetadata 
     var err error
     if options.Transfer {
@@ -456,10 +455,10 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return nil
         }
 
-        handle := options.ConcurrencyThrottle.Wait()
+        handle := throttle.Wait()
         wg.Add(1);
         go func() {
-            defer options.ConcurrencyThrottle.Release(handle)
+            defer throttle.Release(handle)
             defer wg.Done();
             err := func() error {
                 // Re-check for early cancellation once we get into the goroutine,
@@ -593,10 +592,10 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
                 return err
             }
 
-            handle := options.ConcurrencyThrottle.Wait()
+            handle := throttle.Wait()
             wg.Add(1);
             go func() {
-                defer options.ConcurrencyThrottle.Release(handle)
+                defer throttle.Release(handle)
                 defer wg.Done();
                 err := func() error {
                     // Rechecking for early termination in case we waited a long time to pass the throttle.
@@ -673,10 +672,10 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return err
         }
 
-        handle := options.ConcurrencyThrottle.Wait()
+        handle := throttle.Wait()
         wg.Add(1);
         go func() {
-            defer options.ConcurrencyThrottle.Release(handle)
+            defer throttle.Release(handle)
             defer wg.Done();
             err := func() error {
                 err := ctx.Err()
@@ -697,7 +696,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
                     return fmt.Errorf("symbolic link to registry directory %q is not supported", target)
                 }
 
-                obj, err := resolveRegistrySymlink(registry, project, asset, version, target, manifest_cache, manifest_cache_lock, probation_cache, probation_cache_lock)
+                obj, err := resolveRegistrySymlink(registry, project, asset, version, target, manifest_cache, &manifest_cache_lock, probation_cache, &probation_cache_lock)
                 if err != nil {
                     return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", path, target, err)
                 }
@@ -768,7 +767,7 @@ type transferDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-func transferDirectory(source, registry, project, asset, version string, ctx context.Context, options transferDirectoryOptions) error {
+func transferDirectory(source, registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options transferDirectoryOptions) error {
     return processDirectory(
         source,
         registry,
@@ -776,6 +775,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         asset,
         version,
         ctx,
+        throttle,
         processDirectoryOptions{
             Transfer: true,
             Consume: options.Consume,
@@ -789,7 +789,7 @@ type reindexDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-func reindexDirectory(registry, project, asset, version string, ctx context.Context, options reindexDirectoryOptions) error {
+func reindexDirectory(registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options reindexDirectoryOptions) error {
     source := filepath.Join(registry, project, asset, version)
 
     // Doing a preliminary pass to create correct symlinks from any existing ..link files.
@@ -854,6 +854,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         asset,
         version,
         ctx,
+        throttle,
         processDirectoryOptions{
             Transfer: false,
             IgnoreDot: false,

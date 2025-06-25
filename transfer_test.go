@@ -174,6 +174,7 @@ func TestTransferDirectorySimple(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Executing the transfer.
     reg, err := os.MkdirTemp("", "")
@@ -181,7 +182,7 @@ func TestTransferDirectorySimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -217,7 +218,7 @@ func TestTransferDirectorySimple(t *testing.T) {
 
     // Fails with an expired context.
     expired, _ := context.WithTimeout(ctx, 0)
-    err = transferDirectory(src, reg, project, asset, "blue", expired, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, "blue", expired, &conc, transferDirectoryOptions{})
     if err == nil || !strings.Contains(err.Error(), "cancelled") {
         t.Errorf("expected a cancellation error; %v", err)
     }
@@ -239,6 +240,7 @@ func TestTransferDirectorySkipInternal(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Injecting some internal files.
     err = os.WriteFile(filepath.Join(src, "..something"), []byte("something something"), 0644)
@@ -257,7 +259,7 @@ func TestTransferDirectorySkipInternal(t *testing.T) {
     }
 
     // Executing the transfer.
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -286,6 +288,7 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Injecting some hidden files.
     err = os.WriteFile(filepath.Join(src, ".DS_store"), []byte("some mac stuff"), 0644)
@@ -305,7 +308,7 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
 
     t.Run("with dots", func(t *testing.T) {
         version := "red"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -320,7 +323,7 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
 
     t.Run("ignore dots", func(t *testing.T) {
         version := "blue"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ IgnoreDot: true })
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{ IgnoreDot: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -340,6 +343,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
     version := "yellow"
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Executing the transfer; by default, nothing is moved, until Consume=true.
     t.Run("no consume", func(t *testing.T) {
@@ -353,7 +357,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -381,7 +385,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ Consume: true })
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{ Consume: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -424,7 +428,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
             t.Fatalf("failed to create the registry; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ Consume: true })
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{ Consume: true })
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -657,6 +661,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -665,7 +670,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
 
     // Executing the first transfer.
     {
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -703,7 +708,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
         }
 
         new_version := "blue"
-        err = transferDirectory(src, reg, project, asset, new_version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, new_version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -762,7 +767,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
         }
 
         new_version := "green"
-        err = transferDirectory(src, reg, project, asset, new_version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, new_version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -815,7 +820,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
     // Executing the transfer AGAIN to check that ancestral links of the older version are themselves respected.
     {
         new_version := "yellow"
-        err = transferDirectory(src, reg, project, asset, new_version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, new_version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -864,6 +869,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -875,7 +881,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
         project := "pokemon"
         asset := "pikachu"
 
-        err = transferDirectory(src, reg, project, asset, "red", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "red", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -888,7 +894,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, "blue", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "blue", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -901,7 +907,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, "green", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "green", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -951,7 +957,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
 
         project := "more_pokemon"
         asset := "magneton"
-        err = transferDirectory(src, reg, project, asset, "kanto", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "kanto", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -999,6 +1005,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     t.Run("loose registry files", func(t *testing.T) {
         src, err := os.MkdirTemp("", "")
@@ -1019,7 +1026,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         project := "POKEMON"
         asset := "PIKAPIKA"
         version := "GOLD"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "outside of a project asset version directory") {
             t.Errorf("expected a failure when linking to loose files; %v", err)
         }
@@ -1056,7 +1063,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "currently-transferring") {
             t.Errorf("expected a failure when linking to the currently-transferring version; %v", err)
         }
@@ -1071,7 +1078,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         project := "POKEMON"
         asset := "GYARADOS"
         version := "yellow"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1086,7 +1093,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         }
 
         version = "crystal"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "probational") {
             t.Errorf("expected a failure when linking to a probational version; %v", err)
         }
@@ -1101,7 +1108,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         project := "POKEMON"
         asset := "MACHOMP"
         version := "red"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1116,7 +1123,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         }
 
         version = "blue"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "internal '..' files") {
             t.Errorf("expected a failure when linking to internal files; %v", err)
         }
@@ -1140,7 +1147,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
         project := "POKEMON"
         asset := "VILEPLUME"
         version := "green"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "is a directory") {
             t.Errorf("expected a failure when a symbolic link to a directory is present; %v", err)
         }
@@ -1154,6 +1161,7 @@ func TestTransferDirectoryLocalLinks(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1184,7 +1192,7 @@ func TestTransferDirectoryLocalLinks(t *testing.T) {
     asset := "PIKAPIKA"
     version := "GOLD"
 
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -1231,6 +1239,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     t.Run("cyclic links", func(t* testing.T) {
         src, err := setupSourceForTransferDirectoryTest()
@@ -1257,7 +1266,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
         asset := "PIKAPIKA"
         version := "GOLD"
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "too many levels") {
             t.Errorf("failed to detect cyclic local links; %v", err)
         }
@@ -1278,7 +1287,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
         asset := "PIKAPIKA"
         version := "SILVER"
 
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "is a directory") {
             t.Errorf("failed to detect links to a directory; %v", err)
         }
@@ -1292,6 +1301,7 @@ func TestTransferDirectoryExternalLinks(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1321,7 +1331,7 @@ func TestTransferDirectoryExternalLinks(t *testing.T) {
         project := "POKEMON"
         asset := "SQUIRTLE"
         version := "SILVER"
-        err := transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err := transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err == nil && !strings.Contains(err.Error(), "not allowed") {
             t.Error("expected a failure when symlinking to a non-whitelisted directory")
         }
@@ -1332,7 +1342,7 @@ func TestTransferDirectoryExternalLinks(t *testing.T) {
         project := "POKEMON"
         asset := "PIKAPIKA"
         version := "SILVER"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{ LinkWhitelist: []string{ filepath.Dir(other_name) } })
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{ LinkWhitelist: []string{ filepath.Dir(other_name) } })
         if err != nil {
             t.Fatal(err)
         }
@@ -1372,6 +1382,7 @@ func TestReindexDirectorySimple(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Setting up the transfer.
     reg, err := os.MkdirTemp("", "")
@@ -1379,7 +1390,7 @@ func TestReindexDirectorySimple(t *testing.T) {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -1396,7 +1407,7 @@ func TestReindexDirectorySimple(t *testing.T) {
         t.Fatalf("failed to strip all double dots; %v", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to reindex directory; %v", err)
     }
@@ -1428,8 +1439,9 @@ func TestReindexDirectorySkipInternal(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -1457,7 +1469,7 @@ func TestReindexDirectorySkipInternal(t *testing.T) {
     }
 
     // Now reindexing after without purging all the internal files.
-    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to reindex directory; %v", err)
     }
@@ -1498,6 +1510,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1509,7 +1522,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     asset := "pikachu"
 
     {
-        err = transferDirectory(src, reg, project, asset, "red", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "red", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1522,7 +1535,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, "blue", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "blue", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1535,7 +1548,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project, asset, "green", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, "green", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1567,7 +1580,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to create the latest file; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to reindex directory; %v", err)
         }
@@ -1608,7 +1621,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to reindex directory; %v", err)
         }
@@ -1631,6 +1644,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1641,7 +1655,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
         project := "pokemon"
         asset := "lugia"
         version := "silver"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1669,7 +1683,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
             t.Fatalf("failed to strip all double dots; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
         if err == nil || !strings.Contains(err.Error(), "outside the registry") {
             t.Errorf("expected reindexing failure for files outside the registry; %v", err)
         }
@@ -1686,6 +1700,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1707,7 +1722,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
         asset := "PIKAPIKA"
         version := "GOLD"
 
-        err := transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err := transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1723,7 +1738,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatalf("failed to strip all double dots; %v", err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
         if err != nil {
             t.Fatal(err)
         }
@@ -1748,7 +1763,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
         project := "POKEMON"
         asset := "PIKAPIKA"
         version := "SILVER"
-        err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }
@@ -1800,7 +1815,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatal(err)
         }
 
-        err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
         if err != nil {
             t.Fatal(err)
         }
@@ -1827,6 +1842,7 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     src, err := setupSourceForTransferDirectoryTest()
     if err != nil {
@@ -1837,7 +1853,7 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
     project := "pokemon"
     asset := "lugia"
     version := "silver"
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -1866,7 +1882,7 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
         t.Fatalf("failed to strip all double dots; %v", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{ LinkWhitelist: []string{ filepath.Dir(other_name) } })
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{ LinkWhitelist: []string{ filepath.Dir(other_name) } })
     if err != nil { 
         t.Fatal(err)
     }

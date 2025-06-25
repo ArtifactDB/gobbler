@@ -84,6 +84,7 @@ func TestComputeUsage(t *testing.T) {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // Executing the transfer and computing the size.
     reg, err := os.MkdirTemp("", "")
@@ -94,7 +95,7 @@ func TestComputeUsage(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "yellow"
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -117,7 +118,7 @@ func TestComputeUsage(t *testing.T) {
     }
 
     version = "green"
-    err = transferDirectory(src, reg, project, asset, version, ctx, transferDirectoryOptions{})
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
         t.Fatalf("failed to perform the transfer; %v", err)
     }
@@ -138,9 +139,10 @@ func TestRefreshUsageHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     project_name := "foobar"
     project_dir := filepath.Join(reg, project_name)
@@ -162,7 +164,7 @@ func TestRefreshUsageHandler(t *testing.T) {
             t.Fatalf("failed to write a mock file; %v", err)
         }
 
-        err = transferDirectory(src, reg, project_name, asset, "v1", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, reg, project_name, asset, "v1", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
         }

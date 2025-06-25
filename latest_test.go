@@ -86,7 +86,7 @@ func TestRefreshLatestHandler(t *testing.T) {
         t.Fatalf("failed to write the request; %v", err)
     }
 
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
     _, err = refreshLatestHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("unexpected authorization for refresh request")

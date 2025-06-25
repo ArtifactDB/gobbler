@@ -18,6 +18,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
     }
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     // First import.
     {
@@ -31,7 +32,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "animation", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "animation", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -60,7 +61,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "natural", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "natural", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -94,7 +95,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "origination", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "origination", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -120,7 +121,7 @@ func mockRegistryForReroute(registry, project, asset string) error {
             return err
         }
 
-        err = transferDirectory(src, registry, project, asset, "avvenire", ctx, transferDirectoryOptions{})
+        err = transferDirectory(src, registry, project, asset, "avvenire", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             return err
         }
@@ -969,7 +970,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        globals := newGlobalConfiguration(registry)
+        globals := newGlobalConfiguration(registry, 2)
         globals.Administrators = append(globals.Administrators, self)
         changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
@@ -1054,7 +1055,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        globals := newGlobalConfiguration(registry)
+        globals := newGlobalConfiguration(registry, 2)
         globals.Administrators = append(globals.Administrators, self)
         changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
@@ -1157,7 +1158,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        globals := newGlobalConfiguration(registry)
+        globals := newGlobalConfiguration(registry, 2)
         globals.Administrators = append(globals.Administrators, self)
         changes, err := rerouteLinksHandler(reqpath, &globals, ctx)
         if err != nil {
@@ -1243,7 +1244,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatalf("failed to dump a request type; %v", err)
         }
 
-        globals := newGlobalConfiguration(registry)
+        globals := newGlobalConfiguration(registry, 2)
         _, err = rerouteLinksHandler(reqpath, &globals, ctx)
         if err == nil || !strings.Contains(err.Error(), "not authorized") {
             t.Error("unexpected authorization for non-admin")
@@ -1263,7 +1264,7 @@ func TestRerouteLinksHandler(t *testing.T) {
             t.Fatal(err)
         }
 
-        globals := newGlobalConfiguration(registry)
+        globals := newGlobalConfiguration(registry, 2)
         globals.Administrators = append(globals.Administrators, self)
 
         reqpath, err := dumpRequest("reroute_links", "{}")

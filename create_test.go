@@ -14,7 +14,7 @@ func TestCreateProjectSimple(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
@@ -50,7 +50,7 @@ func TestCreateProjectFailures(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
@@ -113,7 +113,7 @@ func TestCreateProjectNewPermissions(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
