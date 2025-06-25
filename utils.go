@@ -19,16 +19,38 @@ type globalConfiguration struct {
     Locks pathLocks
     LinkWhitelist []string
     SpoofPermissions map[string]spoofPermissions
+    ConcurrencyThrottle concurrencyThrottle
 }
 
-func newGlobalConfiguration(registry string) globalConfiguration {
+func newGlobalConfiguration(registry string, max_concurrency int) globalConfiguration {
     return globalConfiguration{ 
         Registry: registry, 
         Administrators: []string{},
         Locks: newPathLocks(),
         LinkWhitelist: []string{},
         SpoofPermissions: map[string]spoofPermissions{},
+        ConcurrencyThrottle: newConcurrencyThrottle(max_concurrency),
     }
+}
+
+type concurrencyThrottle struct {
+    Available chan int
+}
+
+func newConcurrencyThrottle(max_concurrency int) concurrencyThrottle {
+    output := concurrencyThrottle{ Available: make(chan int, max_concurrency) }
+    for i := range max_concurrency {
+        output.Available <- i
+    }
+    return output
+}
+
+func (ct *concurrencyThrottle) Wait() int {
+    return <-ct.Available
+}
+
+func (ct *concurrencyThrottle) Release(x int) {
+    ct.Available <- x
 }
 
 type httpError struct {

@@ -13,6 +13,7 @@ import (
     "strconv"
     "strings"
     "context"
+    "sync"
 )
 
 func copyFile(src, dest string) error {
@@ -196,7 +197,9 @@ func resolveRegistrySymlink(
     version string,
     target string,
     manifest_cache map[string]map[string]manifestEntry,
+    manifest_cache_lock sync.Mutex,
     probation_cache map[string]bool,
+    probation_cache_lock sync.Mutex,
 ) (*manifestEntry, error) {
 
     fragments := []string{}
@@ -230,17 +233,25 @@ func resolveRegistrySymlink(
     key := filepath.Join(tproject, tasset, tversion)
 
     // Prohibit links to probational version.
-    prob, ok := probation_cache[key]
-    if !ok {
-        summary, err := readSummary(filepath.Join(registry, key))
-        if err != nil {
-            return nil, fmt.Errorf("cannot read the version summary for '" + key + "'; %w", err)
+    err := func() error {
+        probation_cache_lock.Lock()
+        defer probation_cache_lock.Unlock()
+        prob, ok := probation_cache[key]
+        if !ok {
+            summary, err := readSummary(filepath.Join(registry, key))
+            if err != nil {
+                return fmt.Errorf("cannot read the version summary for '" + key + "'; %w", err)
+            }
+            prob = summary.IsProbational()
+            probation_cache[key] = prob
         }
-        prob = summary.IsProbational()
-        probation_cache[key] = prob
-    }
-    if prob {
-        return nil, errors.New("cannot link to file inside a probational project version asset directory ('" + key + "')")
+        if prob {
+            return errors.New("cannot link to file inside a probational project version asset directory ('" + key + "')")
+        }
+        return nil
+    }()
+    if err != nil {
+        return nil, err
     }
 
     tpath := filepath.Join(fragments[3:]...)
@@ -254,6 +265,8 @@ func resolveRegistrySymlink(
     }
 
     // Pulling out the size and MD5 checksum of our target path from the manifest.
+    manifest_cache_lock.Lock()
+    defer manifest_cache_lock.Unlock()
     manifest, ok := manifest_cache[key]
     if !ok {
         manifest0, err := readManifest(filepath.Join(registry, key))
@@ -295,14 +308,21 @@ func resolveLocalSymlink(
     target string,
     local_links map[string]string,
     manifest map[string]manifestEntry,
+    manifest_lock sync.RWMutex,
     traversed map[string]bool,
 ) (*manifestEntry, error) {
 
+    var man_deets manifestEntry
+    var man_ok bool
+    func() {
+        manifest_lock.RLock()
+        defer manifest_lock.RUnlock()
+        man_deets, man_ok = manifest[target]
+    }()
+
     var target_deets *manifestEntry
-    man_deets, man_ok := manifest[target]
     if man_ok {
         target_deets = &man_deets
-
     } else {
         if traversed != nil {
             _, trav_ok := traversed[path]
@@ -319,7 +339,7 @@ func resolveLocalSymlink(
             return nil, fmt.Errorf("symlink at %q should point to a file in the manifest or another symlink", target)
         }
 
-        ancestor, err := resolveLocalSymlink(project, asset, version, target, next_target, local_links, manifest, traversed)
+        ancestor, err := resolveLocalSymlink(project, asset, version, target, next_target, local_links, manifest, manifest_lock, traversed)
         if err != nil {
             return nil, err
         }
@@ -349,6 +369,8 @@ func resolveLocalSymlink(
     // Modifying the manifest so that if multiple symlinks have the same target
     // that is also a symlink, only the first call to this function will
     // recurse; all others will just use the cached ancestor in the manifest.
+    manifest_lock.Lock()
+    defer manifest_lock.Unlock()
     manifest[path] = output
     return &output, nil
 }
@@ -362,6 +384,7 @@ type processDirectoryOptions struct {
     Consume bool
     IgnoreDot bool
     LinkWhitelist []string
+    ConcurrencyThrottle concurrencyThrottle
 }
 
 func processDirectory(source, registry, project, asset, version string, ctx context.Context, options processDirectoryOptions) error {
@@ -380,14 +403,41 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
     registry_links := map[string]string{}
     local_links := map[string]string{}
 
+    var manifest_lock, registry_links_lock, local_links_lock, transferrable_lock sync.Mutex
+    var error_lock sync.RWMutex
+    all_errors := []error{}
+    safeCheckError := func() error {
+        error_lock.RLock()
+        defer error_lock.RUnlock()
+        if len(all_errors) > 0 {
+            return all_errors[0]
+        } else {
+            return nil
+        }
+    }
+    safeAddError := func(err error) {
+        error_lock.Lock()
+        defer error_lock.Unlock()
+        all_errors = append(all_errors, err)
+    }
+
+    var wg sync.WaitGroup
+    defer wg.Wait()
+
     /*** First pass examines all files and decides what to do with them. ***/
     err = filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
         if err != nil {
             return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
         }
+
         err = ctx.Err()
         if err != nil {
             return fmt.Errorf("directory processing cancelled; %w", err)
+        }
+
+        err = safeCheckError()
+        if err != nil {
+            return err
         }
 
         base := filepath.Base(src_path)
@@ -416,89 +466,128 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return nil
         }
 
-        restat, err := info.Info()
-        if err != nil {
-            return fmt.Errorf("failed to stat '" + path + "'; %w", err)
-        }
-
-        // Preserving links to targets within the registry, within the 'src' directory, or inside whitelisted directories.
-        if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
-            target, err := readSymlink(src_path)
-            if err != nil {
-                return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
-            }
-
-            target_stat, err := os.Stat(target)
-            if err != nil {
-                return fmt.Errorf("failed to stat target of link %q; %w", src_path, err)
-            }
-            if target_stat.IsDir() {
-                return fmt.Errorf("target of link %q is a directory", src_path)
-            }
-
-            local_inside, err := filepath.Rel(source, target)
-            if err == nil && filepath.IsLocal(local_inside) {
-                local_links[path] = local_inside
-                return nil
-            }
-
-            registry_inside, err := filepath.Rel(registry, target)
-            if err == nil && filepath.IsLocal(registry_inside) {
-                registry_links[path] = registry_inside
-                return nil
-            }
-
-            // Symlinks to files in whitelisted directories are preserved, but manifest pretends as if they were the files themselves.
-            if isLinkWhitelisted(target, options.LinkWhitelist) {
-                target_sum, err := computeChecksum(target)
+        handle := options.ConcurrencyThrottle.Wait()
+        wg.Add(1);
+        go func() {
+            defer options.ConcurrencyThrottle.Release(handle)
+            defer wg.Done();
+            err := func() error {
+                // Re-check for early cancellation once we get into the goroutine,
+                // as we might have waited an arbitrarily long time after throttling.
+                err := ctx.Err()
                 if err != nil {
-                    return fmt.Errorf("failed to hash the link target %q; %w", target, err)
+                    return fmt.Errorf("directory processing cancelled; %w", err)
                 }
-                manifest[path] = manifestEntry{
-                    Size: target_stat.Size(), 
-                    Md5sum: target_sum,
+
+                err = safeCheckError()
+                if err != nil {
+                    return err
                 }
-                if options.Transfer {
-                    final := filepath.Join(destination, path)
-                    err := os.Symlink(target, final)
+
+                restat, err := info.Info()
+                if err != nil {
+                    return fmt.Errorf("failed to stat '" + path + "'; %w", err)
+                }
+
+                // Preserving links to targets within the registry, within the 'src' directory, or inside whitelisted directories.
+                if restat.Mode() & os.ModeSymlink == os.ModeSymlink {
+                    target, err := readSymlink(src_path)
                     if err != nil {
-                        return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, target, err)
+                        return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
+                    }
+
+                    target_stat, err := os.Stat(target)
+                    if err != nil {
+                        return fmt.Errorf("failed to stat target of link %q; %w", src_path, err)
+                    }
+                    if target_stat.IsDir() {
+                        return fmt.Errorf("target of link %q is a directory", src_path)
+                    }
+
+                    local_inside, err := filepath.Rel(source, target)
+                    if err == nil && filepath.IsLocal(local_inside) {
+                        local_links_lock.Lock()
+                        defer local_links_lock.Unlock()
+                        local_links[path] = local_inside
+                        return nil
+                    }
+
+                    registry_inside, err := filepath.Rel(registry, target)
+                    if err == nil && filepath.IsLocal(registry_inside) {
+                        registry_links_lock.Lock()
+                        defer registry_links_lock.Unlock()
+                        registry_links[path] = registry_inside
+                        return nil
+                    }
+
+                    // Symlinks to files in whitelisted directories are preserved, but manifest pretends as if they were the files themselves.
+                    if isLinkWhitelisted(target, options.LinkWhitelist) {
+                        target_sum, err := computeChecksum(target)
+                        if err != nil {
+                            return fmt.Errorf("failed to hash the link target %q; %w", target, err)
+                        }
+
+                        manifest_lock.Lock()
+                        defer manifest_lock.Unlock()
+                        manifest[path] = manifestEntry{ Size: target_stat.Size(), Md5sum: target_sum }
+
+                        if options.Transfer {
+                            final := filepath.Join(destination, path)
+                            err := os.Symlink(target, final)
+                            if err != nil {
+                                return fmt.Errorf("failed to create a symlink for %q to %q; %w", path, target, err)
+                            }
+                        }
+                        return nil
+                    } else {
+                        return fmt.Errorf("symbolic link %q to file %q outside the registry directory is not allowed", path, target)
                     }
                 }
-                return nil
-            } else {
-                return fmt.Errorf("symbolic link %q to file %q outside the registry directory is not allowed", path, target)
-            }
-        }
 
-        insum, err := computeChecksum(src_path)
-        if err != nil {
-            return fmt.Errorf("failed to hash the source file; %w", err)
-        }
+                insum, err := computeChecksum(src_path)
+                if err != nil {
+                    return fmt.Errorf("failed to hash the source file; %w", err)
+                }
 
-        man_entry := manifestEntry{
-            Size: restat.Size(),
-            Md5sum: insum,
-        }
+                man_entry := manifestEntry{ Size: restat.Size(), Md5sum: insum }
 
-        if options.Transfer {
-            // Seeing if we can create a link to the last version's file with the same md5sum.
-            last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
-            if ok {
-                man_entry.Link = &last_entry
+                if options.Transfer {
+                    // Seeing if we can create a link to the last version's file with the same md5sum.
+                    last_entry, ok := last_dedup[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
+                    if ok {
+                        manifest_lock.Lock()
+                        defer manifest_lock.Unlock()
+                        man_entry.Link = &last_entry
+                        manifest[path] = man_entry
+                        return createSymlink(filepath.Join(destination, path), registry, &last_entry, /* wipe_existing = */ false)
+                    }
+
+                    // Otherwise we just copy/move the file.
+                    transferrable_lock.Lock()
+                    defer transferrable_lock.Unlock()
+                    transferrable = append(transferrable, path)
+                }
+
+                manifest_lock.Lock()
+                defer manifest_lock.Unlock()
                 manifest[path] = man_entry
-                return createSymlink(filepath.Join(destination, path), registry, &last_entry, /* wipe_existing = */ false)
+                return nil
+            }()
+
+            if err != nil {
+                safeAddError(err)
             }
+        }()
 
-            // Otherwise we just copy/move the file.
-            transferrable = append(transferrable, path)
-        }
-
-        manifest[path] = man_entry
         return nil
     })
     if err != nil {
         return err
+    }
+
+    wg.Wait()
+    if len(all_errors) > 0 {
+        return all_errors[0]
     }
 
     /*** Second pass performs a copy/move of files. ***/
@@ -509,41 +598,79 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
                 return fmt.Errorf("directory processing cancelled; %w", err)
             }
 
-            final := filepath.Join(destination, path)
-            src_path := filepath.Join(source, path)
-
-            err = copyFile(src_path, final)
+            err = safeCheckError()
             if err != nil {
-                return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
-            }
-            finalsum, err := computeChecksum(final)
-            if err != nil {
-                return fmt.Errorf("failed to hash the file at %q; %w", final, err)
-            }
-            insum := manifest[path].Md5sum
-            if finalsum != insum {
-                return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+                return err
             }
 
-            // The move ensures that we don't have two copies of all files in the staging
-            // and registry at once. This reduces storage consumption during the upload. 
-            //
-            // We use a copy-and-delete to mimic a move to ensure that our permissions of
-            // the new file are configured correctly, otherwise we might end up preserving
-            // the wrong permissions (especially ownership) of the moved file. This obviously
-            // comes at the cost of some performance but I don't see another way.
-            //
-            // We use a second pass so this deletion doesn't break local links
-            // within the staging directory during the first pass.
-            if options.Consume {
-                os.Remove(src_path)
-            }
+            handle := options.ConcurrencyThrottle.Wait()
+            wg.Add(1);
+            go func() {
+                defer options.ConcurrencyThrottle.Release(handle)
+                defer wg.Done();
+                err := func() error {
+                    // Rechecking for early termination in case we waited a long time to pass the throttle.
+                    err := ctx.Err()
+                    if err != nil {
+                        return fmt.Errorf("directory processing cancelled; %w", err)
+                    }
+
+                    err = safeCheckError()
+                    if err != nil {
+                        return err
+                    }
+
+                    final := filepath.Join(destination, path)
+                    src_path := filepath.Join(source, path)
+
+                    err = copyFile(src_path, final)
+                    if err != nil {
+                        return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
+                    }
+
+                    finalsum, err := computeChecksum(final)
+                    if err != nil {
+                        return fmt.Errorf("failed to hash the file at %q; %w", final, err)
+                    }
+
+                    insum := manifest[path].Md5sum
+                    if finalsum != insum {
+                        return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
+                    }
+
+                    // The move ensures that we don't have two copies of all files in the staging
+                    // and registry at once. This reduces storage consumption during the upload. 
+                    //
+                    // We use a copy-and-delete to mimic a move to ensure that our permissions of
+                    // the new file are configured correctly, otherwise we might end up preserving
+                    // the wrong permissions (especially ownership) of the moved file. This obviously
+                    // comes at the cost of some performance but I don't see another way.
+                    //
+                    // We use a second pass so this deletion doesn't break local links
+                    // within the staging directory during the first pass.
+                    if options.Consume {
+                        os.Remove(src_path)
+                    }
+
+                    return nil
+                }()
+
+                if err != nil {
+                    safeAddError(err)
+                }
+            }()
+        }
+
+        wg.Wait()
+        if len(all_errors) > 0 {
+            return all_errors[0]
         }
     }
 
     /*** Third pass to resolve links to other files in the registry. **/
     manifest_cache := map[string]map[string]manifestEntry{}
     probation_cache := map[string]bool{}
+    var manifest_cache_lock, probation_cache_lock sync.Mutex
 
     for path, target := range registry_links {
         err := ctx.Err()
@@ -551,41 +678,112 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return fmt.Errorf("directory processing cancelled; %w", err)
         }
 
-        tstat, err := os.Stat(filepath.Join(registry, target))
-        if err != nil {
-            return fmt.Errorf("failed to stat link target %q inside registry; %w", target, err)
-        }
-        if tstat.IsDir() {
-            return fmt.Errorf("symbolic link to registry directory %q is not supported", target)
-        }
-
-        obj, err := resolveRegistrySymlink(registry, project, asset, version, target, manifest_cache, probation_cache)
-        if err != nil {
-            return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", path, target, err)
-        }
-        manifest[path] = *obj
-
-        err = createSymlink(filepath.Join(destination, path), registry, obj.Link, /* wipe_existing = */ !options.Transfer)
+        err = safeCheckError()
         if err != nil {
             return err
         }
+
+        handle := options.ConcurrencyThrottle.Wait()
+        wg.Add(1);
+        go func() {
+            defer options.ConcurrencyThrottle.Release(handle)
+            defer wg.Done();
+            err := func() error {
+                err := ctx.Err()
+                if err != nil {
+                    return fmt.Errorf("directory processing cancelled; %w", err)
+                }
+
+                err = safeCheckError()
+                if err != nil {
+                    return err
+                }
+
+                tstat, err := os.Stat(filepath.Join(registry, target))
+                if err != nil {
+                    return fmt.Errorf("failed to stat link target %q inside registry; %w", target, err)
+                }
+                if tstat.IsDir() {
+                    return fmt.Errorf("symbolic link to registry directory %q is not supported", target)
+                }
+
+                obj, err := resolveRegistrySymlink(registry, project, asset, version, target, manifest_cache, manifest_cache_lock, probation_cache, probation_cache_lock)
+                if err != nil {
+                    return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", path, target, err)
+                }
+                manifest[path] = *obj
+
+                err = createSymlink(filepath.Join(destination, path), registry, obj.Link, /* wipe_existing = */ !options.Transfer)
+                if err != nil {
+                    return err
+                }
+
+                return nil
+            }()
+
+            if err != nil {
+                safeAddError(err)
+            }
+        }()
+    }
+
+    wg.Wait()
+    if len(all_errors) > 0 {
+        return all_errors[0]
     }
 
     /*** Final pass to resolve local links within the newly uploaded directory. ***/
+    var manifest_lock2 sync.RWMutex
     for path, target := range local_links {
         err := ctx.Err()
         if err != nil {
             return fmt.Errorf("directory processing cancelled; %w", err)
         }
 
-        man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
+        err = safeCheckError()
         if err != nil {
             return err
         }
-        err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !options.Transfer)
-        if err != nil {
-            return err
-        }
+
+        handle := options.ConcurrencyThrottle.Wait()
+        wg.Add(1);
+        go func() {
+            defer options.ConcurrencyThrottle.Release(handle)
+            defer wg.Done();
+            err := func() error {
+                err := ctx.Err()
+                if err != nil {
+                    return fmt.Errorf("directory processing cancelled; %w", err)
+                }
+
+                err = safeCheckError()
+                if err != nil {
+                    return err
+                }
+
+
+                man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, manifest_lock2, nil)
+                if err != nil {
+                    return err
+                }
+
+                err = createSymlink(filepath.Join(destination, path), registry, man.Link, /* wipe_existing = */ !options.Transfer)
+                if err != nil {
+                    return err
+                }
+
+                return nil
+            }()
+
+            if err != nil {
+                safeAddError(err)
+            }
+        }()
+    }
+
+    wg.Wait()
+    if len(all_errors) > 0 {
+        return all_errors[0]
     }
 
     // Dumping the JSON metadata.
