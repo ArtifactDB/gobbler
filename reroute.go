@@ -365,7 +365,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx conte
     }
 
     var wg sync.WaitGroup
-    defer wg.Wait() // wait for all goroutines to wrap up before exiting this function, so that we don't prematurely release the lock. 
+    defer wg.Wait() // don't release the directory lock while goroutines are still operating inside!
 
     for _, project := range projects {
         project_dir := filepath.Join(globals.Registry, project)

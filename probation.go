@@ -297,7 +297,7 @@ func purgeOldProbationalVersionsForAsset(project_dir string, asset_dir string, e
     }
 
     var wg sync.WaitGroup
-    defer wg.Wait() // wait for all goroutines to wrap up before exiting this function, so that we don't prematurely release the lock. 
+    defer wg.Wait() // don't release the directory lock while goroutines are still operating inside!
 
     for _, version := range versions {
         handle := globals.ConcurrencyThrottle.Wait()
