@@ -131,7 +131,7 @@ func reindexHandler(reqpath string, globals *globalConfiguration, ctx context.Co
         asset,
         version,
         ctx,
-        &(globals.ConcurrencyThrottle),
+        globals.ConcurrencyThrottle,
         reindexDirectoryOptions{
             LinkWhitelist: globals.LinkWhitelist,
         },

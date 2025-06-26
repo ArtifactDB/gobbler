@@ -411,7 +411,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
     }
 
     var wg sync.WaitGroup
-    defer wg.Wait()
+    defer wg.Wait() // wait for all goroutines to wrap up before exiting this function, so that we don't prematurely release the lock. 
 
     /*** First pass examines all files and decides what to do with them. ***/
     err = filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {

@@ -32,7 +32,7 @@ func TestConcurrencyThrottle(t *testing.T) {
     }
 
     throttle.Release(3)
-    wg.Done()
+    wg.Wait()
     if foo != 3 {
         t.Error("expected the throttle to reacquire after the wait")
     }

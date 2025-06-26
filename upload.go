@@ -244,7 +244,7 @@ func uploadHandler(reqpath string, globals *globalConfiguration, ctx context.Con
         asset,
         version,
         ctx,
-        &(globals.ConcurrencyThrottle),
+        globals.ConcurrencyThrottle,
         transferDirectoryOptions{
             Consume: (request.Consume != nil && *(request.Consume)),
             IgnoreDot: (request.IgnoreDot != nil && *(request.IgnoreDot)),

@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "net/http"
     "context"
+    "sync"
 )
 
 type deleteTask struct {
@@ -340,9 +341,31 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx conte
     }
 
     // First pass to identify all the rerouting actions across the registry.
+    // We run this in parallel for greater throughput. 
     all_changes := map[string]*rerouteProposal{}
     all_usage := map[string]*usageMetadata{}
     dry_run := all_incoming.DryRun
+
+    var all_changes_lock, all_usage_lock sync.Mutex 
+    var error_lock sync.RWMutex
+    all_errors := []error{}
+    safeCheckError := func() error {
+        error_lock.RLock()
+        defer error_lock.RUnlock()
+        if len(all_errors) > 0 {
+            return all_errors[0]
+        } else {
+            return nil
+        }
+    }
+    safeAddError := func(err error) {
+        error_lock.Lock()
+        defer error_lock.Unlock()
+        all_errors = append(all_errors, err)
+    }
+
+    var wg sync.WaitGroup
+    defer wg.Wait() // wait for all goroutines to wrap up before exiting this function, so that we don't prematurely release the lock. 
 
     for _, project := range projects {
         project_dir := filepath.Join(globals.Registry, project)
@@ -364,41 +387,96 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx conte
                     return nil, fmt.Errorf("reroute request cancelled; %w", err)
                 }
 
+                err = safeCheckError()
+                if err != nil {
+                    return nil, err
+                }
+
                 version_dir := filepath.Join(project, asset, version)
                 if _, found := to_delete_versions[version_dir]; found { // no need to process version directories that are about to be deleted.
                     continue
                 }
 
-                cur_changes, err := proposeLinkReroutes(globals.Registry, to_delete_files, version_dir)
-                if err != nil {
-                    return nil, fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", version, asset, project, err)
-                }
-                if len(cur_changes.Actions) == 0 {
-                    continue
-                }
-                all_changes[version_dir] = cur_changes
-
-                if !dry_run {
-                    cur_usage, ok := all_usage[project]
-                    if !ok {
-                        usage0, err := readUsage(project_dir)
+                handle := globals.ConcurrencyThrottle.Wait()
+                wg.Add(1);
+                go func() {
+                    defer globals.ConcurrencyThrottle.Release(handle)
+                    defer wg.Done();
+                    err := func() error {
+                        // Re-check for early cancellation once we get into the goroutine,
+                        // as we might have waited an arbitrarily long time after throttling.
+                        err := ctx.Err()
                         if err != nil {
-                            return nil, fmt.Errorf("failed to read usage for %q; %w", project_dir, err)
+                            return fmt.Errorf("directory processing cancelled; %w", err)
                         }
-                        cur_usage = usage0
+
+                        err = safeCheckError()
+                        if err != nil {
+                            return err
+                        }
+
+                        cur_changes, err := proposeLinkReroutes(globals.Registry, to_delete_files, version_dir)
+                        if err != nil {
+                            return fmt.Errorf("failed to reroute links for version %q of asset %q in project %q; %w", version, asset, project, err)
+                        }
+                        if len(cur_changes.Actions) == 0 {
+                            return nil
+                        }
+                        all_changes_lock.Lock()
+                        defer all_changes_lock.Unlock()
+                        all_changes[version_dir] = cur_changes
+
+                        if !dry_run {
+                            all_usage_lock.Lock()
+                            defer all_usage_lock.Unlock()
+                            cur_usage, ok := all_usage[project]
+
+                            if !ok {
+                                usage0, err := readUsage(project_dir)
+                                if err != nil {
+                                    return fmt.Errorf("failed to read usage for %q; %w", project_dir, err)
+                                }
+                                cur_usage = usage0
+                            }
+
+                            for _, action := range cur_changes.Actions {
+                                cur_usage.Total += action.Usage
+                            }
+                            all_usage[project] = cur_usage
+                        }
+
+                        return nil
+                    }()
+
+                    if err != nil {
+                        safeAddError(err)
                     }
-                    for _, action := range cur_changes.Actions {
-                        cur_usage.Total += action.Usage
-                    }
-                    all_usage[project] = cur_usage
-                }
+                }()
             }
+
+            err = safeCheckError()
+            if err != nil {
+                return nil, err
+            }
+        }
+
+        err = safeCheckError()
+        if err != nil {
+            return nil, err
         }
     }
 
-    // Second pass to actually implement the changes. This two-pass approach
-    // improves the atomicity of the rerouting operation as any failures in the
-    // first pass won't leave the registry in a half-mutated state.
+    wg.Wait()
+    err = safeCheckError()
+    if err != nil {
+        return nil, err
+    }
+
+    // Second pass to actually implement the changes.
+    // This two-pass approach improves the atomicity of the rerouting operation as any failures in the first pass won't leave the registry in a half-mutated state.
+    // We won't parallelize this part as we want to only fail once (and report the error accordingly) so that the scope of any repairs is limited to a single file.
+    // Otherwise, if we parallelized this part, we might have failures all over the registry, which would be a pain to fix.
+    // Besides, there shouldn't be that many changes, so the benefit of parallelization is not so great once the registry is scanned.
     for vpath, info := range all_changes {
         err := ctx.Err()
         if err != nil {

@@ -9,6 +9,7 @@ import (
     "errors"
     "net/http"
     "context"
+    "sync"
 )
 
 func rejectProbation(project_dir, version_dir string, force_deletion bool, globals *globalConfiguration, ctx context.Context) error {
@@ -285,31 +286,51 @@ func purgeOldProbationalVersionsForAsset(project_dir string, asset_dir string, e
         return []error{ fmt.Errorf("failed to list versions in asset directory %q; %w", asset_dir, err) }
     }
 
+    // We parallelize across versions rather than across assets, as we don't want too many goroutines contesting/holding asset locks;
+    // this could unnecessarily block other endpoints from proceeding.
     all_errors := []error{}
-    for _, version := range versions {
-        version_dir := filepath.Join(asset_dir, version)
-        summ, err := readSummary(version_dir)
-        if err != nil {
-            all_errors = append(all_errors, fmt.Errorf("failed to open summary file at %s; %w", version_dir, err))
-            continue
-        }
-        if summ.OnProbation == nil || !*(summ.OnProbation) {
-            continue
-        }
-
-        as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
-        if err != nil {
-            all_errors = append(all_errors, fmt.Errorf("failed to open parse upload time for summary file at %s; %w", version_dir, err))
-            continue
-        }
-
-        if time.Now().Sub(as_time) > expiry {
-            err := rejectProbation(project_dir, version_dir, false, globals, ctx)
-            if err != nil {
-                all_errors = append(all_errors, err)
-            }
-        }
+    var error_lock sync.Mutex
+    safeAddError := func(err error) {
+        error_lock.Lock()
+        defer error_lock.Unlock()
+        all_errors = append(all_errors, err)
     }
 
+    var wg sync.WaitGroup
+    defer wg.Wait() // wait for all goroutines to wrap up before exiting this function, so that we don't prematurely release the lock. 
+
+    for _, version := range versions {
+        handle := globals.ConcurrencyThrottle.Wait()
+        wg.Add(1)
+        go func() {
+            defer globals.ConcurrencyThrottle.Release(handle)
+            defer wg.Done()
+
+            version_dir := filepath.Join(asset_dir, version)
+            summ, err := readSummary(version_dir)
+            if err != nil {
+                safeAddError(fmt.Errorf("failed to open summary file at %s; %w", version_dir, err))
+                return
+            }
+            if summ.OnProbation == nil || !*(summ.OnProbation) {
+                return
+            }
+
+            as_time, err := time.Parse(time.RFC3339, summ.UploadFinish)
+            if err != nil {
+                safeAddError(fmt.Errorf("failed to open parse upload time for summary file at %s; %w", version_dir, err))
+                return
+            }
+
+            if time.Now().Sub(as_time) > expiry {
+                err := rejectProbation(project_dir, version_dir, false, globals, ctx)
+                if err != nil {
+                    safeAddError(err)
+                }
+            }
+        }()
+    }
+
+    wg.Wait()
     return all_errors
 }
