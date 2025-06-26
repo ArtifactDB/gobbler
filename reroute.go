@@ -403,8 +403,7 @@ func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx conte
                     defer globals.ConcurrencyThrottle.Release(handle)
                     defer wg.Done();
                     err := func() error {
-                        // Re-check for early cancellation once we get into the goroutine,
-                        // as we might have waited an arbitrarily long time after throttling.
+                        // Re-check for early cancellation once we get into the goroutine, as throttling might have blocked an arbitrarily long time. 
                         err := ctx.Err()
                         if err != nil {
                             return fmt.Errorf("directory processing cancelled; %w", err)

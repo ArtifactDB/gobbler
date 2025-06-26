@@ -461,8 +461,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             defer throttle.Release(handle)
             defer wg.Done();
             err := func() error {
-                // Re-check for early cancellation once we get into the goroutine,
-                // as we might have waited an arbitrarily long time after throttling.
+                // Re-check for early cancellation once we get into the goroutine, as throttling might have blocked an arbitrarily long time.
                 err := ctx.Err()
                 if err != nil {
                     return fmt.Errorf("directory processing cancelled; %w", err)
@@ -598,7 +597,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
                 defer throttle.Release(handle)
                 defer wg.Done();
                 err := func() error {
-                    // Rechecking for early termination in case we waited a long time to pass the throttle.
+                    // Re-check for early cancellation once we get into the goroutine, as throttling might have blocked an arbitrarily long time.
                     err := ctx.Err()
                     if err != nil {
                         return fmt.Errorf("directory processing cancelled; %w", err)
@@ -611,7 +610,6 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
 
                     final := filepath.Join(destination, path)
                     src_path := filepath.Join(source, path)
-
                     err = copyFile(src_path, final)
                     if err != nil {
                         return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
@@ -621,22 +619,19 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
                     if err != nil {
                         return fmt.Errorf("failed to hash the file at %q; %w", final, err)
                     }
-
                     insum := manifest[path].Md5sum
                     if finalsum != insum {
                         return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
                     }
 
-                    // The move ensures that we don't have two copies of all files in the staging
-                    // and registry at once. This reduces storage consumption during the upload. 
+                    // The move ensures that we don't have two copies of all files in the staging and registry at once.
+                    // This reduces storage consumption during the upload. 
                     //
-                    // We use a copy-and-delete to mimic a move to ensure that our permissions of
-                    // the new file are configured correctly, otherwise we might end up preserving
-                    // the wrong permissions (especially ownership) of the moved file. This obviously
-                    // comes at the cost of some performance but I don't see another way.
+                    // We use a copy-and-delete to mimic a move to ensure that our permissions of the new file are configured correctly.
+                    // Otherwise we might end up preserving the wrong permissions (especially ownership) of the moved file.
+                    // This obviously comes at the cost of some performance but I don't see another way.
                     //
-                    // We use a second pass so this deletion doesn't break local links
-                    // within the staging directory during the first pass.
+                    // We use a second pass so this deletion doesn't break local links within the staging directory during the first pass.
                     if options.Consume {
                         os.Remove(src_path)
                     }
@@ -678,6 +673,7 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             defer throttle.Release(handle)
             defer wg.Done();
             err := func() error {
+                // Re-check for early cancellation once we get into the goroutine, as throttling might have blocked an arbitrarily long time.
                 err := ctx.Err()
                 if err != nil {
                     return fmt.Errorf("directory processing cancelled; %w", err)
@@ -733,8 +729,8 @@ func processDirectory(source, registry, project, asset, version string, ctx cont
             return err
         }
 
-        // Don't try to parallelize this, as different local_links might have the same ancestors;
-        // this would result in redundant resolution and unnecessary work across multiple goroutines.
+        // Don't try to parallelize this, as different local_links might have the same ancestors.
+        // This would result in repeated attempts to create the same symbolic links from multiple goroutines.
         man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
         if err != nil {
             return err
