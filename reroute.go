@@ -6,7 +6,6 @@ import (
     "encoding/json"
     "path/filepath"
     "net/http"
-    "errors"
     "context"
     "sync"
 )
@@ -215,15 +214,8 @@ func proposeLinkReroutes(registry string, deleted_files map[string]bool, version
     return &rerouteProposal{ Actions: actions, DeltaManifest: new_man }, nil
 }
 
-type symlinkRerouter struct {}
-func (w *symlinkRerouter) CreateSymlink(from, to string) error {
-    return recreateSymlink(from, to)
-}
-
 func executeLinkReroutes(registry string, version_dir string, proposal *rerouteProposal) error {
     delinked := map[string]bool{}
-    link_rerouter := symlinkRerouter{}
-
     for _, action := range proposal.Actions {
         dest := filepath.Join(registry, action.Path)
         if action.Copy {
@@ -237,7 +229,7 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
             }
             delinked[filepath.Dir(action.Key)] = true
         } else {
-            err := createSymlink(dest, registry, action.Link, &link_rerouter)
+            err := processSymlink(dest, registry, action.Link, forceCreateSymlink)
             if err != nil {
                 return err
             }
@@ -258,22 +250,24 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
         return err
     }
 
-    // Recreating all link files just to be safe.
+    // Recreating all link files just to be safe, and removing all linkfiles that are no longer necessary (because links were replaced by copies).
+    // Unlike reindexDirectory, we don't worry about pruning empty directories here, as there should still be copied files in affected directories.
     all_links, err := recreateLinkFiles(full_version_dir, manifest)
     if err != nil {
-        return fmt.Errorf("failed to create linkfiles; %w", err)
+        return fmt.Errorf("failed to create linkfiles at %w; %w", full_version_dir, err)
     }
 
-    link_files := []string{}
     for delink, _ := range delinked {
-        cur_path := filepath.Join(delink, linksFileName)
-        full_path := filepath.Join(full_version_dir, cur_path)
-        if _, err := os.Lstat(full_path); err == nil || !errors.Is(err, os.ErrNotExist) {
-            link_files = append(link_files, cur_path)
+        if _, ok := all_links[delink]; !ok {
+            full_path := filepath.Join(full_version_dir, delink, linksFileName)
+            err := os.Remove(full_path)
+            if err != nil {
+                return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", full_path, err)
+            }
         }
     }
 
-    return purgeUnusedLinkFiles(full_version_dir, all_links, link_files)
+    return nil
 }
 
 func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx context.Context) ([]rerouteAction, error) {

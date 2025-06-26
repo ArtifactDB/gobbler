@@ -15,38 +15,10 @@ type transferDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-type transferDirectoryWalker struct {
-    LastDedup map[string]linkMetadata
-}
-
-func (w *transferDirectoryWalker) RerouteSymlink(from, to string) string {
-    return to
-}
-
-func (w *transferDirectoryWalker) CreateSymlink(from, to string) error {
-    err := os.Symlink(from, to)
-    if err != nil {
-        return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", from, to, err)
-    }
-    return nil
-}
-
-func (w *transferDirectoryWalker) CheckDuplicates(path string, man manifestEntry) *linkMetadata {
-    // Seeing if we can create a link to the last version's file with the same md5sum.
-    last_entry, ok := w.LastDedup[strconv.FormatInt(man.Size, 10) + "-" + man.Md5sum]
-    if ok {
-        return &last_entry;
-    } else {
-        return nil
-    }
-}
-
 func transferDirectory(source, registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options transferDirectoryOptions) error {
-    walker := transferDirectoryWalker{}
-    walker.LastDedup = map[string]linkMetadata{}
-
     // Loading the latest version's metadata into a deduplication index.
     // There's no need to check for probational versions here as only non-probational versions ever make it into '..latest'.
+    last_dedup := map[string]*linkMetadata{}
     asset_dir := filepath.Join(registry, project, asset)
     latest_path := filepath.Join(asset_dir, latestFileName)
 
@@ -63,7 +35,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         }
 
         for k, v := range manifest {
-            self := linkMetadata{
+            self := &linkMetadata{
                 Project: project,
                 Asset: asset,
                 Version: latest.Version,
@@ -76,7 +48,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
                     self.Ancestor = v.Link
                 }
             }
-            walker.LastDedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
+            last_dedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
         }
 
     } else if !errors.Is(err, os.ErrNotExist) {
@@ -89,7 +61,19 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         project,
         asset,
         version,
-        &walker,
+        createSymlink,
+        func(from, to string) string {
+            return to
+        },
+        func(path string, man manifestEntry) *linkMetadata {
+            // Seeing if we can create a link to the last version's file with the same md5sum.
+            last_entry, ok := last_dedup[strconv.FormatInt(man.Size, 10) + "-" + man.Md5sum]
+            if ok {
+                return last_entry;
+            } else {
+                return nil
+            }
+        },
         ctx,
         throttle,
         walkDirectoryOptions{

@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "path/filepath"
+    "io"
     "io/fs"
     "os"
     "encoding/json"
@@ -23,31 +24,9 @@ type reindexDirectoryOptions struct {
     LinkWhitelist []string
 }
 
-type reindexDirectoryWalker struct {
-    Reroutes map[string]string
-    LinkFiles []string
-}
-
-func (w *reindexDirectoryWalker) RerouteSymlink(from, to string) string {
-    if found, ok := w.Reroutes[from]; ok {
-        return found;
-    } else {
-        return to;
-    }
-}
-
-func (w *reindexDirectoryWalker) CreateSymlink(from, to string) error {
-    return recreateSymlink(from, to)
-}
-
-func (w *reindexDirectoryWalker) CheckDuplicates(path string, man manifestEntry) *linkMetadata {
-    return nil
-}
-
 func reindexDirectory(registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options reindexDirectoryOptions) error {
-    walker := reindexDirectoryWalker{}
-    walker.Reroutes = map[string]string{}
-    walker.LinkFiles = []string{}
+    link_reroutes := map[string]string{}
+    link_files := []string{}
     source := filepath.Join(registry, project, asset, version)
 
     // Doing a preliminary pass to identify symlink reroutes based on existing ..link files.
@@ -77,7 +56,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         if err != nil {
             return fmt.Errorf("failed to convert %q into a relative path; %w", src_path, err);
         }
-        walker.LinkFiles = append(walker.LinkFiles, rel_path)
+        link_files = append(link_files, rel_path)
 
         contents, err := os.ReadFile(src_path)
         if err != nil {
@@ -92,7 +71,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
 
         rel_dir := filepath.Dir(rel_path)
         for path_from, link_to := range links {
-            walker.Reroutes[filepath.Join(rel_dir, path_from)] = filepath.Join(registry, link_to.Project, link_to.Asset, link_to.Version, link_to.Path)
+            link_reroutes[filepath.Join(rel_dir, path_from)] = filepath.Join(registry, link_to.Project, link_to.Asset, link_to.Version, link_to.Path)
         }
 
         return nil
@@ -107,7 +86,17 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         project,
         asset,
         version,
-        &walker,
+        forceCreateSymlink,
+        func(from, to string) string {
+            if found, ok := link_reroutes[from]; ok {
+                return found;
+            } else {
+                return to;
+            }
+        },
+        func(path string, man manifestEntry) *linkMetadata {
+            return nil
+        },
         ctx,
         throttle,
         walkDirectoryOptions{
@@ -132,7 +121,47 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         return fmt.Errorf("failed to create linkfiles; %w", err)
     }
 
-    return purgeUnusedLinkFiles(source, all_links, walker.LinkFiles)
+    // Removing unused linkfiles and associated empty directories.
+    maybe_empty := map[string]bool{}
+    for _, f := range link_files {
+        d := filepath.Dir(f)
+        if _, ok := all_links[d]; ok {
+            continue
+        }
+        err := os.Remove(filepath.Join(source, f))
+        if err != nil {
+            return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", f, err)
+        }
+        maybe_empty[f] = true
+    }
+
+    for epath, _ := range maybe_empty {
+        full_epath := filepath.Join(source, epath)
+        err := func() error {
+            handle, err := os.Open(full_epath)
+            if err != nil {
+                return err
+            }
+            defer handle.Close()
+
+            _, err = handle.Readdirnames(1)
+            if err != io.EOF {
+                return err
+            }
+
+            err = os.Remove(full_epath)
+            if err != nil {
+                return fmt.Errorf("failed to remove empty directory %q; %w", epath, err)
+            }
+
+            return nil
+        }()
+        if err != nil {
+            return err
+        }
+    }
+
+    return nil
 }
 
 func reindexPreflight(reqpath string) (*reindexRequest, error) {
