@@ -551,6 +551,9 @@ The following optional arguments can be used to fine-tune the Gobbler's behavior
   By default, no spoofing is permitted.
 - `-probation` specifies the lifespan of probational versions in days, after which they will be automatically deleted.
   The default value of -1 will not perform any deletion. 
+- `-concurrency` specifies the maximum number of active goroutines, mostly for filesystem operations.
+  This defaults to 100 but can be changed according to the filesystem parallelism, number of available CPUs, maximum number of open file handles, etc.
+  (Goroutines for processing HTTP requests are not considered in this limit.)
 
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;

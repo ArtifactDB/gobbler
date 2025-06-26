@@ -61,7 +61,8 @@ func mockProbationVersion(reg, project, asset, version string) error {
         return fmt.Errorf("failed to create some mock files; %w", err)
     }
 
-    err = reindexDirectory(reg, project, asset, version, context.Background(), reindexDirectoryOptions{})
+    conc := newConcurrencyThrottle(2)
+    err = reindexDirectory(reg, project, asset, version, context.Background(), &conc, reindexDirectoryOptions{})
     if err != nil {
         return fmt.Errorf("failed to reindex the directory; %w", err)
     }
@@ -96,7 +97,7 @@ func TestApproveProbationHandler(t *testing.T) {
     }
 
     // Lack of authorization fails.
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
     err = approveProbationHandler(reqpath, &globals, ctx)
     if err == nil || !strings.Contains(err.Error(), "not authorized") {
         t.Fatalf("failed to approve probation; %v", err)
@@ -214,7 +215,7 @@ func TestApproveProbationHandlerNotLatest(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to identify self; %v", err)
         }
-        globals := newGlobalConfiguration(reg)
+        globals := newGlobalConfiguration(reg, 2)
         globals.Administrators = append(globals.Administrators, self)
         err = approveProbationHandler(reqpath, &globals, ctx)
         if err != nil {
@@ -256,7 +257,7 @@ func TestRejectProbationHandler(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     self, err := identifyUser(reg)
     if err != nil {
@@ -363,7 +364,7 @@ func TestRejectProbationHandler(t *testing.T) {
             t.Errorf("expected failure to spoof; %v", err)
         }
 
-        globals2 := newGlobalConfiguration(reg)
+        globals2 := newGlobalConfiguration(reg, 2)
         globals2.SpoofPermissions[self] = spoofPermissions{ All: false, Users: map[string]bool{ "max": true } }
         err = rejectProbationHandler(reqpath, &globals2, ctx)
         if err != nil {
@@ -381,6 +382,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
     asset := "sinnoh"
 
     ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
 
     mockProbationalRegistry := func(reg string) error {
         project_dir := filepath.Join(reg, project)
@@ -455,7 +457,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
                 return fmt.Errorf("failed to create some mock files; %w", err)
             }
 
-            err = reindexDirectory(reg, project, asset, version, ctx, reindexDirectoryOptions{})
+            err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
             if err != nil {
                 return fmt.Errorf("failed to reindex the directory; %w", err)
             }
@@ -480,7 +482,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
             t.Fatal(err)
         }
 
-        globals := newGlobalConfiguration(reg)
+        globals := newGlobalConfiguration(reg, 2)
         errs := purgeOldProbationalVersions(&globals, 0)
         if len(errs) != 0 {
             t.Fatal(errs[0])
@@ -504,7 +506,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
             t.Fatal(err)
         }
 
-        globals := newGlobalConfiguration(reg)
+        globals := newGlobalConfiguration(reg, 2)
         errs := purgeOldProbationalVersions(&globals, time.Hour)
         if len(errs) != 0 {
             t.Fatal(errs[0])
@@ -528,7 +530,7 @@ func TestPurgeOldProbationalVersions(t *testing.T) {
             t.Fatal(err)
         }
 
-        globals := newGlobalConfiguration(reg)
+        globals := newGlobalConfiguration(reg, 2)
         errs := purgeOldProbationalVersions(&globals, time.Hour * 24)
         if len(errs) != 0 {
             t.Fatal(errs[0])

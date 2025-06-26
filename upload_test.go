@@ -56,7 +56,7 @@ func TestUploadHandlerSimple(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -195,7 +195,7 @@ func TestUploadHandlerSimpleFailures(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -358,7 +358,7 @@ func TestUploadHandlerUpdate(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
@@ -497,7 +497,7 @@ func TestUploadHandlerUnauthorized(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
@@ -554,7 +554,7 @@ func TestUploadHandlerSpoof(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     ctx := context.Background()
 
@@ -603,7 +603,7 @@ func TestUploadHandlerGlobalWrite(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -697,7 +697,7 @@ func TestUploadHandlerProbation(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -796,7 +796,7 @@ func TestUploadHandlerUpdateOnProbation(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     src, err := setupSourceForUploadTest()
     if err != nil {
@@ -938,7 +938,7 @@ func TestUploadHandlerConsume(t *testing.T) {
         if err != nil {
             t.Fatalf("failed to create the registry; %v", err)
         }
-        globals := newGlobalConfiguration(reg)
+        globals := newGlobalConfiguration(reg, 2)
 
         err = setupProjectForUploadTest(project, &globals)
         if err != nil {
@@ -1008,7 +1008,7 @@ func TestUploadHandlerIgnoreDot(t *testing.T) {
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     err = setupProjectForUploadTest(project, &globals)
     if err != nil {

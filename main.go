@@ -52,6 +52,7 @@ func main() {
     whitelist := flag.String("whitelist", "", "Whitelist of directories in which linked-to files are to be treated as real files (default none)")
     spoof := flag.String("spoof", "", "List of users who are allowed to spoof the identities of other users in certain requests (default none)")
     probation := flag.Int("probation", -1, "Lifespan of probational versions, set to -1 to keep them until rejection")
+    concurrency := flag.Int("concurrency", 100, "Maximum number of concurrent goroutines, typically for intensive filesystem operations") 
     flag.Parse()
 
     if *spath == "" || *rpath == "" {
@@ -60,7 +61,7 @@ func main() {
     }
 
     staging := filepath.Clean(*spath)
-    globals := newGlobalConfiguration(filepath.Clean(*rpath))
+    globals := newGlobalConfiguration(filepath.Clean(*rpath), *concurrency)
     if *mstr != "" {
         globals.Administrators = strings.Split(*mstr, ",")
     }

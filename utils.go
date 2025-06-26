@@ -19,15 +19,18 @@ type globalConfiguration struct {
     Locks pathLocks
     LinkWhitelist []string
     SpoofPermissions map[string]spoofPermissions
+    ConcurrencyThrottle *concurrencyThrottle
 }
 
-func newGlobalConfiguration(registry string) globalConfiguration {
+func newGlobalConfiguration(registry string, max_concurrency int) globalConfiguration {
+    conc := newConcurrencyThrottle(max_concurrency)
     return globalConfiguration{ 
         Registry: registry, 
         Administrators: []string{},
         Locks: newPathLocks(),
         LinkWhitelist: []string{},
         SpoofPermissions: map[string]spoofPermissions{},
+        ConcurrencyThrottle: &conc,
     }
 }
 

@@ -278,7 +278,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
         t.Fatalf("failed to create a project directory; %v", err)
     }
 
-    globals := newGlobalConfiguration(reg)
+    globals := newGlobalConfiguration(reg, 2)
 
     t.Run("owners only", func(t *testing.T) {
         err = os.WriteFile(
@@ -594,7 +594,7 @@ func TestSetPermissionsHandlerHandler(t *testing.T) {
             t.Errorf("expected failure to spoof; %v", err)
         }
 
-        globals2 := newGlobalConfiguration(reg)
+        globals2 := newGlobalConfiguration(reg, 2)
         globals2.SpoofPermissions[self] = spoofPermissions{ All: false, Users: map[string]bool{ "sabrina": true } }
         err = setPermissionsHandler(reqpath, &globals2, ctx)
         if err != nil {
