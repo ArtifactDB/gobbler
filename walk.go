@@ -382,8 +382,8 @@ func walkDirectory(
                     }
                     if (!filepath.IsAbs(target)) {
                         target = filepath.Clean(filepath.Join(filepath.Dir(src_path), target))
-                        target = reroute_symlink(rel_path, target)
                     }
+                    target = reroute_symlink(rel_path, target)
 
                     target_stat, err := os.Stat(target)
                     if err != nil {
