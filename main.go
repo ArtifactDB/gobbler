@@ -169,6 +169,8 @@ func main() {
 
         } else if strings.HasPrefix(reqtype, "reindex_version-") {
             reportable_err = reindexHandler(reqpath, &globals, r.Context())
+        } else if strings.HasPrefix(reqtype, "validate_version-") {
+            reportable_err = validateHandler(reqpath, &globals, r.Context())
         } else if strings.HasPrefix(reqtype, "health_check-") { // TO-BE-DEPRECATED, see /check below.
             reportable_err = nil
         } else {
