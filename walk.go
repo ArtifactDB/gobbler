@@ -8,8 +8,10 @@ import (
     "io"
     "io/fs"
     "encoding/hex"
+    "encoding/json"
     "errors"
     "strings"
+    "strconv"
     "context"
     "sync"
 )
@@ -265,6 +267,8 @@ func resolveLocalSymlink(
 type walkDirectoryOptions struct {
     Transfer bool
     Consume bool
+    DeduplicateLatest map[string]*linkMetadata
+    RestoreLinkParent map[string]*linkMetadata
     IgnoreDot bool
     LinkWhitelist []string
 }
@@ -276,8 +280,6 @@ func walkDirectory(
     asset,
     version string,
     process_symlink func(string, string) error,
-    reroute_symlink func(string, string) string,
-    check_duplicates func(string, manifestEntry) *linkMetadata,
     ctx context.Context,
     throttle *concurrencyThrottle,
     options walkDirectoryOptions,
@@ -383,7 +385,17 @@ func walkDirectory(
                     if (!filepath.IsAbs(target)) {
                         target = filepath.Clean(filepath.Join(filepath.Dir(src_path), target))
                     }
-                    target = reroute_symlink(rel_path, target)
+                    if options.RestoreLinkParent != nil {
+                        found, ok := options.RestoreLinkParent[rel_path]
+                        if ok {
+                            parent := filepath.Join(registry, found.Project, found.Asset, found.Version, found.Path)
+                            if found.Ancestor != nil && target == filepath.Join(registry, found.Ancestor.Project, found.Ancestor.Asset, found.Ancestor.Version, found.Ancestor.Path) {
+                                target = parent
+                            } else if target != parent {
+                                return fmt.Errorf("unexpected link to non-ancestor, non-parent file %q from %q", target, src_path)
+                            }
+                        }
+                    }
 
                     target_stat, err := os.Stat(target)
                     if err != nil {
@@ -441,7 +453,15 @@ func walkDirectory(
                 man_entry := manifestEntry{ Size: restat.Size(), Md5sum: insum }
 
                 if options.Transfer {
-                    link_target := check_duplicates(rel_path, man_entry)
+                    var link_target *linkMetadata
+                    if options.DeduplicateLatest != nil {
+                        // Seeing if we can create a link to the last version's file with the same md5sum.
+                        last_entry, ok := options.DeduplicateLatest[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
+                        if ok {
+                            link_target = last_entry
+                        }
+                    }
+
                     if link_target == nil {
                         transferrable_lock.Lock()
                         defer transferrable_lock.Unlock()
@@ -672,6 +692,60 @@ func forceCreateSymlink(from, to string) error {
         }
     }
     return createSymlink(from, to)
+}
+
+func parseExistingLinkFiles(source, registry string, ctx context.Context) (map[string]*linkMetadata, []string, error) {
+    link_reroutes := map[string]*linkMetadata{}
+    link_files := []string{}
+
+    err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
+        if err != nil {
+            return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
+        }
+        err = ctx.Err()
+        if err != nil {
+            return fmt.Errorf("directory processing cancelled; %w", err)
+        }
+
+        base := filepath.Base(src_path)
+        if !strings.HasPrefix(base, "..") {
+            return nil
+        }
+
+        if info.IsDir() {
+            return filepath.SkipDir
+        }
+
+        if base != linksFileName {
+            return nil
+        }
+
+        rel_path, err := filepath.Rel(source, src_path)
+        if err != nil {
+            return fmt.Errorf("failed to convert %q into a relative path; %w", src_path, err);
+        }
+        link_files = append(link_files, rel_path)
+
+        contents, err := os.ReadFile(src_path)
+        if err != nil {
+            return fmt.Errorf("failed to read link file at %q; %w", src_path, err)
+        }
+
+        links := map[string]*linkMetadata{}
+        err = json.Unmarshal(contents, &links)
+        if err != nil {
+            return fmt.Errorf("failed to read parse JSON file at %q; %w", src_path, err)
+        }
+
+        rel_dir := filepath.Dir(rel_path)
+        for path_from, link_to := range links {
+            link_reroutes[filepath.Join(rel_dir, path_from)] = link_to
+        }
+
+        return nil
+    })
+
+    return link_reroutes, link_files, err
 }
 
 func recreateLinkFiles(destination string, manifest map[string]manifestEntry) (map[string]map[string]*linkMetadata, error) {

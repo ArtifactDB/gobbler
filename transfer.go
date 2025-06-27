@@ -62,23 +62,13 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         asset,
         version,
         createSymlink,
-        func(from, to string) string {
-            return to
-        },
-        func(path string, man manifestEntry) *linkMetadata {
-            // Seeing if we can create a link to the last version's file with the same md5sum.
-            last_entry, ok := last_dedup[strconv.FormatInt(man.Size, 10) + "-" + man.Md5sum]
-            if ok {
-                return last_entry;
-            } else {
-                return nil
-            }
-        },
         ctx,
         throttle,
         walkDirectoryOptions{
             Transfer: true,
             Consume: options.Consume,
+            DeduplicateLatest: last_dedup,
+            RestoreLinkParent: nil,
             IgnoreDot: options.IgnoreDot,
             LinkWhitelist: options.LinkWhitelist,
         },

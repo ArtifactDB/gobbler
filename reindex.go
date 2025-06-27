@@ -4,13 +4,11 @@ import (
     "fmt"
     "path/filepath"
     "io"
-    "io/fs"
     "os"
     "encoding/json"
     "net/http"
     "errors"
     "context"
-    "strings"
 )
 
 type reindexRequest struct {
@@ -25,58 +23,9 @@ type reindexDirectoryOptions struct {
 }
 
 func reindexDirectory(registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options reindexDirectoryOptions) error {
-    link_reroutes := map[string]string{}
-    link_files := []string{}
     source := filepath.Join(registry, project, asset, version)
-
-    // Doing a preliminary pass to identify symlink reroutes based on existing ..link files.
-    err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
-        if err != nil {
-            return fmt.Errorf("failed to walk into '" + src_path + "'; %w", err)
-        }
-        err = ctx.Err()
-        if err != nil {
-            return fmt.Errorf("directory processing cancelled; %w", err)
-        }
-
-        base := filepath.Base(src_path)
-        if !strings.HasPrefix(base, "..") {
-            return nil
-        }
-
-        if info.IsDir() {
-            return filepath.SkipDir
-        }
-
-        if base != linksFileName {
-            return nil
-        }
-
-        rel_path, err := filepath.Rel(source, src_path)
-        if err != nil {
-            return fmt.Errorf("failed to convert %q into a relative path; %w", src_path, err);
-        }
-        link_files = append(link_files, rel_path)
-
-        contents, err := os.ReadFile(src_path)
-        if err != nil {
-            return fmt.Errorf("failed to read link file at %q; %w", src_path, err)
-        }
-
-        links := map[string]linkMetadata{}
-        err = json.Unmarshal(contents, &links)
-        if err != nil {
-            return fmt.Errorf("failed to read parse JSON file at %q; %w", src_path, err)
-        }
-
-        rel_dir := filepath.Dir(rel_path)
-        for path_from, link_to := range links {
-            link_reroutes[filepath.Join(rel_dir, path_from)] = filepath.Join(registry, link_to.Project, link_to.Asset, link_to.Version, link_to.Path)
-        }
-
-        return nil
-    })
-    if err != nil{
+    link_reroutes, link_files, err := parseExistingLinkFiles(source, registry, ctx)
+    if err != nil {
         return err
     }
 
@@ -87,22 +36,14 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         asset,
         version,
         forceCreateSymlink,
-        func(from, to string) string {
-            if found, ok := link_reroutes[from]; ok {
-                return found;
-            } else {
-                return to;
-            }
-        },
-        func(path string, man manifestEntry) *linkMetadata {
-            return nil
-        },
         ctx,
         throttle,
         walkDirectoryOptions{
             Transfer: false,
-            IgnoreDot: false,
             Consume: false, // not used during reindexing, just set for completeness only.
+            DeduplicateLatest: nil,
+            RestoreLinkParent: link_reroutes,
+            IgnoreDot: false,
             LinkWhitelist: options.LinkWhitelist,
         },
     )
