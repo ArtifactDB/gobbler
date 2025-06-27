@@ -73,7 +73,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         if err != nil {
             return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", f, err)
         }
-        maybe_empty[f] = true
+        maybe_empty[d] = true
     }
 
     for epath, _ := range maybe_empty {

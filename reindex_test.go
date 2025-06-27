@@ -10,6 +10,7 @@ import (
     "context"
     "io/fs"
     "sort"
+    "errors"
 )
 
 func setupSourceForReindexDirectoryTest() (string, error) {
@@ -790,6 +791,115 @@ func TestReindexDirectoryRestoreLinkParentFailure(t *testing.T) {
     if target != "type" {
         t.Error("expected 'ultratype' to target 'type' after reindexing")
     }
+}
+
+func TestReindexDirectoryPurgeUnusedLinkFiles(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    src, err := setupSourceForTransferDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    err = os.Symlink("thunderbolt", filepath.Join(src, "moves", "electric", "thunderwave"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Mocking up a directory structure.
+    project := "pokemon"
+    asset := "charmander"
+    version := "fire-red"
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    v_path := filepath.Join(reg, project, asset, version)
+    prior, err := loadDirectoryContents(v_path)
+    if err != nil {
+        t.Fatalf("failed to load directory contents; %v", err)
+    }
+
+    t.Run("purge unused", func(t *testing.T) {
+        pretend_paths := []string{ 
+            filepath.Join(v_path, linksFileName),
+            filepath.Join(v_path, "evolution", linksFileName),
+            filepath.Join(v_path, "moves", "normal", linksFileName),
+        }
+        for _, f := range pretend_paths {
+            err := os.WriteFile(f, []byte("{}"), 0644)
+            if err != nil {
+                t.Fatal(err)
+            }
+        }
+
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        for _, f := range pretend_paths {
+            if _, err := os.Stat(f); err == nil || !errors.Is(err, os.ErrNotExist) {
+                t.Errorf("should have deleted an unused linkfile at %q", f)
+            }
+        }
+
+        // All previously existing content is still present.
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Error(err)
+        }
+    })
+
+    t.Run("purge empty directories", func(t *testing.T) {
+        pretend_paths := []string{ 
+            filepath.Join(v_path, "moves", "water"),
+            filepath.Join(v_path, "mega_evolution"),
+        }
+        for _, f := range pretend_paths {
+            err := os.Mkdir(f, 0755)
+            if err != nil {
+                t.Fatal(err)
+            }
+            p := filepath.Join(f, linksFileName)
+            err = os.WriteFile(p, []byte("{}"), 0644)
+            if err != nil {
+                t.Fatal(err)
+            }
+        }
+
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        for _, f := range pretend_paths {
+            if _, err := os.Stat(f); err == nil || !errors.Is(err, os.ErrNotExist) {
+                t.Errorf("should have deleted an empty directory at %q", f)
+            }
+        }
+
+        // All previously existing content is still present.
+        recovered, err := loadDirectoryContents(v_path)
+        if err != nil {
+            t.Fatalf("failed to load directory contents; %v", err)
+        }
+        err = compareDirectoryContents(prior, recovered)
+        if err != nil {
+            t.Error(err)
+        }
+    })
 }
 
 /**********************************************
