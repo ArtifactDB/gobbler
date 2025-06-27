@@ -5,6 +5,7 @@ import (
     "path/filepath"
     "fmt"
     "os"
+    "os/user"
     "io"
     "io/fs"
     "encoding/hex"
@@ -618,6 +619,27 @@ func walkDirectory(
                     final := filepath.Join(destination, path)
                     src_path := filepath.Join(source, path)
 
+                    // Setting 'consume=true' ensures that we don't have two copies of all files in the staging and registry at once.
+                    // This transparently reduces storage consumption during the upload. 
+                    // We first try to set global permissions and rename, otherwise falling back to copy-and-delete.
+                    if options.Consume {
+                        self, err := user.Current()
+                        if err != nil {
+                            return fmt.Errorf("failed to identify current user; %w", err)
+                        }
+                        owner, err := identifyUser(src_path)
+                        if err != nil {
+                            return fmt.Errorf("failed to identify owner of %q; %w", src_path, err)
+                        }
+                        if owner == self.Username { // check for correct ownership, otherwise a move is not directly equivalent to copy-and-delete.
+                            if err := os.Chmod(src_path, 0644); err == nil {
+                                if err := os.Rename(src_path, final); err == nil {
+                                    return nil 
+                                }
+                            }
+                        }
+                    }
+
                     err = copyFile(src_path, final)
                     if err != nil {
                         return fmt.Errorf("failed to copy file at %q to %q; %w", path, destination, err)
@@ -633,9 +655,6 @@ func walkDirectory(
                         return fmt.Errorf("mismatch in checksums between source and destination files for %q", path)
                     }
 
-                    // The move ensures that we don't have two copies of all files in the staging and registry at once.
-                    // This reduces storage consumption during the upload. 
-                    //
                     // We use a copy-and-delete to mimic a move to ensure that our permissions of the new file are configured correctly.
                     // Otherwise we might end up preserving the wrong permissions (especially ownership) of the moved file.
                     // This obviously comes at the cost of some performance but I don't see another way.
