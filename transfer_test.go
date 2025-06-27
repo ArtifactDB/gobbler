@@ -11,75 +11,12 @@ import (
     "context"
 )
 
-func setupSourceForTransferDirectoryTest() (string, error) {
-    dir, err := os.MkdirTemp("", "")
-    if err != nil {
-        return "", fmt.Errorf("failed to create the temporary directory; %w", err)
-    }
-
-    err = os.WriteFile(filepath.Join(dir, "type"), []byte("electric"), 0644)
-    if err != nil {
-        return "", err
-    }
-
-    err = os.Mkdir(filepath.Join(dir, "evolution"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "evolution", "up"), []byte("raichu"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "evolution", "down"), []byte("pichu"), 0644)
-    if err != nil {
-        return "", err
-    }
-
-    err = os.Mkdir(filepath.Join(dir, "moves"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.Mkdir(filepath.Join(dir, "moves", "electric"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunder_shock"), []byte("40"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunderbolt"), []byte("90"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "moves", "electric", "thunder"), []byte("110"), 0644)
-    if err != nil {
-        return "", err
-    }
-
-    err = os.Mkdir(filepath.Join(dir, "moves", "normal"), 0755)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "moves", "normal", "quick_attack"), []byte("40"), 0644)
-    if err != nil {
-        return "", err
-    }
-    err = os.WriteFile(filepath.Join(dir, "moves", "normal", "double_team"), []byte("0"), 0644)
-    if err != nil {
-        return "", err
-    }
-
-    return dir, nil
-}
-/**********************************************
- **********************************************/
-
 func TestTransferDirectorySimple(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
     version := "red"
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -140,7 +77,7 @@ func TestTransferDirectorySkipInternal(t *testing.T) {
     asset := "pikachu"
     version := "red"
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -188,7 +125,7 @@ func TestTransferDirectorySkipHidden(t *testing.T) {
     project := "pokemon"
     asset := "pikachu"
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -258,7 +195,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
 
     // Executing the transfer; by default, nothing is moved, until Consume=true.
     t.Run("no consume", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -286,7 +223,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
 
     // Until Consume=true.
     t.Run("with consume", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -318,7 +255,7 @@ func TestTransferDirectoryConsume(t *testing.T) {
     })
 
     t.Run("local links", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -574,7 +511,7 @@ func TestTransferDirectoryDeduplication(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -785,7 +722,7 @@ func TestTransferDirectoryRegistryLinks(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -984,7 +921,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
     })
 
     t.Run("probational versions", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -1014,7 +951,7 @@ func TestTransferDirectoryRegistryLinkFailures(t *testing.T) {
     })
 
     t.Run("internal files", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -1080,7 +1017,7 @@ func TestTransferDirectoryLocalLinks(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -1159,7 +1096,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
     conc := newConcurrencyThrottle(2)
 
     t.Run("cyclic links", func(t* testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -1190,7 +1127,7 @@ func TestTransferDirectoryLocalLinkFailures(t *testing.T) {
     })
 
     t.Run("directory links", func(t *testing.T) {
-        src, err := setupSourceForTransferDirectoryTest()
+        src, err := setupSourceForWalkDirectoryTest()
         if err != nil {
             t.Fatalf("failed to set up test directories; %v", err)
         }
@@ -1223,7 +1160,7 @@ func TestTransferDirectoryExternalLinks(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }

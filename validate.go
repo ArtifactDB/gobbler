@@ -128,7 +128,7 @@ func validateDirectory(
             if !ok {
                 return fmt.Errorf("missing path %q from linkfile %q in directory %q", fpath, lpath, source)
             }
-            err = compareLinks(old_entry, new_entry)
+            err := compareLinks(old_entry, new_entry)
             if err != nil {
                 return fmt.Errorf("mismatching link information for %q in linkefile %q in directory %q; %w", fpath, lpath, source, err)
             }

@@ -12,11 +12,6 @@ import (
     "sort"
 )
 
-func setupSourceForReindexDirectoryTest() (string, error) {
-    dir, err := setupSourceForTransferDirectoryTest()
-    return dir, err
-}
-
 func stripDoubleDotFiles(dir string) error {
     return filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
         if !strings.HasPrefix(filepath.Base(path), "..") {
@@ -111,7 +106,7 @@ func TestReindexDirectorySimple(t *testing.T) {
     asset := "pikachu"
     version := "red"
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -162,7 +157,7 @@ func TestReindexDirectorySkipInternal(t *testing.T) {
     asset := "pikachu"
     version := "red"
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -250,7 +245,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -464,7 +459,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -523,7 +518,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -652,7 +647,7 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -715,7 +710,7 @@ func TestReindexDirectoryRestoreLinkParentFailure(t *testing.T) {
     ctx := context.Background()
     conc := newConcurrencyThrottle(2)
 
-    src, err := setupSourceForTransferDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }

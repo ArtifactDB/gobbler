@@ -8,13 +8,8 @@ import (
     "context"
 )
 
-func setupSourceForValidateDirectoryTest() (string, error) {
-    dir, err := setupSourceForTransferDirectoryTest()
-    return dir, err
-}
-
 func TestValidateDirectorySimple(t *testing.T) {
-    src, err := setupSourceForValidateDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -135,7 +130,7 @@ func TestValidateDirectorySimple(t *testing.T) {
 }
 
 func TestValidateDirectoryLocalLinks(t *testing.T) {
-    src, err := setupSourceForValidateDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -281,7 +276,7 @@ func TestValidateDirectoryLocalLinks(t *testing.T) {
 }
 
 func TestValidateDirectoryRegistryLinks(t *testing.T) {
-    src, err := setupSourceForValidateDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -354,7 +349,7 @@ func TestValidateDirectoryRegistryLinks(t *testing.T) {
 }
 
 func TestValidateDirectoryAncestors(t *testing.T) {
-    src, err := setupSourceForValidateDirectoryTest()
+    src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
         t.Fatalf("failed to set up test directories; %v", err)
     }
@@ -457,3 +452,156 @@ func TestValidateDirectoryAncestors(t *testing.T) {
     })
 }
 
+func TestValidateDirectoryLinkfiles(t *testing.T) {
+    src, err := setupSourceForWalkDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    err = os.Symlink("type", filepath.Join(src, "supertype"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Symlink("supertype", filepath.Join(src, "megatype"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Symlink(filepath.Join("..", "normal", "quick_attack"), filepath.Join(src, "moves", "electric", "thunderwave"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    project := "pokemon"
+    asset := "pikachu"
+    version := "yellow"
+
+    t.Run("missing linkfile", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = os.Remove(filepath.Join(reg, project, asset, version, "moves", "electric", linksFileName))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || !strings.Contains(err.Error(), "expected a linkfile") {
+            t.Errorf("expected an error from a missing linkfile, got %v", err)
+        }
+    })
+
+    t.Run("extra linkfile", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, "moves", linksFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || !strings.Contains(err.Error(), "extra linkfile") {
+            t.Errorf("expected an error from an extra linkfile, got %v", err)
+        }
+    })
+
+    t.Run("missing path in linkfile", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, "moves", "electric", linksFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || !strings.Contains(err.Error(), "missing path") {
+            t.Errorf("expected an error from a missing path in the linkfile, got %v", err)
+        }
+    })
+
+    t.Run("wrong information in linkfile", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        lpath := filepath.Join(reg, project, asset, version, linksFileName)
+        links, err := readLinkfile(lpath)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        links["megatype"].Path = "type" // go straight to the ancestor this time.
+        links["megatype"].Ancestor = nil
+        err = dumpJson(lpath, &links)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || !strings.Contains(err.Error(), "mismatching link information") {
+            t.Errorf("expected an error from mismatching linkfile information, got %v", err)
+        }
+    })
+
+    t.Run("extra path in linkfile", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        lpath := filepath.Join(reg, project, asset, version, linksFileName)
+        links, err := readLinkfile(lpath)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        links["whee"] = &linkMetadata{}
+        err = dumpJson(lpath, &links)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || !strings.Contains(err.Error(), "extra path") {
+            t.Errorf("expected an error from extra path in the linkfile, got %v", err)
+        }
+    })
+}
