@@ -98,7 +98,11 @@ func createSymlink(path string, registry string, link *linkMetadata, wipe_existi
 }
 
 func checkRelativeSymlink(parent string, path string, target string) error {
-    rel, err := filepath.Rel(parent, path)
+    if filepath.IsAbs(target) {
+        return fmt.Errorf("expected a relative path for the link target of %s", path)
+    }
+
+    rel, err := filepath.Rel(parent, filepath.Dir(path))
     if err != nil {
         return err
     }
