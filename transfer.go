@@ -6,7 +6,6 @@ import (
     "os"
     "errors"
     "context"
-    "strconv"
 )
 
 type transferDirectoryOptions struct {
@@ -48,7 +47,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
                     self.Ancestor = v.Link
                 }
             }
-            last_dedup[strconv.FormatInt(v.Size, 10) + "-" + v.Md5sum] = self
+            last_dedup[deduplicateLatestKey(v.Size, v.Md5sum)] = self
         }
 
     } else if !errors.Is(err, os.ErrNotExist) {

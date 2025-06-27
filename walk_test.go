@@ -1518,10 +1518,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
     }
 
     // Mocking up a directory structure and executing a series of transfers to create appropriate links. 
-    project := "pokemon"
-    asset := "pikachu"
-
-    {
+    simulate_versions := func(project, asset string){
         err = transferDirectory(src, reg, project, asset, "red", ctx, &conc, transferDirectoryOptions{})
         if err != nil {
             t.Fatalf("failed to perform the transfer; %v", err)
@@ -1562,7 +1559,11 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
         }
     }
 
-    {
+    t.Run("no ancestors", func(t *testing.T) {
+        project := "pokemon"
+        asset := "pikachu"
+        simulate_versions(project, asset)
+
         version := "blue"
         v_path := filepath.Join(reg, project, asset, version)
         prior, err := loadDirectoryContents(v_path)
@@ -1594,6 +1595,19 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Error(err)
         }
 
+        // Confirming that, indeed, there are no ancestors.
+        man, err := readManifest(v_path)
+        if err != nil {
+            t.Fatal(err)
+        }
+        for mpath, mentry := range man {
+            if mentry.Link != nil {
+                if mentry.Link.Ancestor != nil {
+                    t.Errorf("unexpected ancestor for %q; %v", mpath, *(mentry.Link.Ancestor))
+                }
+            }
+        }
+
         // Confirming that we have ..links files.
         _, found := recovered[linksFileName]
         if !found {
@@ -1604,10 +1618,13 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
         if !found {
             t.Error("missing a nested ..links file")
         }
-    }
+    })
 
-    // Checking that reindexing preserves ancestral information if ..links are present.
-    {
+    t.Run("preserves ancestors", func(t *testing.T) {
+        project := "pokemon"
+        asset := "raichu"
+        simulate_versions(project, asset)
+
         version := "green"
         v_path := filepath.Join(reg, project, asset, version)
         prior, err := loadDirectoryContents(v_path)
@@ -1615,7 +1632,7 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to load directory contents; %v", err)
         }
 
-        // Don't delete all the ..links files.
+        // Checking that reindexing preserves ancestral information if ..links are present, so we only remove the manifest.
         err = os.Remove(filepath.Join(v_path, manifestFileName))
         if err != nil {
             t.Fatal(err)
@@ -1626,6 +1643,18 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
             t.Fatalf("failed to reindex directory; %v", err)
         }
 
+        man, err := readManifest(v_path)
+        if err != nil {
+            t.Fatal(err)
+        }
+        for mpath, mentry := range man {
+            if mentry.Link == nil {
+                t.Errorf("expected link for %q", mpath)
+            } else if mentry.Link.Ancestor == nil {
+                t.Errorf("expected ancestor for %q; %v", mpath, *(mentry.Link))
+            }
+        }
+
         recovered, err := loadDirectoryContents(v_path)
         if err != nil {
             t.Fatalf("failed to load directory contents; %v", err)
@@ -1634,7 +1663,58 @@ func TestReindexDirectoryRegistryLinks(t *testing.T) {
         if err != nil {
             t.Error(err)
         }
-    }
+    })
+
+    t.Run("wipes ancestors", func(t *testing.T) {
+        project := "pokemon"
+        asset := "pichu"
+        simulate_versions(project, asset)
+
+        version := "green"
+        v_path := filepath.Join(reg, project, asset, version)
+        prior, err := readManifest(v_path)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        // Now reindexing after we purge all the '..xxx' files, including the links.
+        err = stripDoubleDotFiles(v_path)
+        if err != nil {
+            t.Fatalf("failed to strip all double dots; %v", err)
+        }
+        err = os.WriteFile(filepath.Join(v_path, summaryFileName), []byte("{}"), 0644) // mocking this up for a valid comparison.
+        if err != nil {
+            t.Fatalf("failed to create the latest file; %v", err)
+        }
+
+        err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+        if err != nil {
+            t.Fatalf("failed to reindex directory; %v", err)
+        }
+
+        // All ancestral information is now lost.
+        man, err := readManifest(v_path)
+        if err != nil {
+            t.Fatal(err)
+        }
+        for mpath, mentry := range man {
+            if mentry.Link == nil {
+                t.Errorf("expected link for %q", mpath)
+            } else if mentry.Link.Ancestor != nil {
+                t.Errorf("unexpected ancestor for %q; %v", mpath, *(mentry.Link))
+            } else {
+                previous, ok := prior[mpath]
+                if !ok {
+                    t.Errorf("could not find %q before reindexing", mpath)
+                } else if (mentry.Link.Project != previous.Link.Ancestor.Project || 
+                    mentry.Link.Asset != previous.Link.Ancestor.Asset || 
+                    mentry.Link.Version != previous.Link.Ancestor.Version || 
+                    mentry.Link.Path != previous.Link.Ancestor.Path) {
+                    t.Errorf("unexpected link target for %q after reindexing; %v", mpath, *(mentry.Link))
+                }
+            }
+        }
+    })
 }
 
 func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
@@ -1689,7 +1769,7 @@ func TestReindexDirectoryRegistryLinkFailures(t *testing.T) {
         }
     })
 
-    // All other failures are handled by resolveLocalSymlink and are common to
+    // All other failures are handled by resolveRegistrySymlink and are common to
     // both transfer and reindex functions, so we won't test them again here.
 }
 
@@ -1779,23 +1859,6 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatalf("failed to strip all double dots; %v", err)
         }
 
-        // Inject a ..link file back in, and removing the link itself to ensure that reindexing doesn't rely on existing links if ..links is present.
-        err = os.WriteFile(filepath.Join(v_path, linksFileName), []byte(fmt.Sprintf(`{
-    "type2": {
-        "project": "%s",
-        "asset": "%s",
-        "version": "%s",
-        "path": "type"
-    }
-}`, project, asset, version)), 0644)
-        if err != nil {
-            t.Fatal(err)
-        }
-        err = os.Remove(filepath.Join(v_path, "type2"))
-        if err != nil {
-            t.Fatal(err)
-        }
-
         // Inject a ..link file with ancestral information.
         err = os.WriteFile(filepath.Join(v_path, "evolution", linksFileName), []byte(fmt.Sprintf(`{
     "foo": {
@@ -1825,6 +1888,7 @@ func TestReindexDirectoryLocalLinks(t *testing.T) {
             t.Fatalf("failed to load directory contents; %v", err)
         }
 
+        // This time, the ancestral information of evolution/foo->type->type2 is preserved.
         err = compareDirectoryContents(prior, recovered)
         if err != nil {
             t.Error(err)
@@ -1895,5 +1959,91 @@ func TestReindexDirectoryLinkWhitelist(t *testing.T) {
     contents, found := man["asdasd"]
     if !found || contents.Link != nil || contents.Size != int64(len(message)) {
         t.Error("unexpected manifest entry for whitelisted symlink")
+    }
+}
+
+func TestReindexDirectoryRestoreLinkParentFailure(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    src, err := setupSourceForTransferDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    err = os.Symlink("type", filepath.Join(src, "supertype"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Symlink("supertype", filepath.Join(src, "megatype"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = os.Symlink("megatype", filepath.Join(src, "ultratype"))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Mocking up a directory structure.
+    project := "pokemon"
+    asset := "charmander"
+    version := "fire-red"
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    // Now, we change the link so that we're targeting the middle ancestor rather than the direct parent.
+    change_path := filepath.Join(reg, project, asset, version, "ultratype")
+    target, err := os.Readlink(change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+    if target != "type" {
+        t.Error("expected 'ultratype' to target 'type'")
+    }
+
+    err = os.Remove(change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = os.Symlink("supertype", change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+    if err == nil || !strings.Contains(err.Error(), "non-ancestor, non-parent") {
+        t.Error("should have thrown an error if the link does not target the ancestor or parent")
+    }
+
+    // As a control, we change it again to target just the parent, in which case all should be well.
+    err = os.Remove(change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = os.Symlink("megatype", change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    target, err = os.Readlink(change_path)
+    if err != nil {
+        t.Fatal(err)
+    }
+    if target != "type" {
+        t.Error("expected 'ultratype' to target 'type' after reindexing")
     }
 }

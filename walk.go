@@ -277,6 +277,10 @@ type walkDirectoryOptions struct {
     LinkWhitelist []string
 }
 
+func deduplicateLatestKey(size int64, md5sum string) string {
+    return strconv.FormatInt(size, 10) + "-" + md5sum
+}
+
 func walkDirectory(
     source,
     registry,
@@ -397,7 +401,7 @@ func walkDirectory(
                             if found.Ancestor != nil && target == fullLinkPath(registry, found.Ancestor) {
                                 target = parent
                             } else if target != parent {
-                                return fmt.Errorf("unexpected link to non-ancestor, non-parent file %q from %q", target, src_path)
+                                return fmt.Errorf("unexpected symbolic link to non-ancestor, non-parent file %q from %q", target, src_path)
                             }
                         }
                     }
@@ -461,7 +465,7 @@ func walkDirectory(
                     var link_target *linkMetadata
                     if options.DeduplicateLatest != nil {
                         // Seeing if we can create a link to the last version's file with the same md5sum.
-                        last_entry, ok := options.DeduplicateLatest[strconv.FormatInt(man_entry.Size, 10) + "-" + man_entry.Md5sum]
+                        last_entry, ok := options.DeduplicateLatest[deduplicateLatestKey(man_entry.Size, man_entry.Md5sum)]
                         if ok {
                             link_target = last_entry
                         }
@@ -753,20 +757,25 @@ func parseExistingLinkFiles(source, registry string, ctx context.Context) (map[s
     return link_reroutes, link_files, err
 }
 
-func recreateLinkFiles(destination string, manifest map[string]manifestEntry) (map[string]map[string]*linkMetadata, error) {
+func prepareLinkFiles(manifest map[string]manifestEntry) map[string]map[string]*linkMetadata {
     all_links := map[string]map[string]*linkMetadata{}
     for path, entry := range manifest {
         if entry.Link != nil {
-            subdir, base := filepath.Split(path)
+            subdir := filepath.Dir(path)
             sublinks, ok := all_links[subdir]
             if !ok {
                 sublinks = map[string]*linkMetadata{}
                 all_links[subdir] = sublinks
             }
-            sublinks[base] = entry.Link
+            sublinks[filepath.Base(path)] = entry.Link
         }
     }
+    return all_links
+}
 
+
+func recreateLinkFiles(destination string, manifest map[string]manifestEntry) (map[string]map[string]*linkMetadata, error) {
+    all_links := prepareLinkFiles(manifest)
     for k, v := range all_links {
         link_path := filepath.Join(destination, k, linksFileName)
         err := dumpJson(link_path, &v)
@@ -774,6 +783,5 @@ func recreateLinkFiles(destination string, manifest map[string]manifestEntry) (m
             return nil, fmt.Errorf("failed to save links for %q; %w", k, err)
         }
     }
-
     return all_links, nil
 }
