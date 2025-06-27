@@ -24,7 +24,7 @@ type reindexDirectoryOptions struct {
 
 func reindexDirectory(registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options reindexDirectoryOptions) error {
     source := filepath.Join(registry, project, asset, version)
-    link_reroutes, link_files, err := parseExistingLinkFiles(source, registry, ctx)
+    old_all_links, err := parseExistingLinkFiles(source, registry, ctx)
     if err != nil {
         return fmt.Errorf("failed to parse existing linkfiles in %q; %w", source, err)
     }
@@ -35,14 +35,13 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         project,
         asset,
         version,
-        forceCreateSymlink,
         ctx,
         throttle,
         walkDirectoryOptions{
-            Transfer: false,
+            Mode: WalkDirectoryReindex,
             Consume: false, // not used during reindexing, just set for completeness only.
             DeduplicateLatest: nil,
-            RestoreLinkParent: link_reroutes,
+            RestoreLinkParent: createRestoreLinkParentMap(old_all_links),
             IgnoreDot: false,
             LinkWhitelist: options.LinkWhitelist,
         },
@@ -57,23 +56,22 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         return fmt.Errorf("failed to save manifest for %q; %w", source, err)
     }
 
-    all_links, err := recreateLinkFiles(source, manifest)
+    new_all_links, err := recreateLinkFiles(source, manifest)
     if err != nil {
         return fmt.Errorf("failed to create linkfiles; %w", err)
     }
 
     // Removing unused linkfiles and associated empty directories.
     maybe_empty := map[string]bool{}
-    for _, f := range link_files {
-        d := filepath.Dir(f)
-        if _, ok := all_links[d]; ok {
+    for d, _ := range old_all_links {
+        if _, ok := new_all_links[d]; ok {
             continue
         }
-        err := os.Remove(filepath.Join(source, f))
+        err := os.Remove(filepath.Join(source, d, linksFileName))
         if err != nil {
-            return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", f, err)
+            return fmt.Errorf("failed to remove unnecessary linkfile in %q; %w", d, err)
         }
-        maybe_empty[f] = true
+        maybe_empty[d] = true
     }
 
     for epath, _ := range maybe_empty {

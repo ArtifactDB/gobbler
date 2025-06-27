@@ -6,6 +6,7 @@ import (
     "os"
     "errors"
     "context"
+    "strconv"
 )
 
 type transferDirectoryOptions struct {
@@ -14,10 +15,14 @@ type transferDirectoryOptions struct {
     LinkWhitelist []string
 }
 
+func deduplicateLatestKey(size int64, md5sum string) string {
+    return strconv.FormatInt(size, 10) + "-" + md5sum
+}
+
 func transferDirectory(source, registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options transferDirectoryOptions) error {
     // Loading the latest version's metadata into a deduplication index.
     // There's no need to check for probational versions here as only non-probational versions ever make it into '..latest'.
-    last_dedup := map[string]*linkMetadata{}
+    var last_dedup map[string]*linkMetadata
     asset_dir := filepath.Join(registry, project, asset)
     latest_path := filepath.Join(asset_dir, latestFileName)
 
@@ -33,6 +38,7 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
             return fmt.Errorf("failed to read the latest version's manifest; %w", err)
         }
 
+        last_dedup = make(map[string]*linkMetadata)
         for k, v := range manifest {
             self := &linkMetadata{
                 Project: project,
@@ -60,11 +66,10 @@ func transferDirectory(source, registry, project, asset, version string, ctx con
         project,
         asset,
         version,
-        createSymlink,
         ctx,
         throttle,
         walkDirectoryOptions{
-            Transfer: true,
+            Mode: WalkDirectoryTransfer,
             Consume: options.Consume,
             DeduplicateLatest: last_dedup,
             RestoreLinkParent: nil,

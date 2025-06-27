@@ -11,7 +11,6 @@ import (
     "encoding/json"
     "errors"
     "strings"
-    "strconv"
     "context"
     "sync"
 )
@@ -70,7 +69,7 @@ func fullLinkPath(registry string, link *linkMetadata) string {
     return filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
 }
 
-func processSymlink(path string, registry string, link *linkMetadata, process_symlink func(string, string) error) error {
+func createSymlink(path string, registry string, link *linkMetadata, wipe_existing bool) error {
     if link.Ancestor != nil {
         link = link.Ancestor
     }
@@ -82,7 +81,34 @@ func processSymlink(path string, registry string, link *linkMetadata, process_sy
         return fmt.Errorf("failed to determine relative path for registry symlink from %q to %q; %w", path, target, err)
     }
 
-    return process_symlink(path, rellocal)
+    if wipe_existing {
+        if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+            err = os.Remove(path)
+            if err != nil {
+                return fmt.Errorf("failed to remove existing symlink at %q; %w", path, err)
+            }
+        }
+    }
+
+    err = os.Symlink(rellocal, path)
+    if err != nil {
+        return fmt.Errorf("failed to create a symlink from %q to %q; %w", path, target, err)
+    }
+    return nil
+}
+
+func checkRelativeSymlink(parent string, path string, target string) error {
+    rel, err := filepath.Rel(parent, path)
+    if err != nil {
+        return err
+    }
+
+    combined := filepath.Clean(filepath.Join(rel, target))
+    if !filepath.IsLocal(combined) {
+        return fmt.Errorf("symlink target %q at %q is not local to %q", target, path, parent)
+    }
+
+    return nil
 }
 
 /***********************************************
@@ -268,17 +294,21 @@ func resolveLocalSymlink(
  ***** Transfer contents of a non-registry directory *****
  *********************************************************/
 
+type WalkDirectoryMode int
+
+const (
+    WalkDirectoryTransfer WalkDirectoryMode = iota
+    WalkDirectoryReindex
+    WalkDirectoryValidate
+)
+
 type walkDirectoryOptions struct {
-    Transfer bool
+    Mode WalkDirectoryMode
     Consume bool
     DeduplicateLatest map[string]*linkMetadata
     RestoreLinkParent map[string]*linkMetadata
     IgnoreDot bool
     LinkWhitelist []string
-}
-
-func deduplicateLatestKey(size int64, md5sum string) string {
-    return strconv.FormatInt(size, 10) + "-" + md5sum
 }
 
 func walkDirectory(
@@ -287,7 +317,6 @@ func walkDirectory(
     project,
     asset,
     version string,
-    process_symlink func(string, string) error,
     ctx context.Context,
     throttle *concurrencyThrottle,
     options walkDirectoryOptions,
@@ -296,10 +325,9 @@ func walkDirectory(
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
     transferrable := []string{}
-    registry_links := map[string]string{}
     local_links := map[string]string{}
 
-    var manifest_lock, registry_links_lock, local_links_lock, transferrable_lock sync.Mutex
+    var manifest_lock, local_links_lock, transferrable_lock sync.Mutex
     var error_lock sync.RWMutex
     all_errors := []error{}
     safeCheckError := func() error {
@@ -319,6 +347,15 @@ func walkDirectory(
 
     var wg sync.WaitGroup
     defer wg.Wait()
+
+    do_transfer := options.Mode == WalkDirectoryTransfer
+    do_create_symlink := do_transfer || options.Mode == WalkDirectoryReindex
+    do_replace_symlink := options.Mode == WalkDirectoryReindex
+    do_check_relative_symlink := options.Mode == WalkDirectoryValidate
+
+    manifest_cache := map[string]map[string]manifestEntry{}
+    probation_cache := map[string]bool{}
+    var manifest_cache_lock, probation_cache_lock sync.Mutex
 
     /*** First pass examines all files and decides what to do with them. ***/
     err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
@@ -353,7 +390,7 @@ func walkDirectory(
         }
 
         if info.IsDir() {
-            if options.Transfer {
+            if do_transfer {
                 err := os.MkdirAll(filepath.Join(destination, rel_path), 0755)
                 if err != nil {
                     return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
@@ -390,10 +427,11 @@ func walkDirectory(
                     if err != nil {
                         return fmt.Errorf("failed to read the symlink at %q; %w", src_path, err)
                     }
+
+                    original_target := target
                     if (!filepath.IsAbs(target)) {
                         target = filepath.Clean(filepath.Join(filepath.Dir(src_path), target))
                     }
-
                     if options.RestoreLinkParent != nil {
                         found, ok := options.RestoreLinkParent[rel_path]
                         if ok {
@@ -416,6 +454,12 @@ func walkDirectory(
 
                     local_inside, err := filepath.Rel(source, target)
                     if err == nil && filepath.IsLocal(local_inside) {
+                        if do_check_relative_symlink {
+                            err := checkRelativeSymlink(destination, src_path, original_target)
+                            if err != nil {
+                                return err
+                            }
+                        }
                         local_links_lock.Lock()
                         defer local_links_lock.Unlock()
                         local_links[rel_path] = local_inside
@@ -424,9 +468,38 @@ func walkDirectory(
 
                     registry_inside, err := filepath.Rel(registry, target)
                     if err == nil && filepath.IsLocal(registry_inside) {
-                        registry_links_lock.Lock()
-                        defer registry_links_lock.Unlock()
-                        registry_links[rel_path] = registry_inside
+                        if do_check_relative_symlink {
+                            err := checkRelativeSymlink(registry, src_path, original_target)
+                            if err != nil {
+                                return err
+                            }
+                        }
+
+                        obj, err := resolveRegistrySymlink(
+                            registry,
+                            project,
+                            asset,
+                            version,
+                            registry_inside,
+                            manifest_cache,
+                            &manifest_cache_lock,
+                            probation_cache,
+                            &probation_cache_lock,
+                        )
+                        if err != nil {
+                            return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", src_path, target, err)
+                        }
+
+                        if do_create_symlink {
+                            err = createSymlink(filepath.Join(destination, rel_path), registry, obj.Link, do_replace_symlink)
+                            if err != nil {
+                                return err
+                            }
+                        }
+
+                        manifest_lock.Lock()
+                        defer manifest_lock.Unlock()
+                        manifest[rel_path] = *obj
                         return nil
                     }
 
@@ -441,10 +514,9 @@ func walkDirectory(
                         defer manifest_lock.Unlock()
                         manifest[rel_path] = manifestEntry{ Size: target_stat.Size(), Md5sum: target_sum }
 
-                        if options.Transfer {
+                        if do_transfer {
                             final := filepath.Join(destination, rel_path)
-                            // No need to use process_symlink here, as this can only happen if Transfer = true, in which case we must create the symlink.
-                            err := createSymlink(final, target)
+                            err := os.Symlink(target, final)
                             if err != nil {
                                 return err
                             }
@@ -461,7 +533,7 @@ func walkDirectory(
                 }
                 man_entry := manifestEntry{ Size: restat.Size(), Md5sum: insum }
 
-                if options.Transfer {
+                if do_transfer {
                     var link_target *linkMetadata
                     if options.DeduplicateLatest != nil {
                         // Seeing if we can create a link to the last version's file with the same md5sum.
@@ -477,8 +549,7 @@ func walkDirectory(
                         transferrable = append(transferrable, rel_path)
                     } else {
                         man_entry.Link = link_target 
-                        // No need to use process_symlink here, as we must create the symlink for Transfer = true.
-                        err := processSymlink(filepath.Join(destination, rel_path), registry, link_target, createSymlink)
+                        err := createSymlink(filepath.Join(destination, rel_path), registry, link_target, false)
                         if err != nil {
                             return err
                         }
@@ -507,8 +578,11 @@ func walkDirectory(
         return nil, all_errors[0]
     }
 
-    /*** Second pass performs a copy/move of files. ***/
-    if options.Transfer {
+    /*** 
+     *** Second pass performs a copy/move of files.
+     *** We use a second pass so any move doesn't break local links within the staging directory during the first pass.
+     ***/
+    if do_transfer {
         for _, path := range transferrable {
             err := ctx.Err()
             if err != nil {
@@ -561,8 +635,6 @@ func walkDirectory(
                     // We use a copy-and-delete to mimic a move to ensure that our permissions of the new file are configured correctly.
                     // Otherwise we might end up preserving the wrong permissions (especially ownership) of the moved file.
                     // This obviously comes at the cost of some performance but I don't see another way.
-                    //
-                    // We use a second pass so this deletion doesn't break local links within the staging directory during the first pass.
                     if options.Consume {
                         os.Remove(src_path)
                     }
@@ -582,94 +654,27 @@ func walkDirectory(
         }
     }
 
-    /*** Third pass to resolve links to other files in the registry. **/
-    manifest_cache := map[string]map[string]manifestEntry{}
-    probation_cache := map[string]bool{}
-    var manifest_cache_lock, probation_cache_lock sync.Mutex
-
-    for path, target := range registry_links {
-        err := ctx.Err()
-        if err != nil {
-            return nil, fmt.Errorf("directory processing cancelled; %w", err)
-        }
-
-        err = safeCheckError()
-        if err != nil {
-            return nil, err
-        }
-
-        handle := throttle.Wait()
-        wg.Add(1);
-        go func() {
-            defer throttle.Release(handle)
-            defer wg.Done();
-            err := func() error {
-                // Re-check for early cancellation once we get into the goroutine, as throttling might have blocked an arbitrarily long time.
-                err := ctx.Err()
-                if err != nil {
-                    return fmt.Errorf("directory processing cancelled; %w", err)
-                }
-
-                err = safeCheckError()
-                if err != nil {
-                    return err
-                }
-
-                tstat, err := os.Stat(filepath.Join(registry, target))
-                if err != nil {
-                    return fmt.Errorf("failed to stat link target %q inside registry; %w", target, err)
-                }
-                if tstat.IsDir() {
-                    return fmt.Errorf("symbolic link to registry directory %q is not supported", target)
-                }
-
-                obj, err := resolveRegistrySymlink(registry, project, asset, version, target, manifest_cache, &manifest_cache_lock, probation_cache, &probation_cache_lock)
-                if err != nil {
-                    return fmt.Errorf("failed to resolve symlink for %q to registry path %q; %w", path, target, err)
-                }
-                manifest[path] = *obj
-
-                err = processSymlink(filepath.Join(destination, path), registry, obj.Link, process_symlink)
-                if err != nil {
-                    return err
-                }
-
-                return nil
-            }()
-
-            if err != nil {
-                safeAddError(err)
-            }
-        }()
-    }
-
-    wg.Wait()
-    if len(all_errors) > 0 {
-        return nil, all_errors[0]
-    }
-
-    /*** Final pass to resolve local links within the newly uploaded directory. ***/
+    /*** 
+     *** Final pass to resolve local links within the newly uploaded directory. 
+     *** Don't try to parallelize this, as different local_links might have the same ancestors.
+     *** This would result in repeated attempts to create the same symbolic links from multiple goroutines.
+     ***/
     for path, target := range local_links {
         err := ctx.Err()
         if err != nil {
             return nil, fmt.Errorf("directory processing cancelled; %w", err)
         }
 
-        err = safeCheckError()
-        if err != nil {
-            return nil, err
-        }
-
-        // Don't try to parallelize this, as different local_links might have the same ancestors.
-        // This would result in repeated attempts to create the same symbolic links from multiple goroutines.
         man, err := resolveLocalSymlink(project, asset, version, path, target, local_links, manifest, nil)
         if err != nil {
             return nil, err
         }
 
-        err = processSymlink(filepath.Join(destination, path), registry, man.Link, process_symlink)
-        if err != nil {
-            return nil, err
+        if do_create_symlink {
+            err = createSymlink(filepath.Join(destination, path), registry, man.Link, do_replace_symlink)
+            if err != nil {
+                return nil, err
+            }
         }
     }
 
@@ -685,27 +690,23 @@ func walkDirectory(
  ***** Recreate links once we're done *****
  ******************************************/
 
-func createSymlink(from, to string) error { 
-    err := os.Symlink(to, from)
+func readLinkfile(path string) (map[string]*linkMetadata, error) { 
+    contents, err := os.ReadFile(path)
     if err != nil {
-        return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", from, to, err)
+        return nil, err
     }
-    return nil
+
+    links := map[string]*linkMetadata{}
+    err = json.Unmarshal(contents, &links)
+    if err != nil {
+        return nil, err
+    }
+
+    return links, nil
 }
 
-func forceCreateSymlink(from, to string) error {
-    if _, err := os.Lstat(from); err == nil || !errors.Is(err, os.ErrNotExist) {
-        err = os.Remove(from)
-        if err != nil {
-            return fmt.Errorf("failed to remove existing symlink at %q; %w", from, err)
-        }
-    }
-    return createSymlink(from, to)
-}
-
-func parseExistingLinkFiles(source, registry string, ctx context.Context) (map[string]*linkMetadata, []string, error) {
-    link_reroutes := map[string]*linkMetadata{}
-    link_files := []string{}
+func parseExistingLinkFiles(source, registry string, ctx context.Context) (map[string]map[string]*linkMetadata, error) {
+    all_links := map[string]map[string]*linkMetadata{}
 
     err := filepath.WalkDir(source, func(src_path string, info fs.DirEntry, err error) error {
         if err != nil {
@@ -729,32 +730,37 @@ func parseExistingLinkFiles(source, registry string, ctx context.Context) (map[s
             return nil
         }
 
+        links, err := readLinkfile(src_path)
+        if err != nil {
+            return fmt.Errorf("failed to read linkfile at %q; %w", src_path, err)
+        }
+
+        for key, link_to := range links {
+            if link_to == nil {
+                return fmt.Errorf("unexpected nil value for %q in linkfile at %q", key, src_path)
+            }
+        }
+
         rel_path, err := filepath.Rel(source, src_path)
         if err != nil {
             return fmt.Errorf("failed to convert %q into a relative path; %w", src_path, err);
         }
-        link_files = append(link_files, rel_path)
 
-        contents, err := os.ReadFile(src_path)
-        if err != nil {
-            return fmt.Errorf("failed to read link file at %q; %w", src_path, err)
-        }
-
-        links := map[string]*linkMetadata{}
-        err = json.Unmarshal(contents, &links)
-        if err != nil {
-            return fmt.Errorf("failed to read parse JSON file at %q; %w", src_path, err)
-        }
-
-        rel_dir := filepath.Dir(rel_path)
-        for path_from, link_to := range links {
-            link_reroutes[filepath.Join(rel_dir, path_from)] = link_to
-        }
-
+        all_links[filepath.Dir(rel_path)] = links
         return nil
     })
 
-    return link_reroutes, link_files, err
+    return all_links, err
+}
+
+func createRestoreLinkParentMap(all_links map[string]map[string]*linkMetadata) map[string]*linkMetadata {
+    link_reroutes := map[string]*linkMetadata{}
+    for rel_dir, links := range all_links {
+        for path_from, link_to := range links {
+            link_reroutes[filepath.Join(rel_dir, path_from)] = link_to
+        }
+    }
+    return link_reroutes
 }
 
 func prepareLinkFiles(manifest map[string]manifestEntry) map[string]map[string]*linkMetadata {
@@ -772,7 +778,6 @@ func prepareLinkFiles(manifest map[string]manifestEntry) map[string]map[string]*
     }
     return all_links
 }
-
 
 func recreateLinkFiles(destination string, manifest map[string]manifestEntry) (map[string]map[string]*linkMetadata, error) {
     all_links := prepareLinkFiles(manifest)

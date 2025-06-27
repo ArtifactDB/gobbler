@@ -229,7 +229,7 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
             }
             delinked[filepath.Dir(action.Key)] = true
         } else {
-            err := processSymlink(dest, registry, action.Link, forceCreateSymlink)
+            err := createSymlink(dest, registry, action.Link, /* wipe_existing = */ true)
             if err != nil {
                 return err
             }
