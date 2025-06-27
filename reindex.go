@@ -26,7 +26,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
     source := filepath.Join(registry, project, asset, version)
     link_reroutes, link_files, err := parseExistingLinkFiles(source, registry, ctx)
     if err != nil {
-        return err
+        return fmt.Errorf("failed to parse existing linkfiles in %q; %w", source, err)
     }
 
     manifest, err := walkDirectory(
@@ -81,7 +81,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         err := func() error {
             handle, err := os.Open(full_epath)
             if err != nil {
-                return err
+                return fmt.Errorf("failed to open directory handle %q; %w", full_epath, err)
             }
             defer handle.Close()
 

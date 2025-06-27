@@ -66,11 +66,15 @@ func computeChecksum(path string) (string, error) {
     return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+func fullLinkPath(registry string, link *linkMetadata) string {
+    return filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
+}
+
 func processSymlink(path string, registry string, link *linkMetadata, process_symlink func(string, string) error) error {
     if link.Ancestor != nil {
         link = link.Ancestor
     }
-    target := filepath.Join(registry, link.Project, link.Asset, link.Version, link.Path)
+    target := fullLinkPath(registry, link)
 
     // We convert the link target to a relative path within the registry so that the registry is easily relocatable.
     rellocal, err := filepath.Rel(filepath.Dir(path), target)
@@ -385,11 +389,12 @@ func walkDirectory(
                     if (!filepath.IsAbs(target)) {
                         target = filepath.Clean(filepath.Join(filepath.Dir(src_path), target))
                     }
+
                     if options.RestoreLinkParent != nil {
                         found, ok := options.RestoreLinkParent[rel_path]
                         if ok {
-                            parent := filepath.Join(registry, found.Project, found.Asset, found.Version, found.Path)
-                            if found.Ancestor != nil && target == filepath.Join(registry, found.Ancestor.Project, found.Ancestor.Asset, found.Ancestor.Version, found.Ancestor.Path) {
+                            parent := fullLinkPath(registry, found)
+                            if found.Ancestor != nil && target == fullLinkPath(registry, found.Ancestor) {
                                 target = parent
                             } else if target != parent {
                                 return fmt.Errorf("unexpected link to non-ancestor, non-parent file %q from %q", target, src_path)
@@ -677,7 +682,7 @@ func walkDirectory(
  ******************************************/
 
 func createSymlink(from, to string) error { 
-    err := os.Symlink(from, to)
+    err := os.Symlink(to, from)
     if err != nil {
         return fmt.Errorf("failed to create a registry symlink for %q to %q; %w", from, to, err)
     }

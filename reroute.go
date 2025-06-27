@@ -254,7 +254,7 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
     // Unlike reindexDirectory, we don't worry about pruning empty directories here, as there should still be copied files in affected directories.
     all_links, err := recreateLinkFiles(full_version_dir, manifest)
     if err != nil {
-        return fmt.Errorf("failed to create linkfiles at %w; %w", full_version_dir, err)
+        return fmt.Errorf("failed to create linkfiles at %q; %w", full_version_dir, err)
     }
 
     for delink, _ := range delinked {
