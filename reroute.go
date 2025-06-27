@@ -229,7 +229,7 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
             }
             delinked[filepath.Dir(action.Key)] = true
         } else {
-            err := createSymlink(dest, registry, action.Link, true)
+            err := processSymlink(dest, registry, action.Link, forceCreateSymlink)
             if err != nil {
                 return err
             }
@@ -238,27 +238,36 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
 
     // Updating the manifest with the deltas.
     full_version_dir := filepath.Join(registry, version_dir)
-    man, err := readManifest(full_version_dir)
+    manifest, err := readManifest(full_version_dir)
     if err != nil {
         return fmt.Errorf("failed to read manifest at %q; %w", full_version_dir, err)
     }
     for k, entry := range proposal.DeltaManifest {
-        man[k] = entry
+        manifest[k] = entry
     }
-    err = dumpJson(filepath.Join(full_version_dir, manifestFileName), &man)
+    err = dumpJson(filepath.Join(full_version_dir, manifestFileName), &manifest)
     if err != nil {
         return err
     }
 
-    // First we get rid of ..links files in directories that might no longer have any links at all;
-    // and then we reconstitute all of the link files to be on the safe side.
+    // Recreating all link files just to be safe, and removing all linkfiles that are no longer necessary (because links were replaced by copies).
+    // Unlike reindexDirectory, we don't worry about pruning empty directories here, as there should still be copied files in affected directories.
+    all_links, err := recreateLinkFiles(full_version_dir, manifest)
+    if err != nil {
+        return fmt.Errorf("failed to create linkfiles at %q; %w", full_version_dir, err)
+    }
+
     for delink, _ := range delinked {
-        err := os.Remove(filepath.Join(full_version_dir, delink, linksFileName))
-        if err != nil {
-            return fmt.Errorf("failed to remove existing ..links file")
+        if _, ok := all_links[delink]; !ok {
+            full_path := filepath.Join(full_version_dir, delink, linksFileName)
+            err := os.Remove(full_path)
+            if err != nil {
+                return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", full_path, err)
+            }
         }
     }
-    return recreateLinkFiles(full_version_dir, man)
+
+    return nil
 }
 
 func rerouteLinksHandler(reqpath string, globals *globalConfiguration, ctx context.Context) ([]rerouteAction, error) {

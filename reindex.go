@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "path/filepath"
+    "io"
     "os"
     "encoding/json"
     "net/http"
@@ -15,6 +16,93 @@ type reindexRequest struct {
     Asset *string `json:"asset"`
     Version *string `json:"version"`
     User string `json:"-"`
+}
+
+type reindexDirectoryOptions struct {
+    LinkWhitelist []string
+}
+
+func reindexDirectory(registry, project, asset, version string, ctx context.Context, throttle *concurrencyThrottle, options reindexDirectoryOptions) error {
+    source := filepath.Join(registry, project, asset, version)
+    link_reroutes, link_files, err := parseExistingLinkFiles(source, registry, ctx)
+    if err != nil {
+        return fmt.Errorf("failed to parse existing linkfiles in %q; %w", source, err)
+    }
+
+    manifest, err := walkDirectory(
+        source,
+        registry,
+        project,
+        asset,
+        version,
+        forceCreateSymlink,
+        ctx,
+        throttle,
+        walkDirectoryOptions{
+            Transfer: false,
+            Consume: false, // not used during reindexing, just set for completeness only.
+            DeduplicateLatest: nil,
+            RestoreLinkParent: link_reroutes,
+            IgnoreDot: false,
+            LinkWhitelist: options.LinkWhitelist,
+        },
+    )
+    if err != nil {
+        return err
+    }
+
+    manifest_path := filepath.Join(source, manifestFileName)
+    err = dumpJson(manifest_path, &manifest)
+    if err != nil {
+        return fmt.Errorf("failed to save manifest for %q; %w", source, err)
+    }
+
+    all_links, err := recreateLinkFiles(source, manifest)
+    if err != nil {
+        return fmt.Errorf("failed to create linkfiles; %w", err)
+    }
+
+    // Removing unused linkfiles and associated empty directories.
+    maybe_empty := map[string]bool{}
+    for _, f := range link_files {
+        d := filepath.Dir(f)
+        if _, ok := all_links[d]; ok {
+            continue
+        }
+        err := os.Remove(filepath.Join(source, f))
+        if err != nil {
+            return fmt.Errorf("failed to remove unnecessary linkfile %q; %w", f, err)
+        }
+        maybe_empty[f] = true
+    }
+
+    for epath, _ := range maybe_empty {
+        full_epath := filepath.Join(source, epath)
+        err := func() error {
+            handle, err := os.Open(full_epath)
+            if err != nil {
+                return fmt.Errorf("failed to open directory handle %q; %w", full_epath, err)
+            }
+            defer handle.Close()
+
+            _, err = handle.Readdirnames(1)
+            if err != io.EOF {
+                return err
+            }
+
+            err = os.Remove(full_epath)
+            if err != nil {
+                return fmt.Errorf("failed to remove empty directory %q; %w", epath, err)
+            }
+
+            return nil
+        }()
+        if err != nil {
+            return err
+        }
+    }
+
+    return nil
 }
 
 func reindexPreflight(reqpath string) (*reindexRequest, error) {
