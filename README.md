@@ -332,7 +332,7 @@ along with an optional `version` property specifying the latest non-probational 
 ### Reindexing a version (admin)
 
 Administrators of a Gobbler instance can directly reindex the contents of a version directory, regenerating the various `..manifest` and `..links` files.
-This is useful for correcting the Gobbler internal files after manual changes to the user-supplied files.
+This is useful for correcting the Gobbler's internal files after manual changes to the contents of the version directory.
 It also allows for more efficient bulk uploads where administrators can write directly to the Gobbler registry and then generate the internal files afterwards,
 thus avoiding an unnecessary copy from the staging directory.
 
@@ -368,6 +368,33 @@ Reindexing will not update any of the project or asset statistics.
 Specifically, reindexing will not update the latest version for the asset as the `..summary` files have not changed.
 Similarly, the project usage cannot be quickly updated as the Gobbler does not know whether the to-be-reindexed directory was already included in the usage.
 Administrators should refresh these statistics manually as described above after completing all reindexing tasks.
+
+### Validating a version (admin)
+
+Administrators of a Gobbler instance can validate a version directory to check that the `..manifest` and `..links` files are accurate.
+This is useful for checking the consistency of Gobbler's internal files after backups, registry relocation, etc.
+It can also be used to check the correctness of manual updates to the internal files, e.g., to match manual changes to the user-supplied files.
+
+To trigger a validation job, create a file with the `request-validate_version-` prefix.
+This file should be JSON-formatted with the following properties:
+
+- `project`: string containing the name of the project.
+  This should not contain `/` or `\`, or start with `..`.
+- `asset`: string containing the name of the asset.
+  This should not contain `/` or `\`, or start with `..`.
+- `version`: string containing the name of the version.
+  This should not contain `/` or `\`, or start with `..`.
+
+Validation will check that all files are captured in the manifest with the correct file sizes and MD5 checksums;
+all link information in `..manifest` and `..links` are consistent with the symbolic link targets;
+and the `..summary` file is correctly formatted with valid user names and upload start/end times. 
+
+If validation is successful, the HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
+Otherwise, the response will contain a HTTP error code with a JSON object specifying the `reason` for validation failure.
+
+Unlike reindexing, validation will not alter any files in the registry.
+Any validation failures should be resolved manually by administrators.
+For example, checksum mismatches may require restoration of the correct file from backups.
 
 ### Deleting content (admin)
 
