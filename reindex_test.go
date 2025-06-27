@@ -790,23 +790,18 @@ func TestReindexDirectoryRestoreLinkParentFailure(t *testing.T) {
 /**********************************************
  **********************************************/
 
-func setupDirectoryForReindexHandlerTest(globals *globalConfiguration, project, asset, version string) (string, error) {
-    self, err := user.Current()
+func setupDirectoryForReindexHandlerTest(registry, project, asset, version string) error {
+    project_dir := filepath.Join(registry, project)
+    err := createProject(project_dir, nil, "lun")
     if err != nil {
-        return "", fmt.Errorf("failed to determine the current user; %w", err)
-    }
-
-    project_dir := filepath.Join(globals.Registry, project)
-    err = createProject(project_dir, nil, self.Username)
-    if err != nil {
-        return "", err
+        return err
     }
 
     asset_dir := filepath.Join(project_dir, asset)
     dir := filepath.Join(asset_dir, version)
     err = os.MkdirAll(dir, 0755)
     if err != nil {
-        return "", err
+        return err
     }
 
     err = os.WriteFile(filepath.Join(dir, summaryFileName), []byte(`{ 
@@ -817,15 +812,15 @@ func setupDirectoryForReindexHandlerTest(globals *globalConfiguration, project, 
 
     err = os.WriteFile(filepath.Join(dir, "evolution"), []byte("haunter"), 0644)
     if err != nil {
-        return "", err
+        return err
     }
 
     err = os.WriteFile(filepath.Join(dir, "moves"), []byte("lick,confuse_ray,shadow_ball,dream_eater"), 0644)
     if err != nil {
-        return "", err
+        return err
     }
 
-    return self.Username, nil
+    return nil
 }
 
 func TestReindexHandlerSimple(t *testing.T) {
@@ -839,11 +834,16 @@ func TestReindexHandlerSimple(t *testing.T) {
     }
     globals := newGlobalConfiguration(reg, 2)
 
-    self_user, err := setupDirectoryForReindexHandlerTest(&globals, project, asset, version)
+    err = setupDirectoryForReindexHandlerTest(reg, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
-    globals.Administrators = append(globals.Administrators, self_user)
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatal(err)
+    }
+    globals.Administrators = append(globals.Administrators, self.Username)
 
     ctx := context.Background()
 
@@ -904,12 +904,18 @@ func TestReindexHandlerLatest(t *testing.T) {
 
     globals := newGlobalConfiguration(reg, 2)
 
-    self_user, err := setupDirectoryForReindexHandlerTest(&globals, project, asset, version)
+    err = setupDirectoryForReindexHandlerTest(reg, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
-    globals.Administrators = append(globals.Administrators, self_user)
 
+    self, err := user.Current()
+    if err != nil {
+        t.Fatal(err)
+    }
+    globals.Administrators = append(globals.Administrators, self.Username)
+
+    // Explicitly adding the latest version file, to indicate that we're operating on the latest version.
     asset_dir := filepath.Join(reg, project, asset)
     err = os.WriteFile(filepath.Join(asset_dir, latestFileName), []byte(fmt.Sprintf(`{ "version": "%s" }`, version)), 0644)
     if err != nil {
@@ -918,7 +924,6 @@ func TestReindexHandlerLatest(t *testing.T) {
 
     ctx := context.Background()
 
-    // Performing the request.
     req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
     reqname, err := dumpRequest("reindex", req_string)
     if err != nil {
@@ -955,11 +960,16 @@ func TestReindexHandlerProbation(t *testing.T) {
 
     globals := newGlobalConfiguration(reg, 2)
 
-    self_user, err := setupDirectoryForReindexHandlerTest(&globals, project, asset, version)
+    err = setupDirectoryForReindexHandlerTest(reg, project, asset, version)
     if err != nil {
         t.Fatalf("failed to set up project directory; %v", err)
     }
-    globals.Administrators = append(globals.Administrators, self_user)
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatal(err)
+    }
+    globals.Administrators = append(globals.Administrators, self.Username)
 
     // Set it to be on probation.
     err = os.WriteFile(filepath.Join(globals.Registry, project, asset, version, summaryFileName), []byte(`{ 
@@ -999,24 +1009,13 @@ func TestReindexHandlerProbation(t *testing.T) {
     }
 }
 
-func TestReindexHandlerSimpleFailures(t *testing.T) {
-    project := "test"
-    asset := "gastly"
-    version := "lavender"
-
+func TestReindexHandlerPreflight(t *testing.T) {
     reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
     }
 
     globals := newGlobalConfiguration(reg, 2)
-
-    self_user, err := setupDirectoryForReindexHandlerTest(&globals, project, asset, version)
-    if err != nil {
-        t.Fatalf("failed to set up project directory; %v", err)
-    }
-    globals.Administrators = append(globals.Administrators, self_user)
-
     ctx := context.Background()
 
     t.Run("bad project", func(t *testing.T) {
@@ -1081,10 +1080,6 @@ func TestReindexHandlerSimpleFailures(t *testing.T) {
 }
 
 func TestReindexHandlerUnauthorized(t *testing.T) {
-    project := "test"
-    asset := "gastly"
-    version := "lavender"
-
     reg, err := constructMockRegistry()
     if err != nil {
         t.Fatalf("failed to create the registry; %v", err)
@@ -1092,12 +1087,7 @@ func TestReindexHandlerUnauthorized(t *testing.T) {
     globals := newGlobalConfiguration(reg, 2)
     ctx := context.Background()
 
-    _, err = setupDirectoryForReindexHandlerTest(&globals, project, asset, version)
-    if err != nil {
-        t.Fatalf("failed to set up project directory; %v", err)
-    }
-
-    req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+    req_string := `{ "project": "foo", "asset": "bar", "version": "test" }`
     reqname, err := dumpRequest("reindex", req_string)
     if err != nil {
         t.Fatalf("failed to create reindex request; %v", err)

@@ -6,6 +6,8 @@ import (
     "path/filepath"
     "strings"
     "context"
+    "fmt"
+    "os/user"
 )
 
 func TestValidateDirectorySimple(t *testing.T) {
@@ -604,4 +606,236 @@ func TestValidateDirectoryLinkfiles(t *testing.T) {
             t.Errorf("expected an error from extra path in the linkfile, got %v", err)
         }
     })
+}
+
+/**********************************************
+ **********************************************/
+
+func setupDirectoryForValidateHandlerTest(registry, project, asset, version string) error {
+    project_dir := filepath.Join(registry, project)
+
+    asset_dir := filepath.Join(project_dir, asset)
+    dir := filepath.Join(asset_dir, version)
+    err := os.MkdirAll(dir, 0755)
+    if err != nil {
+        return err
+    }
+
+    err = os.WriteFile(filepath.Join(dir, summaryFileName), []byte(`{ 
+    "upload_user_id": "luna",
+    "upload_start": "2025-05-01T02:23:32Z",
+    "upload_finish": "2025-05-01T04:45:09Z"
+}`), 0644)
+
+    err = os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0644)
+    if err != nil {
+        return err
+    }
+
+    conc := newConcurrencyThrottle(1)
+    err = reindexDirectory(registry, project, asset, version, context.Background(), &conc, reindexDirectoryOptions{})
+    return nil
+}
+
+func TestValidateHandlerSimple(t *testing.T) {
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg, 2)
+
+    self, err := user.Current()
+    if err != nil {
+        t.Fatal(err)
+    }
+    globals.Administrators = append(globals.Administrators, self.Username)
+
+    ctx := context.Background()
+
+    project := "horizons"
+    err = createProject(filepath.Join(reg, project), nil, "tin")
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    t.Run("success", func(t *testing.T) {
+        asset := "chikorita"
+        version := "silver"
+
+        err := setupDirectoryForValidateHandlerTest(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to set up project directory; %v", err)
+        }
+
+        req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+        reqname, err := dumpRequest("validate", req_string)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+
+        err = validateHandler(reqname, &globals, ctx)
+        if err != nil {
+            t.Fatal(err)
+        }
+    })
+
+    t.Run("extra file", func(t *testing.T) {
+        asset := "totodile"
+        version := "gold"
+
+        err := setupDirectoryForValidateHandlerTest(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to set up project directory; %v", err)
+        }
+
+        // Injecting an extra file to check that we indeed throw an error.
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, "whee"), []byte("stuff"), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+        reqname, err := dumpRequest("validate", req_string)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+
+        err = validateHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "extra file") {
+            t.Errorf("expected a validation error from an extra file, got %v", err)
+        }
+    })
+
+    t.Run("invalid summary", func(t *testing.T) {
+        asset := "cyndaquil"
+        version := "crystal"
+
+        err := setupDirectoryForValidateHandlerTest(reg, project, asset, version)
+        if err != nil {
+            t.Fatalf("failed to set up project directory; %v", err)
+        }
+
+        req_string := fmt.Sprintf(`{ "project": "%s", "asset": "%s", "version": "%s" }`, project, asset, version)
+        reqname, err := dumpRequest("validate", req_string)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, summaryFileName), []byte("{}"), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = validateHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "invalid 'upload_user_id'") {
+            t.Errorf("expected a validation error from invalid summary, got %v", err)
+        }
+
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, summaryFileName), []byte(`{ "upload_user_id": "aaron" }`), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = validateHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "could not parse 'upload_start'") {
+            t.Errorf("expected a validation error from invalid summary, got %v", err)
+        }
+
+        err = os.WriteFile(filepath.Join(reg, project, asset, version, summaryFileName), []byte(`{ "upload_user_id": "aaron", "upload_start": "2022-12-22T22:22:22Z" }`), 0644)
+        if err != nil {
+            t.Fatal(err)
+        }
+        err = validateHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "could not parse 'upload_finish'") {
+            t.Errorf("expected a validation error from invalid summary, got %v", err)
+        }
+    })
+}
+
+func TestValidateHandlerPreflight(t *testing.T) {
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    globals := newGlobalConfiguration(reg, 2)
+    ctx := context.Background()
+
+    t.Run("bad project", func(t *testing.T) {
+        reqname, err := dumpRequest("reindex", `{ "asset": "foo", "version": "bar" }`)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "expected a 'project'") {
+            t.Fatal("configuration should fail for missing project")
+        }
+
+        reqname, err = dumpRequest("reindex", `{ "project": "bad/name", "asset": "foo", "version": "bar" }`)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "invalid project name") {
+            t.Fatal("configuration should fail for invalid project name")
+        }
+    })
+
+    t.Run("bad asset", func(t *testing.T) {
+        reqname, err := dumpRequest("reindex", `{ "project": "foo", "version": "bar" }`)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "expected an 'asset'") {
+            t.Fatal("configuration should fail for missing asset")
+        }
+
+        reqname, err = dumpRequest("reindex", `{ "project": "foo", "asset": "..bar", "version": "bar" }`)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "invalid asset name") {
+            t.Fatal("configuration should fail for invalid asset name")
+        }
+    })
+
+    t.Run("bad version", func(t *testing.T) {
+        reqname, err := dumpRequest("reindex", `{ "project": "foo", "asset": "bar" }`) 
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "expected a 'version'") {
+            t.Fatal("configuration should fail for missing version")
+        }
+
+        reqname, err = dumpRequest("reindex", `{ "project": "foo", "asset": "bar", "version": "" }`)
+        if err != nil {
+            t.Fatalf("failed to create reindex request; %v", err)
+        }
+        err = reindexHandler(reqname, &globals, ctx)
+        if err == nil || !strings.Contains(err.Error(), "invalid version name") {
+            t.Fatal("configuration should fail for invalid version name")
+        }
+    })
+}
+
+func TestValidateHandlerUnauthorized(t *testing.T) {
+    reg, err := constructMockRegistry()
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+    globals := newGlobalConfiguration(reg, 2)
+    ctx := context.Background()
+
+    req_string := `{ "project": "foo", "asset": "bar", "version": "whee" }`
+    reqname, err := dumpRequest("reindex", req_string)
+    if err != nil {
+        t.Fatalf("failed to create reindex request; %v", err)
+    }
+
+    err = reindexHandler(reqname, &globals, ctx)
+    if err == nil || !strings.Contains(err.Error(), "not authorized") {
+        t.Fatalf("failed to reject reindex from non-authorized user")
+    }
 }
