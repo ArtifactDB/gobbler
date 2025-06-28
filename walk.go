@@ -713,9 +713,12 @@ func walkDirectory(
 
     /*** Final passes to add empty directories. ***/
     for mpath, _ := range manifest {
-        mdir := filepath.Dir(mpath)
-        if _, ok := directories[mdir]; ok {
-            delete(directories, mdir) // remove non-empty directory.
+        mdir := mpath
+        for mdir != "." {
+            mdir = filepath.Dir(mdir)
+            if _, ok := directories[mdir]; ok {
+                delete(directories, mdir) // remove non-empty directory.
+            }
         }
     }
     for dpath, _ := range directories {
