@@ -254,7 +254,7 @@ This file should be JSON-formatted with the following properties:
 - `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
   Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
-On success, the files will be transferred to the appropriate version directory within the registry
+On success, the files will be transferred to the appropriate version directory within the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
 
 Users should consider setting the permissions of this temporary directory (and any of its subdirectories) to `777`.
