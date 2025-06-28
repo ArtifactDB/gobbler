@@ -38,7 +38,10 @@ The value is another object with the following properties:
 - `link` (optional): an object specifying the link destination for a file (see [below](#link-deduplication) for details).
   This contains the strings `project`, `asset`, `version` and `path`, and possibly an `ancestor` object.
 
-**gypsum** keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
+An empty subdirectory within the `{project}/{asset}/{version}/` subdirectory is represented in the `..manifest` file as an entry with zero `size` and an empty string in the `md5sum`.
+Non-empty subdirectories are not reported in the manifest as their existence is implicit. 
+
+The Gobbler keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
 
 - `latest`: String containing the name of the latest version of this asset.
