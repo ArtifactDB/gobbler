@@ -64,11 +64,81 @@ func TestTransferDirectorySimple(t *testing.T) {
         t.Error(err)
     }
 
+    // Checking that there are no empty directories.
+    for k, m := range man {
+        if m.Md5sum == "" {
+            t.Errorf("unexpected empty directory %q in manifest", k)
+        }
+    }
+
     // Fails with an expired context.
     expired, _ := context.WithTimeout(ctx, 0)
     err = transferDirectory(src, reg, project, asset, "blue", expired, &conc, transferDirectoryOptions{})
     if err == nil || !strings.Contains(err.Error(), "cancelled") {
         t.Errorf("expected a cancellation error; %v", err)
+    }
+}
+
+func TestTransferDirectoryEmptyDirs(t *testing.T) {
+    project := "pokemon"
+    asset := "pikachu"
+    version := "red"
+
+    src, err := setupSourceForWalkDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    // Adding some empty directories.
+    err = os.Mkdir(filepath.Join(src, "rarity"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = os.Mkdir(filepath.Join(src, "moves", "water"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    destination := filepath.Join(reg, project, asset, version)
+    man, err := readManifest(destination)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    if found, ok := man["rarity"]; !ok {
+        t.Error("expected the 'rarity' empty directory to show up")
+    } else if found.Size != 0 || found.Md5sum != "" || found.Link != nil {
+        t.Error("unexpected manifest entries for the 'rarity' empty directory")
+    } else if _, err := os.Stat(filepath.Join(destination, "rarity")); err != nil {
+        t.Error("could not find the 'rarity' empty directory")
+    }
+
+    if found, ok := man["moves/water"]; !ok {
+        t.Error("expected the 'moves/water' empty directory to show up")
+    } else if found.Size != 0 || found.Md5sum != "" || found.Link != nil {
+        t.Error("unexpected manifest entries for the 'moves/water' empty directory")
+    } else if _, err := os.Stat(filepath.Join(destination, "moves/water")); err != nil {
+        t.Error("could not find the 'moves/water' empty directory")
+    }
+
+    // Checking that no other directories were added here.
+    for k, m := range man {
+        if m.Md5sum == "" && k != "moves/water" && k != "rarity" {
+            t.Errorf("unexpected empty directory %q in manifest", k)
+        }
     }
 }
 

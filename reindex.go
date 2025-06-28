@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "path/filepath"
-    "io"
     "os"
     "encoding/json"
     "net/http"
@@ -61,7 +60,7 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
         return fmt.Errorf("failed to create linkfiles; %w", err)
     }
 
-    // Removing unused linkfiles and associated empty directories.
+    // Removing unused linkfiles.
     maybe_empty := map[string]bool{}
     for d, _ := range old_all_links {
         if _, ok := new_all_links[d]; ok {
@@ -72,32 +71,6 @@ func reindexDirectory(registry, project, asset, version string, ctx context.Cont
             return fmt.Errorf("failed to remove unnecessary linkfile in %q; %w", d, err)
         }
         maybe_empty[d] = true
-    }
-
-    for epath, _ := range maybe_empty {
-        full_epath := filepath.Join(source, epath)
-        err := func() error {
-            handle, err := os.Open(full_epath)
-            if err != nil {
-                return fmt.Errorf("failed to open directory handle %q; %w", full_epath, err)
-            }
-            defer handle.Close()
-
-            _, err = handle.Readdirnames(1)
-            if err != io.EOF {
-                return err
-            }
-
-            err = os.Remove(full_epath)
-            if err != nil {
-                return fmt.Errorf("failed to remove empty directory %q; %w", epath, err)
-            }
-
-            return nil
-        }()
-        if err != nil {
-            return err
-        }
     }
 
     return nil

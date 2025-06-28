@@ -396,16 +396,18 @@ func walkDirectory(
         }
 
         if info.IsDir() {
-            if do_transfer {
-                err := os.MkdirAll(filepath.Join(destination, rel_path), 0755)
-                if err != nil {
-                    return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
+            if src_path != source {
+                if do_transfer {
+                    err := os.MkdirAll(filepath.Join(destination, rel_path), 0755)
+                    if err != nil {
+                        return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
+                    }
                 }
-            }
 
-            directories_lock.Lock()
-            defer directories_lock.Unlock()
-            directories[rel_path] = true
+                directories_lock.Lock()
+                defer directories_lock.Unlock()
+                directories[rel_path] = true
+            }
             return nil
         }
 
@@ -714,8 +716,11 @@ func walkDirectory(
     /*** Final passes to add empty directories. ***/
     for mpath, _ := range manifest {
         mdir := mpath
-        for mdir != "." {
+        for {
             mdir = filepath.Dir(mdir)
+            if mdir == "." {
+                break
+            }
             if _, ok := directories[mdir]; ok {
                 delete(directories, mdir) // remove non-empty directory.
             }

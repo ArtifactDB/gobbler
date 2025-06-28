@@ -131,6 +131,91 @@ func TestValidateDirectorySimple(t *testing.T) {
     })
 }
 
+func TestValidateDirectoryEmptyDir(t *testing.T) {
+    src, err := setupSourceForWalkDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Adding some empty directories.
+    err = os.Mkdir(filepath.Join(src, "rarity"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = os.Mkdir(filepath.Join(src, "moves", "water"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    project := "pokemon"
+    asset := "pikachu"
+    version := "red"
+
+    t.Run("no failures", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+    })
+
+    t.Run("missing directory", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = os.Remove(filepath.Join(reg, project, asset, version, "rarity"))
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || strings.Contains(err.Error(), "missing path") {
+            t.Error("expected error from a missing empty directory")
+        }
+    })
+
+    t.Run("extra directory", func(t *testing.T) {
+        reg, err := os.MkdirTemp("", "")
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = os.Mkdir(filepath.Join(reg, project, asset, version, "appearences"), 0755)
+        if err != nil {
+            t.Fatal(err)
+        }
+
+        err = validateDirectory(reg, project, asset, version, ctx, &conc, validateDirectoryOptions{})
+        if err == nil || strings.Contains(err.Error(), "extra path") {
+            t.Error("expected error from an extra empty directory")
+        }
+    })
+}
+
 func TestValidateDirectoryLocalLinks(t *testing.T) {
     src, err := setupSourceForWalkDirectoryTest()
     if err != nil {
