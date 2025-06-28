@@ -396,18 +396,16 @@ func walkDirectory(
         }
 
         if info.IsDir() {
-            if src_path != source {
-                if do_transfer {
-                    err := os.MkdirAll(filepath.Join(destination, rel_path), 0755)
-                    if err != nil {
-                        return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
-                    }
+            if do_transfer {
+                err := os.MkdirAll(filepath.Join(destination, rel_path), 0755)
+                if err != nil {
+                    return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
                 }
-
-                directories_lock.Lock()
-                defer directories_lock.Unlock()
-                directories[rel_path] = true
             }
+
+            directories_lock.Lock()
+            defer directories_lock.Unlock()
+            directories[rel_path] = true
             return nil
         }
 
@@ -716,18 +714,20 @@ func walkDirectory(
     /*** Final passes to add empty directories. ***/
     for mpath, _ := range manifest {
         mdir := mpath
-        for {
+        for mdir != "." {
             mdir = filepath.Dir(mdir)
-            if mdir == "." {
-                break
-            }
-            if _, ok := directories[mdir]; ok {
-                delete(directories, mdir) // remove non-empty directory.
+            if found, ok := directories[mdir]; ok {
+                if !found {
+                    break // some previous iteration already figured out it's not empty, no need to continue onto the parents.
+                }
+                directories[mdir] = false // i.e., it's not empty anymore.
             }
         }
     }
-    for dpath, _ := range directories {
-        manifest[dpath] = manifestEntry{ Size: 0, Md5sum: "" }
+    for dpath, dempty := range directories {
+        if dempty {
+            manifest[dpath] = manifestEntry{ Size: 0, Md5sum: "" }
+        }
     }
 
     return manifest, nil
