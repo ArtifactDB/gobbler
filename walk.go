@@ -330,9 +330,10 @@ func walkDirectory(
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
     transferrable := []string{}
+    directories := map[string]bool{}
     local_links := map[string]string{}
 
-    var manifest_lock, local_links_lock, transferrable_lock sync.Mutex
+    var manifest_lock, local_links_lock, transferrable_lock, directories_lock sync.Mutex
     var error_lock sync.RWMutex
     all_errors := []error{}
     safeCheckError := func() error {
@@ -400,6 +401,11 @@ func walkDirectory(
                 if err != nil {
                     return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
                 }
+            }
+            if rel_path != "." {
+                directories_lock.Lock()
+                defer directories_lock.Unlock()
+                directories[rel_path] = true
             }
             return nil
         }
@@ -678,7 +684,7 @@ func walkDirectory(
     }
 
     /*** 
-     *** Final pass to resolve local links within the newly uploaded directory. 
+     *** Third pass to resolve local links within the newly uploaded directory. 
      *** Don't try to parallelize this, as different local_links might have the same ancestors.
      *** This would result in repeated attempts to create the same symbolic links from multiple goroutines.
      ***/
@@ -704,6 +710,28 @@ func walkDirectory(
     wg.Wait()
     if len(all_errors) > 0 {
         return nil, all_errors[0]
+    }
+
+    /*** Final passes to add empty directories. ***/
+    for mpath, _ := range manifest {
+        mdir := mpath
+        for {
+            mdir = filepath.Dir(mdir)
+            if mdir == "." {
+                break;
+            }
+            if found, ok := directories[mdir]; ok {
+                if !found {
+                    break // some previous iteration already figured out it's not empty, no need to continue onto the parents.
+                }
+                directories[mdir] = false // i.e., it's not empty anymore.
+            }
+        }
+    }
+    for dpath, dempty := range directories {
+        if dempty {
+            manifest[dpath] = manifestEntry{ Size: 0, Md5sum: "" }
+        }
     }
 
     return manifest, nil

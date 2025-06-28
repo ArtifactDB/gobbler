@@ -10,6 +10,7 @@ import (
     "context"
     "io/fs"
     "sort"
+    "errors"
 )
 
 func stripDoubleDotFiles(dir string) error {
@@ -132,6 +133,65 @@ func TestReindexDirectorySimple(t *testing.T) {
     }
 
     // Now reindexing after we purge all the '..xxx' files.
+    err = stripDoubleDotFiles(v_path)
+    if err != nil {
+        t.Fatalf("failed to strip all double dots; %v", err)
+    }
+
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to reindex directory; %v", err)
+    }
+
+    recovered, err := loadDirectoryContents(v_path)
+    if err != nil {
+        t.Fatalf("failed to load directory contents; %v", err)
+    }
+    err = compareDirectoryContents(prior, recovered)
+    if err != nil {
+        t.Error(err)
+    }
+}
+
+func TestReindexDirectoryEmptyDir(t *testing.T) {
+    project := "pokemon"
+    asset := "pikachu"
+    version := "red"
+
+    src, err := setupSourceForWalkDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    // Adding some empty directories.
+    err = os.Mkdir(filepath.Join(src, "rarity"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+    err = os.Mkdir(filepath.Join(src, "moves", "water"), 0755)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    v_path := filepath.Join(reg, project, asset, version)
+    prior, err := loadDirectoryContents(v_path)
+    if err != nil {
+        t.Fatalf("failed to load directory contents; %v", err)
+    }
+
     err = stripDoubleDotFiles(v_path)
     if err != nil {
         t.Fatalf("failed to strip all double dots; %v", err)
@@ -784,6 +844,67 @@ func TestReindexDirectoryRestoreLinkParentFailure(t *testing.T) {
     }
     if target != "type" {
         t.Error("expected 'ultratype' to target 'type' after reindexing")
+    }
+}
+
+func TestReindexDirectoryEraseUnusedLinkfiles(t *testing.T) {
+    reg, err := os.MkdirTemp("", "")
+    if err != nil {
+        t.Fatalf("failed to create the registry; %v", err)
+    }
+
+    ctx := context.Background()
+    conc := newConcurrencyThrottle(2)
+
+    src, err := setupSourceForWalkDirectoryTest()
+    if err != nil {
+        t.Fatalf("failed to set up test directories; %v", err)
+    }
+
+    project := "pokemon"
+    asset := "charmander"
+    version := "fire-red"
+    err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
+    if err != nil {
+        t.Fatalf("failed to perform the transfer; %v", err)
+    }
+
+    vpath := filepath.Join(reg, project, asset, version)
+    locations := []string{ "random", "moves/whatever", "evolution/mega" }
+    for _, loc := range locations {
+        lpath := filepath.Join(vpath, loc, linksFileName)
+        if err := os.Mkdir(filepath.Dir(lpath), 0755); err != nil {
+            t.Fatal(err)
+        }
+        if err := os.WriteFile(lpath, []byte("{}"), 0644); err != nil {
+            t.Fatal(err)
+        }
+    }
+
+    err = reindexDirectory(reg, project, asset, version, ctx, &conc, reindexDirectoryOptions{})
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    man, err := readManifest(filepath.Join(reg, project, asset, version))
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    for _, loc := range locations {
+        dpath := filepath.Join(vpath, loc)
+        lpath := filepath.Join(dpath, linksFileName)
+        if _, err := os.Stat(lpath); !errors.Is(err, os.ErrNotExist) {
+            t.Error("expected unused link file to be deleted")
+        }
+
+        // The now-empty directory should still remain, though.
+        if _, err := os.Stat(dpath); err != nil {
+            t.Errorf("expected empty directory %q to still be present", dpath)
+        }
+        if entry, ok := man[loc]; !ok || entry.Size != 0 || entry.Md5sum != "" {
+            t.Errorf("expected an empty directory %q in the manifest", dpath)
+        }
     }
 }
 

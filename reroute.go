@@ -251,7 +251,6 @@ func executeLinkReroutes(registry string, version_dir string, proposal *rerouteP
     }
 
     // Recreating all link files just to be safe, and removing all linkfiles that are no longer necessary (because links were replaced by copies).
-    // Unlike reindexDirectory, we don't worry about pruning empty directories here, as there should still be copied files in affected directories.
     all_links, err := recreateLinkFiles(full_version_dir, manifest)
     if err != nil {
         return fmt.Errorf("failed to create linkfiles at %q; %w", full_version_dir, err)
