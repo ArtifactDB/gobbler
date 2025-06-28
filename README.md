@@ -27,10 +27,16 @@ That is, each project may have multiple assets, and each asset may have multiple
 All user-supplied files are associated with a particular project-asset-version combination.
 For consistency with **gypsum**'s terminology, we will define an "upload" as a filesystem copy of user-supplied files into the registry. 
 
-Within the directory, files associated with a project-asset-version combination will be stored in the `{project}/{asset}/{version}/` subdirectory.
+Within the registry, files associated with a project-asset-version combination will be stored in the `{project}/{asset}/{version}/` subdirectory (i.e., the "version directory").
+Files can be organized in any number of possibly-nested subdirectories within the version directory.
+Empty subdirectories are allowed. 
+Symbolic links can be formed to [other files in the registry](#link-deduplication) or to certain [whitelisted directories](#administration).
+Symbolic links to other directories are not allowed. 
+Files starting with `..` are reserved for Gobbler's internal files.
+
 For each project-asset-version combination, the set of all user-supplied files is recorded in the `{project}/{asset}/{version}/..manifest` file.
 This contains a JSON object where each key/value pair describes a user-supplied file.
-The key is a relative path to the file within the `{project}/{asset}/{version}/` subdirectory.
+The key is a relative path to the file within the version directory.
 The value is another object with the following properties:
 
 - `size`: an integer specifying the size of the file in bytes.
@@ -38,8 +44,10 @@ The value is another object with the following properties:
 - `link` (optional): an object specifying the link destination for a file (see [below](#link-deduplication) for details).
   This contains the strings `project`, `asset`, `version` and `path`, and possibly an `ancestor` object.
 
-An empty subdirectory within the `{project}/{asset}/{version}/` subdirectory is represented in the `..manifest` file as an entry with zero `size` and an empty string in the `md5sum`.
-Non-empty subdirectories are not reported in the manifest as their existence is implicit. 
+An empty subdirectory within the version directory is recorded in the `..manifest` file as an entry with an empty `md5sum` string. 
+In addition, the `size` is set to zero and no `link` field is present. 
+Non-empty subdirectories are not reported as their existence is implied by other files in the manifest. 
+(Note that an "empty" subdirectory may still contain `..`-prefixed files, as only the user-supplied contents of a subdirectory are considered.)
 
 The Gobbler keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
@@ -216,7 +224,7 @@ The HTTP response will contain a JSON object with the `status` property set to `
 
 To upload a new version of an asset of a project, users should create a temporary directory within the staging directory.
 The temporary directory may have any name but should avoid starting with `request-`.
-Files within this temporary directory will be transferred to the appropriate subdirectory within the registry, subject to the following rules:
+Files within this temporary directory may be organized in any number of (possibly nested, possibly empty) subdirectories, subject to the following rules:
 
 - Files prefixed with `..` are reserved for Gobbler's internal files and are ignored.
 - Symbolic links to directories are not allowed.
@@ -246,7 +254,7 @@ This file should be JSON-formatted with the following properties:
 - `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
   Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
-On success, the files will be transferred to the registry.
+On success, the files will be transferred to the appropriate version directory within the registry
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
 
 Users should consider setting the permissions of this temporary directory (and any of its subdirectories) to `777`.
