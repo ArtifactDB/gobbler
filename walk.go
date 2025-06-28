@@ -402,10 +402,11 @@ func walkDirectory(
                     return fmt.Errorf("failed to create a directory at %q; %w", src_path, err)
                 }
             }
-
-            directories_lock.Lock()
-            defer directories_lock.Unlock()
-            directories[rel_path] = true
+            if rel_path != "." {
+                directories_lock.Lock()
+                defer directories_lock.Unlock()
+                directories[rel_path] = true
+            }
             return nil
         }
 
@@ -714,8 +715,11 @@ func walkDirectory(
     /*** Final passes to add empty directories. ***/
     for mpath, _ := range manifest {
         mdir := mpath
-        for mdir != "." {
+        for {
             mdir = filepath.Dir(mdir)
+            if mdir == "." {
+                break;
+            }
             if found, ok := directories[mdir]; ok {
                 if !found {
                     break // some previous iteration already figured out it's not empty, no need to continue onto the parents.
