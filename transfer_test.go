@@ -106,6 +106,10 @@ func TestTransferDirectoryEmptyDirs(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
+    err = os.MkdirAll(filepath.Join(src, "appearances", "yellow"), 0755) // the 'appearances' directory shouldn't show up in the manifest, it's not empty.
+    if err != nil {
+        t.Fatal(err)
+    }
 
     err = transferDirectory(src, reg, project, asset, version, ctx, &conc, transferDirectoryOptions{})
     if err != nil {
@@ -118,25 +122,19 @@ func TestTransferDirectoryEmptyDirs(t *testing.T) {
         t.Fatal(err)
     }
 
-    if found, ok := man["rarity"]; !ok {
-        t.Error("expected the 'rarity' empty directory to show up")
-    } else if found.Size != 0 || found.Md5sum != "" || found.Link != nil {
-        t.Error("unexpected manifest entries for the 'rarity' empty directory")
-    } else if _, err := os.Stat(filepath.Join(destination, "rarity")); err != nil {
-        t.Error("could not find the 'rarity' empty directory")
-    }
-
-    if found, ok := man["moves/water"]; !ok {
-        t.Error("expected the 'moves/water' empty directory to show up")
-    } else if found.Size != 0 || found.Md5sum != "" || found.Link != nil {
-        t.Error("unexpected manifest entries for the 'moves/water' empty directory")
-    } else if _, err := os.Stat(filepath.Join(destination, "moves/water")); err != nil {
-        t.Error("could not find the 'moves/water' empty directory")
+    for _, empty := range []string{"rarity", "moves/water", "appearances/yellow" } {
+        if found, ok := man[empty]; !ok {
+            t.Errorf("expected the %q empty directory to show up", empty)
+        } else if found.Size != 0 || found.Md5sum != "" || found.Link != nil {
+            t.Errorf("unexpected manifest entries for the %q empty directory", empty)
+        } else if _, err := os.Stat(filepath.Join(destination, empty)); err != nil {
+            t.Errorf("could not find the %q empty directory", empty)
+        }
     }
 
     // Checking that no other directories were added here.
     for k, m := range man {
-        if m.Md5sum == "" && k != "moves/water" && k != "rarity" {
+        if m.Md5sum == "" && k != "moves/water" && k != "rarity" && k != "appearances/yellow" {
             t.Errorf("unexpected empty directory %q in manifest", k)
         }
     }

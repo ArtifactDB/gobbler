@@ -12,8 +12,24 @@ import (
     "context"
 )
 
+func updateEmptyDirectories(dir string, empty_directories map[string]bool) {
+    for {
+        dir = filepath.Dir(dir)
+        if dir == "." {
+            return
+        }
+        if found, ok := empty_directories[dir]; ok {
+            if !found {
+                return // some previous iteration already figured out it's not empty, no need to continue onto the parents.
+            }
+            empty_directories[dir] = false // i.e., it's not empty anymore.
+        }
+    }
+}
+
 func listFiles(dir string, recursive bool, ctx context.Context) ([]string, error) {
     to_report := []string{}
+    empty_directories := map[string]bool{}
 
     err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
         if err != nil {
@@ -25,11 +41,8 @@ func listFiles(dir string, recursive bool, ctx context.Context) ([]string, error
             return fmt.Errorf("list request cancelled; %w", err)
         }
 
-        is_dir := info.IsDir()
-        if is_dir {
-            if recursive || dir == path {
-                return nil
-            }
+        if dir == path {
+            return nil
         }
 
         rel, err := filepath.Rel(dir, path)
@@ -37,9 +50,14 @@ func listFiles(dir string, recursive bool, ctx context.Context) ([]string, error
             return err
         }
 
-        if !recursive && is_dir {
-            to_report = append(to_report, rel + "/")
-            return fs.SkipDir
+        if info.IsDir() {
+            if recursive {
+                empty_directories[rel] = true
+                return nil
+            } else {
+                to_report = append(to_report, rel + "/")
+                return fs.SkipDir
+            }
         } else {
             to_report = append(to_report, rel)
             return nil
@@ -48,6 +66,22 @@ func listFiles(dir string, recursive bool, ctx context.Context) ([]string, error
 
     if err != nil {
         return nil, fmt.Errorf("failed to obtain a directory listing; %w", err)
+    }
+
+    if recursive {
+        for _, fpath := range to_report {
+            updateEmptyDirectories(fpath, empty_directories)
+        }
+        for dpath, empty := range empty_directories {
+            if empty {
+                updateEmptyDirectories(dpath, empty_directories) // strip out directories that contain other (empty) directories
+            }
+        }
+        for dpath, empty := range empty_directories {
+            if empty {
+                to_report = append(to_report, dpath + "/")
+            }
+        }
     }
 
     return to_report, nil

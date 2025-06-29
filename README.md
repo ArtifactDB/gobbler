@@ -178,8 +178,9 @@ This accepts some optional query parameters:
 - `recursive`, a boolean indicating whether to list recursively.
   Defaults to false.
 
-The response is a JSON-encoded array of the relative paths within the registry or one of its requested subdirectories.
-If `recursive=true`, all paths refer to files; otherwise, paths may refer to subdirectories, which are denoted by a `/` suffix.
+On success, the response is a JSON-encoded array of the relative paths within the registry or one of its requested subdirectories.
+Subdirectories are represented by a `/` suffix on the path.
+If `recursive=true`, subdirectories are only reported if they are empty, as the non-empty subdirectories are implied by the existence of other nested paths.
 
 Any file of interest within the registry can then be obtained via a GET request to the `/fetch/{path}` endpoint,
 where `path` is the relative path to the file inside the registry.

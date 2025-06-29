@@ -330,7 +330,7 @@ func walkDirectory(
     destination := filepath.Join(registry, project, asset, version)
     manifest := map[string]manifestEntry{}
     transferrable := []string{}
-    directories := map[string]bool{}
+    empty_directories := map[string]bool{}
     local_links := map[string]string{}
 
     var manifest_lock, local_links_lock, transferrable_lock, directories_lock sync.Mutex
@@ -405,7 +405,7 @@ func walkDirectory(
             if rel_path != "." {
                 directories_lock.Lock()
                 defer directories_lock.Unlock()
-                directories[rel_path] = true
+                empty_directories[rel_path] = true
             }
             return nil
         }
@@ -714,22 +714,15 @@ func walkDirectory(
 
     /*** Final passes to add empty directories. ***/
     for mpath, _ := range manifest {
-        mdir := mpath
-        for {
-            mdir = filepath.Dir(mdir)
-            if mdir == "." {
-                break;
-            }
-            if found, ok := directories[mdir]; ok {
-                if !found {
-                    break // some previous iteration already figured out it's not empty, no need to continue onto the parents.
-                }
-                directories[mdir] = false // i.e., it's not empty anymore.
-            }
+        updateEmptyDirectories(mpath, empty_directories)
+    }
+    for dpath, empty := range empty_directories {
+        if empty {
+            updateEmptyDirectories(dpath, empty_directories) // strip out directories that contain other (empty) directories
         }
     }
-    for dpath, dempty := range directories {
-        if dempty {
+    for dpath, empty := range empty_directories {
+        if empty {
             manifest[dpath] = manifestEntry{ Size: 0, Md5sum: "" }
         }
     }
