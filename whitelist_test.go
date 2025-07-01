@@ -3,6 +3,7 @@ package main
 import (
     "testing"
     "os"
+    "strings"
 )
 
 func TestIsLinkWhitelisted(t *testing.T) {
@@ -30,8 +31,7 @@ func TestLoadLinkWhitelist(t *testing.T) {
         t.Fatal(err)
     }
 
-    message := "/alpha/\n/bravo/.\n/charlie//delta/"
-    if _, err := other.WriteString(message); err != nil {
+    if _, err := other.WriteString("/alpha/\n/bravo/.\n/charlie//delta/"); err != nil {
         t.Fatal(err)
     }
     other_name := other.Name()
@@ -46,5 +46,13 @@ func TestLoadLinkWhitelist(t *testing.T) {
 
     if len(loaded) != 3 || loaded[0] != "/alpha" || loaded[1] != "/bravo" || loaded[2] != "/charlie/delta" {
         t.Error("unexpected content from the loaded whitelist file")
+    }
+
+    if err := os.WriteFile(other_name, []byte("alpha/bravo/charlie"), 0644); err != nil {
+        t.Fatal(err)
+    }
+    _, err = loadLinkWhitelist(other_name)
+    if err == nil || !strings.Contains(err.Error(), "absolute") {
+        t.Error("expected an error when paths are not absolute")
     }
 }

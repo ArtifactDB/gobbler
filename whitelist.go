@@ -27,7 +27,11 @@ func loadLinkWhitelist(path string) ([]string, error) {
     output := []string{}
     scanner := bufio.NewScanner(whandle)
     for scanner.Scan() {
-        output = append(output, filepath.Clean(scanner.Text()))
+        path := filepath.Clean(scanner.Text())
+        if !filepath.IsAbs(path) {
+            return nil, fmt.Errorf("expected the whitelist file to contain absolute paths, got %v", path)
+        }
+        output = append(output, path)
     }
 
     if err := scanner.Err(); err != nil {
