@@ -30,7 +30,7 @@ For consistency with **gypsum**'s terminology, we will define an "upload" as a f
 Within the registry, files associated with a project-asset-version combination will be stored in the `{project}/{asset}/{version}/` subdirectory (i.e., the "version directory").
 Files can be organized in any number of possibly-nested subdirectories within the version directory.
 Empty subdirectories are allowed. 
-Symbolic links can be formed to [other files in the registry](#link-deduplication) or to certain [whitelisted directories](#administration).
+Symbolic links can be formed to [other files in the registry](#link-deduplication) or to certain [whitelisted directories](#link-whitelists).
 Symbolic links to other directories are not allowed. 
 Files starting with `..` are reserved for Gobbler's internal files.
 
@@ -93,7 +93,7 @@ This guarantee does not apply recursively, i.e., linked-from files may still be 
 
 If a symbolic link in the registry would refer to another symbolic link, the Gobbler will automatically create a symbolic link to the actual "ancestral" file during upload or reindexing.
 This avoids potential problems with operating system limits on the depth of symbolic link chains.
-An exception is made for links to files in whitelisted directories (see the [`-whitelist`](#administration) option), which are treated as the files themselves.
+An exception is made for links to files in whitelisted directories (see the [`-whitelist`](#link-whitelists) option), which are treated as the files themselves.
 
 ### Permissions
 
@@ -232,7 +232,7 @@ Files within this temporary directory may be organized in any number of (possibl
 - Symbolic links to files are allowed if:
   - The symlink target is an existing file within a project-asset-version subdirectory of the registry.
   - The symlink target is a file in the same temporary directory.
-  - The symlink target is in a [whitelisted directory](#administration).
+  - The symlink target is in a [whitelisted directory](#link-whitelists).
 
 Once this directory is constructed and populated, the user should create a file with the `request-upload-` prefix.
 This file should be JSON-formatted with the following properties:
@@ -253,7 +253,7 @@ This file should be JSON-formatted with the following properties:
   If successful, this consumes the files in the temporary directory, avoiding an extra copy but invalidating the contents of `source`.
   If not provided, this defaults to false.
 - `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
-  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
+  Only supported if [spoofing permissions](#spoofing-permissions) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the files will be transferred to the appropriate version directory within the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -275,7 +275,7 @@ Users should create a file with the `request-set_permissions-` prefix, which sho
   If any property is missing, the value in the existing permissions is used.
   If `asset` is provided, only `uploaders` will be used.
 - `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
-  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
+  Only supported if [spoofing permissions](#spoofing-permissions) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the permissions in the registry are modified.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -309,7 +309,7 @@ This file should be JSON-formatted with the following properties:
   in which case they will be deleted but the project usage will need to be refreshed manually.
   Defaults to false if not supplied.
 - `spoof` (optional): string specifying the name of a user, on whose behalf this request is performed.
-  Only supported if [spoofing permissions](#administration) are provided and the current user is allowed to make a request on behalf of the spoofed user.
+  Only supported if [spoofing permissions](#spoofing-permisions) are provided and the current user is allowed to make a request on behalf of the spoofed user.
 
 On success, the relevant version is removed from the registry.
 The HTTP response will contain a JSON object with the `status` property set to `SUCCESS`.
@@ -534,6 +534,8 @@ Log files are held for 7 days before deletion.
 
 ## Deployment instructions
 
+### Running the Gobbler
+
 First, clone this repository and build the binary. 
 This requires the [Go toolchain](https://go.dev/dl) (version 1.16 or higher).
 
@@ -570,30 +572,62 @@ Finally, start the Gobbler by running the binary:
     -registry REGISTRY
 ```
 
-The following optional arguments can be used to fine-tune the Gobbler's behavior:
-
-- `-admin` contains a comma-separated list of administrator UIDs. 
-  This defaults to an empty string, i.e., no administrators.
-- `-port` specifies the port for API calls.
-  This defaults to 8080.
-- `-prefix` adds an extra prefix to all endpoints, e.g., to disambiguate between versions.
-  For example, a prefix of `api/v2` would change the list endpoint to `/api/v2/list`.
-  This defaults to an empty string, i.e., no prefix.
-- `-whitelist` contains a path to a text file where each line contains a path to a directory.
-  Any symbolic link that targets a file in a whitelisted directory is treated as the file itself during upload and reindexing.
-  This is useful for avoiding unnecessary copies from data archives.
-  By default, no directories are whitelisted.
-- `-spoof` contains a path to a text file containing the spoofing permissions.
-  Each line should be formatted as `[spoofer]:[comma-separated list of users]`, where `spoofer` may perform requests on behalf of the listed users in supported endpoints.
-  Alternatively, a line may contain `[spoofer]:*` to indicate that `spoofer` is allowed to pretend to be any user.
-  Lines containing `[spoofer]:` without any users will be ignored.
-  By default, no spoofing is permitted.
-- `-probation` specifies the lifespan of probational versions in days, after which they will be automatically deleted.
-  The default value of -1 will not perform any deletion. 
-- `-concurrency` specifies the maximum number of active goroutines, mostly for filesystem operations.
-  This defaults to 100 but can be changed according to the filesystem parallelism, number of available CPUs, maximum number of open file handles, etc.
-  (Goroutines for processing HTTP requests are not considered in this limit.)
-
 Multiple Gobbler instances can safely target the same `REGISTRY` with different `STAGING`.
 This is useful for complex HPC configurations where the same filesystem is mounted in multiple compute environments;
 a separate Gobbler instance can be set up in each environment to enable uploads.
+
+### Optional arguments
+
+The following optional arguments can be used to fine-tune the Gobbler's behavior:
+
+- `-admin`, which expects a comma-separated list of administrator UIDs. 
+  For example, we could set `-admin foo,bar` would specify that `foo` and `bar` are administrators.
+  This defaults to an empty string, i.e., no administrators.
+- `-port`, which expects an integer that specifies the port for API calls.
+  This defaults to 8080.
+- `-prefix`, which adds an extra prefix to all endpoints, e.g., to disambiguate between versions.
+  For example, setting `-prefix api/v2` would change the list endpoint to `/api/v2/list`.
+  This defaults to an empty string, i.e., no prefix.
+- `-probation`, which specifies the lifespan of probational versions in days.
+  Probational versions older than this threshold will be automatically deleted.
+  The default value is -1, which will not perform any deletion. 
+- `-concurrency`, which specifies the maximum number of active goroutines, mostly for filesystem operations.
+  This defaults to 100 but can be changed according to the filesystem parallelism, number of available CPUs, maximum number of open file handles, etc.
+  (Goroutines for processing HTTP requests are not considered in this limit.)
+
+### Link whitelists
+
+Another optional argument is `-whitelist`, which expects a path to a text file containing the link whitelist.
+Each line of this file contains an absolute path to any directory on the current filesystem, e.g.:
+
+```
+/mnt/store/data/archive
+/foo/bar/whee
+```
+
+Any symbolic link that targets a file in a whitelisted directory is treated as the file itself during upload, reindexing and validation.
+This is useful for avoiding unnecessary copies from immutable data archives.
+By default, no directories are whitelisted.
+
+### Spoofing permissions
+
+Another optional argument is `-spoof`, which expects a path to a text file containing the spoofing permissions.
+Each line should be formatted as `[spoofer]:[comma-separated list of UIDs]`, where `spoofer` may perform requests on behalf of the listed users in supported endpoints.
+Lines containing `[spoofer]:` without any users will be ignored, and only the last line will be used if multiple lines are present for the same `spoofer`.
+If any entry of the list is `*`, `spoofer` is allowed to pretend to be any user -
+except if a UID in the list is prefixed with `-`, in which case spoofing is not allowed.
+
+To illustrate, a spoofing permission file might look like the example below.
+`roger` is allowed to spoof `robert`, `rachel` and `river`.
+`beatrice` is allowed to spoof any user.
+`albert` is allowed to spoof any user except for `alice` and `anna`.
+`charlotte` is not allowed to spoof anyone.
+
+```
+roger:robert,rachel,river
+beatrice:*
+albert:*,-alice,-anna
+charlotte:
+```
+
+By default, no spoofing is permitted.
