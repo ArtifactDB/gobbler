@@ -11,6 +11,7 @@ import (
 type spoofPermissions struct {
     All bool
     Users map[string]bool
+    Exclude map[string]bool
 }
 
 func isSpoofingAllowed(spoofer, user string, permissions map[string]spoofPermissions) bool {
@@ -18,9 +19,14 @@ func isSpoofingAllowed(spoofer, user string, permissions map[string]spoofPermiss
     if !ok {
         return false
     }
+
     if val.All {
+        if _, ok := val.Exclude[user]; ok {
+            return false;
+        }
         return true
     }
+
     _, ok = val.Users[user]
     return ok
 }
@@ -67,15 +73,18 @@ func loadSpoofPermissions(path string) (map[string]spoofPermissions, error) {
 
         use_all := false
         user_set := map[string]bool{}
+        exclude_set := map[string]bool{}
         for _, u := range users {
             if (u == "*") {
                 use_all = true
+            } else if strings.HasPrefix(u, "-") {
+                exclude_set[u[1:]] = true
             } else {
                 user_set[u] = true
             }
         }
 
-        output[spoofer] = spoofPermissions{ All: use_all, Users: user_set }
+        output[spoofer] = spoofPermissions{ All: use_all, Users: user_set, Exclude: exclude_set }
     }
 
     if err := scanner.Err(); err != nil {

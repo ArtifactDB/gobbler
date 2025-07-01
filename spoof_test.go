@@ -16,12 +16,12 @@ func TestIsSpoofingAllowed(t *testing.T) {
         t.Error("should not have allowed spoofing")
     }
 
-    spoof_perms["foo"] = spoofPermissions{ Users: map[string]bool{} }
+    spoof_perms["foo"] = spoofPermissions{ Users: map[string]bool{}, Exclude: map[string]bool{} }
     if isSpoofingAllowed("foo", "bar", spoof_perms) {
         t.Error("should not have allowed spoofing")
     }
 
-    spoof_perms["foo"] = spoofPermissions{ Users: map[string]bool{ "bar": true } }
+    spoof_perms["foo"] = spoofPermissions{ Users: map[string]bool{ "bar": true }, Exclude: map[string]bool{} }
     if !isSpoofingAllowed("foo", "bar", spoof_perms) {
         t.Error("should have allowed spoofing")
     }
@@ -29,9 +29,14 @@ func TestIsSpoofingAllowed(t *testing.T) {
         t.Error("should not have allowed spoofing")
     }
 
-    spoof_perms["foo"] = spoofPermissions{ All: true, Users: map[string]bool{} }
+    spoof_perms["foo"] = spoofPermissions{ All: true, Users: map[string]bool{}, Exclude: map[string]bool{} }
     if !isSpoofingAllowed("foo", "bar", spoof_perms) {
         t.Error("should have allowed spoofing")
+    }
+
+    spoof_perms["foo"] = spoofPermissions{ All: true, Users: map[string]bool{}, Exclude: map[string]bool{ "bar": true } }
+    if isSpoofingAllowed("foo", "bar", spoof_perms) {
+        t.Error("should not have allowed spoofing")
     }
 }
 
@@ -75,7 +80,7 @@ func TestLoadSpoofPermissions(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    message := "alpha:bravo,charlie\ndelta:echo\nfoxtrot:*\ngolf:"
+    message := "alpha:bravo,charlie\ndelta:echo\nfoxtrot:*\ngolf:\nhotel:-india,*"
     if _, err := handle.WriteString(message); err != nil {
         t.Fatal(err)
     }
@@ -88,8 +93,8 @@ func TestLoadSpoofPermissions(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    if len(sperms) != 3 {
-        t.Fatal("expected three users in the spoof permissions file")
+    if len(sperms) != 4 {
+        t.Fatal("expected four users in the spoof permissions file")
     }
 
     {
@@ -109,6 +114,9 @@ func TestLoadSpoofPermissions(t *testing.T) {
         if _, ok := found.Users["charlie"]; !ok {
             t.Error("expected to find 'charlie' in the spoof permissions file")
         }
+        if len(found.Exclude) != 0 {
+            t.Error("expected no excluded users in the spoof permissions for 'alpha'")
+        }
     }
 
     {
@@ -125,6 +133,9 @@ func TestLoadSpoofPermissions(t *testing.T) {
         if _, ok := found.Users["echo"]; !ok {
             t.Error("expected to find 'echo' in the spoof permissions file")
         }
+        if len(found.Exclude) != 0 {
+            t.Error("expected no excluded users in the spoof permissions for 'delta'")
+        }
     }
 
     {
@@ -136,12 +147,34 @@ func TestLoadSpoofPermissions(t *testing.T) {
             t.Error("expected global spoof enabled for 'foxtrot'")
         }
         if len(found.Users) != 0 {
-            t.Error("expected two allowed users in the spoof permissions for 'foxtrot'")
+            t.Error("expected no allowed users in the spoof permissions for 'foxtrot'")
+        }
+        if len(found.Exclude) != 0 {
+            t.Error("expected no excluded users in the spoof permissions for 'foxtrot'")
         }
     }
 
     if _, ok := sperms["golf"]; ok {
         t.Fatal("expected to skip 'golf' in the spoof permissions")
+    }
+
+    {
+        found, ok := sperms["hotel"]
+        if !ok {
+            t.Fatal("expected to find 'hotel' in the spoof permissions")
+        }
+        if !found.All {
+            t.Error("expected global spoof enabled for 'hotel'")
+        }
+        if len(found.Users) != 0 {
+            t.Error("expected no allowed users in the spoof permissions for 'hotel'")
+        }
+        if len(found.Exclude) != 1 {
+            t.Error("expected one allowed user in the spoof permissions for 'hotel'")
+        }
+        if _, ok := found.Exclude["india"]; !ok {
+            t.Error("expected to find 'india' in the spoof permissions file")
+        }
     }
 }
 
