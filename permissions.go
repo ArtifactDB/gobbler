@@ -42,7 +42,7 @@ func identifyUser(path string) (string, error) {
     }
 
     uinfo, err := user.LookupId(strconv.Itoa(int(stat.Uid)))
-    if !ok {
+    if err != nil {
         return "", fmt.Errorf("failed to find user name for author of '" + path + "'; %w", err)
     }
     return uinfo.Username, nil
